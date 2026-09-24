@@ -534,12 +534,18 @@ async function signInApp(){
 async function signOutApp(){
   try{ await auth.signOut(); }catch(e){ console.error(e); }
 }
+let authReadyResolve;
+const authReady = new Promise(resolve => { authReadyResolve = resolve; });
 if(auth){
+  let firstAuthCallback = true;
   auth.onAuthStateChanged((user)=>{
     authUser = user;
     syncCurrentUserFromAuth();
-    render();
+    if(firstAuthCallback){ firstAuthCallback = false; authReadyResolve(); }
+    else if(state.projectId){ render(); } else { showPicker(); }
   });
+} else {
+  authReadyResolve();
 }
 
 /* ---- google drive (real read/write, via OAuth) ---- */
@@ -3563,6 +3569,21 @@ async function showPicker(){
   const picker = document.getElementById('picker');
   document.getElementById('app').style.display = 'none';
   picker.style.display = 'flex';
+
+  if(!authUser){
+    picker.innerHTML = `
+      <div class="picker-card">
+        <div class="brand" style="padding:0 0 18px;justify-content:center">
+          <div class="brand-mark"></div>
+          <div><div class="brand-name">Fluxus</div><div class="brand-sub">Project Tracker</div></div>
+        </div>
+        <h2 style="margin:0 0 4px;font-size:16px;text-align:center">Sign in to continue</h2>
+        <div class="faint" style="text-align:center;margin-bottom:16px">Sign in with Google to see and open your projects</div>
+        <button class="btn btn-gold" style="width:100%;justify-content:center" onclick="signInApp()">Sign in with Google</button>
+      </div>`;
+    return;
+  }
+
   picker.innerHTML = `<div class="picker-card"><div class="faint" style="text-align:center">Loading projects…</div></div>`;
   const projects = db ? await listProjects() : [];
   const dbWarning = db ? '' : `<div class="warn-box">Not connected to the database — check your internet connection and reload.</div>`;
@@ -3584,6 +3605,10 @@ async function showPicker(){
         <input type="checkbox" id="picker-seed-example"> Start with example data (categories, sample tasks)
       </label>
       <button class="btn btn-gold" style="width:100%;justify-content:center" onclick="createProjectFromPicker()">+ Create project</button>
+      <div style="text-align:center;margin-top:14px">
+        <span class="faint" style="font-size:11px">${esc(authUser.email)}</span> ·
+        <span class="chat-action-link" style="font-size:11px" onclick="signOutApp()">Sign out</span>
+      </div>
     </div>`;
 }
 async function createProjectFromPicker(){
@@ -3596,8 +3621,9 @@ async function createProjectFromPicker(){
 
 /* ============================= init ============================= */
 (async function init(){
+  await authReady;
   const saved = lsGet('activeProjectId', null);
-  if(saved && db){
+  if(saved && db && authUser){
     try{
       const snap = await db.collection('projects').doc(saved).get();
       if(snap.exists){
