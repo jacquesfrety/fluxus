@@ -600,6 +600,36 @@ function driveThumbLarge(thumbnailLink, size){
   if(!thumbnailLink) return '';
   return /=s\d+$/.test(thumbnailLink) ? thumbnailLink.replace(/=s\d+$/, '=s'+(size||1600)) : thumbnailLink;
 }
+async function chatImgError(img){
+  const taskId = img.dataset.taskId, msgId = img.dataset.msgId;
+  const msgs = state.chatCache[taskId] || [];
+  const msg = msgs.find(x=>x.id===msgId);
+  if(!msg || !msg.driveFile) return;
+  const fallbackLink = (label)=>{
+    const a = document.createElement('a');
+    a.href = msg.driveFile.webViewLink || '#';
+    a.target = '_blank'; a.rel = 'noopener noreferrer';
+    a.className = 'chat-action-link';
+    a.textContent = label;
+    img.replaceWith(a);
+  };
+  if(img.dataset.retried){ fallbackLink('🖼 Photo (preview link expired — open in Drive)'); return; }
+  img.dataset.retried = '1';
+  if(!state.driveSignedIn){ fallbackLink('🖼 Photo (sign in to Google, then reload, to preview here)'); return; }
+  try{
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${msg.driveFile.id}?fields=thumbnailLink,webViewLink`, { headers: driveHeaders() });
+    if(!res.ok) throw new Error('refresh failed: '+res.status);
+    const data = await res.json();
+    msg.driveFile.thumbnailLink = data.thumbnailLink || msg.driveFile.thumbnailLink;
+    msg.driveFile.webViewLink = data.webViewLink || msg.driveFile.webViewLink;
+    img.src = msg.driveFile.thumbnailLink;
+    img.onclick = () => openLightbox(driveThumbLarge(msg.driveFile.thumbnailLink, 1600));
+    await saveChat(taskId, msgs); // persist the refreshed link so it's fast next time
+  }catch(e){
+    console.error(e);
+    fallbackLink('🖼 Photo (open in Drive)');
+  }
+}
 async function driveApiRename(fileId, newName){
   const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name`, {
     method: 'PATCH', headers: driveHeaders({'Content-Type':'application/json'}),
@@ -3218,7 +3248,7 @@ async function renderChat(taskId){
           ${m.replyTo?`<div class="chat-reply-quote">↩ ${esc(m.replyTo.author)}: ${esc(m.replyTo.snippet)}</div>`:''}
           ${m.text?`<div class="chat-text">${renderMentionText(m.text)}</div>`:''}
           ${m.driveFile && m.driveFile.thumbnailLink
-            ? `<img class="chat-img" src="${esc(m.driveFile.thumbnailLink)}" onclick="openLightbox('${esc(driveThumbLarge(m.driveFile.thumbnailLink,1600))}')">`
+            ? `<img class="chat-img" src="${esc(m.driveFile.thumbnailLink)}" data-task-id="${esc(taskId)}" data-msg-id="${esc(m.id)}" onclick="openLightbox('${esc(driveThumbLarge(m.driveFile.thumbnailLink,1600))}')" onerror="chatImgError(this)">`
             : (m.image?`<img class="chat-img" src="${m.image}" onclick="openLightbox('${m.image}')">`:'')}
         </div>
       </div>
