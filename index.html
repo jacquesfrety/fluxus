@@ -3555,6 +3555,23 @@ function switchProject(){
   document.getElementById('app').style.display = 'none';
   showPicker();
 }
+function showNotAMember(){
+  localStorage.removeItem('activeProjectId');
+  const picker = document.getElementById('picker');
+  document.getElementById('app').style.display = 'none';
+  picker.style.display = 'flex';
+  picker.innerHTML = `
+    <div class="picker-card">
+      <div class="brand" style="padding:0 0 18px;justify-content:center">
+        <div class="brand-mark"></div>
+        <div><div class="brand-name">Fluxus</div><div class="brand-sub">Project Tracker</div></div>
+      </div>
+      <h2 style="margin:0 0 4px;font-size:16px;text-align:center">Not a member</h2>
+      <div class="faint" style="text-align:center;margin-bottom:16px">You're signed in as ${esc(authUser.email)}, but you're not on this project's team.</div>
+      <button class="btn btn-gold" style="width:100%;justify-content:center" onclick="switchProject()">Back to my projects</button>
+    </div>`;
+  state.projectId = null;
+}
 async function enterApp(){
   document.getElementById('picker').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
@@ -3564,6 +3581,11 @@ async function enterApp(){
   state.driveFiles = null;
   state.driveMovePending = null;
   await loadAll();
+  if(state.team.length > 0 && !state.currentUser){
+    // an existing team exists here, but this signed-in account isn't on it — block entry
+    showNotAMember();
+    return;
+  }
   if(state.driveSignedIn){
     // already signed in this session — just re-point at this project's own folder
     const rootId = driveFolderId(state.project.driveUrl);
@@ -3595,7 +3617,9 @@ async function showPicker(){
   }
 
   picker.innerHTML = `<div class="picker-card"><div class="faint" style="text-align:center">Loading projects…</div></div>`;
-  const projects = db ? await listProjects() : [];
+  const allProjects = db ? await listProjects() : [];
+  const myEmail = (authUser.email||'').toLowerCase();
+  const projects = allProjects.filter(p => Array.isArray(p.memberEmails) && p.memberEmails.includes(myEmail));
   const dbWarning = db ? '' : `<div class="warn-box">Not connected to the database — check your internet connection and reload.</div>`;
   picker.innerHTML = `
     <div class="picker-card">
@@ -3637,9 +3661,15 @@ async function createProjectFromPicker(){
     try{
       const snap = await db.collection('projects').doc(saved).get();
       if(snap.exists){
-        state.projectId = saved;
-        await enterApp();
-        return;
+        const data = snap.data();
+        const myEmail = (authUser.email||'').toLowerCase();
+        if(Array.isArray(data.memberEmails) && data.memberEmails.includes(myEmail)){
+          state.projectId = saved;
+          await enterApp();
+          return;
+        }
+        // remembered project, but no longer (or never) a member here — don't try to enter it
+        localStorage.removeItem('activeProjectId');
       }
     }catch(e){ console.error(e); }
   }
