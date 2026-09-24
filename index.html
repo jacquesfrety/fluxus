@@ -1798,7 +1798,7 @@ function renderTimelineView(){
   const totalDays = Math.max(1, daysBetween(min,max));
   const zoom = state.timelineZoom || 26; // px per day
   const width = totalDays * zoom;
-  const rowH = 38, headH = 64;
+  const rowH = 38, headH = 44;
   const totalH = headH + tasks.length*rowH;
 
   // day columns (gridlines, weekend/holiday shading, day numbers, month labels)
@@ -1940,7 +1940,6 @@ function renderTimelineView(){
           ${weekendBands}
           ${dayCols}
           <div class="tl-headerband">${monthLabels}${dayNums}</div>
-          <div class="tl-cal-slider-row"><input type="range" id="tl-scroll-input" min="0" max="100" value="0" oninput="scrollFromSlider(this.value)"></div>
           ${rowBands}
           ${todayLine}
           ${bars}
@@ -1948,9 +1947,9 @@ function renderTimelineView(){
         </div>
       </div>
     </div>
-    <div class="row" style="justify-content:center;gap:8px;margin-top:10px">
-      <button class="btn btn-sm btn-ghost" onclick="panTimeline(-7)">◀ 7d</button>
-      <button class="btn btn-sm btn-ghost" onclick="panTimeline(7)">7d ▶</button>
+    <div class="tl-scrollctl">
+      <div class="tl-cols-slider-spacer"></div>
+      <input type="range" id="tl-scroll-input" min="0" max="100" value="0" oninput="scrollFromSlider(this.value)">
     </div>
   `;
 }
@@ -1960,7 +1959,6 @@ function wireTimelineControls(){
   if(!area || !slider) return;
   const maxScroll = () => Math.max(1, area.scrollWidth - area.clientWidth);
   slider.max = maxScroll();
-  slider.style.width = area.clientWidth + 'px'; // sticky row would otherwise stretch to the full scrollable width
   area.addEventListener('scroll', ()=>{ slider.value = area.scrollLeft; });
   // restore previous relative scroll position after re-render
   if(state.timelineScrollFrac!=null){
