@@ -844,7 +844,18 @@ async function setTheme(t){
   document.documentElement.setAttribute('data-theme', t);
   await saveTheme();
 }
-async function saveProject(){ await fsSet('project', state.project); }
+async function saveProject(){
+  await syncProjectName(); // keep the top-level projects/{id}.name in sync so the "Choose a project" picker shows the current title
+  await fsSet('project', state.project);
+}
+async function syncProjectName(){
+  if(!db || !state.projectId) return;
+  const name = (state.project.title||'').trim();
+  if(!name) return;
+  try{
+    await db.collection('projects').doc(state.projectId).set({name}, {merge:true});
+  }catch(e){ console.error('project name sync failed', e); }
+}
 async function saveNotifications(){ await fsSet('notifications', state.notifications); }
 async function loadChat(taskId){
   if(state.chatCache[taskId]) return state.chatCache[taskId];
