@@ -301,6 +301,9 @@
   .tcard-role{color:var(--gold);font-size:12px;margin-top:1px;}
   .tcard-field{font-size:12px;color:var(--ink-dim);margin-top:3px;}
   .tcard-actions{margin-top:10px;display:flex;gap:6px;}
+  .tcard[data-role="Student Lead"]{background:color-mix(in srgb, var(--surface) 86%, var(--gold) 14%);border-color:var(--gold-dim);}
+  .tcard[data-role="Supervisor"]{background:color-mix(in srgb, var(--surface) 90%, var(--red) 10%);border-color:color-mix(in srgb, var(--line) 35%, var(--red) 65%);}
+  .tcard[data-role="Lecturer"]{background:color-mix(in srgb, var(--surface) 90%, #E68A3C 10%);border-color:color-mix(in srgb, var(--line) 35%, #E68A3C 65%);}
 
   /* ---- drawer ---- */
   #overlay{position:fixed;inset:0;background:rgba(8,9,11,.55);display:none;z-index:40;}
@@ -1427,7 +1430,7 @@ function renderTeamView(){
   }
   const canEdit = isSupervisor();
   return `<div class="team-grid">${state.team.map(m=>`
-    <div class="tcard">
+    <div class="tcard" data-role="${esc(m.role||'')}">
       <div class="tcard-top">
         ${avatarForMember(m, 88)}
         <div>
