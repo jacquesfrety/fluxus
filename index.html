@@ -437,7 +437,7 @@
     <nav id="nav"></nav>
     <div class="sidebar-foot">
       <div class="whoami-label">You are</div>
-      <select id="whoami" style="width:100%"></select>
+      <div id="whoami"></div>
       <div class="theme-toggle" id="theme-toggle">
         <button onclick="setTheme('dark')" data-mode="dark">☾ Dark</button>
         <button onclick="setTheme('light')" data-mode="light">☀ Light</button>
@@ -478,6 +478,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
 /* ============================= constants ============================= */
@@ -509,10 +510,37 @@ const firebaseConfig = {
   appId: "1:789284988664:web:488a48e861fe0768923d0d"
 };
 let db = null;
+let auth = null;
 try{
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
+  auth = firebase.auth();
 }catch(e){ console.error('Firebase init failed', e); }
+
+/* ---- app sign-in (real Google identity, via Firebase Auth) ---- */
+let authUser = null; // Firebase Auth user object; independent of which project is open
+const googleAuthProvider = auth ? new firebase.auth.GoogleAuthProvider() : null;
+function syncCurrentUserFromAuth(){
+  if(!authUser){ state.currentUser = ''; return; }
+  const email = (authUser.email||'').toLowerCase();
+  const match = state.team.find(m => m.email && m.email.toLowerCase()===email);
+  state.currentUser = match ? match.name : '';
+}
+async function signInApp(){
+  if(!auth || !googleAuthProvider){ toast('Sign-in is still loading — try again in a moment'); return; }
+  try{ await auth.signInWithPopup(googleAuthProvider); }
+  catch(e){ console.error(e); toast('Sign-in failed'); }
+}
+async function signOutApp(){
+  try{ await auth.signOut(); }catch(e){ console.error(e); }
+}
+if(auth){
+  auth.onAuthStateChanged((user)=>{
+    authUser = user;
+    syncCurrentUserFromAuth();
+    render();
+  });
+}
 
 /* ---- google drive (real read/write, via OAuth) ---- */
 const GOOGLE_CLIENT_ID = '335855484636-f30688quamr1366ejqnqeo1fgev0o3vu.apps.googleusercontent.com';
@@ -735,7 +763,6 @@ async function loadAll(){
     ]);
     state.team = team || [];
     state.tasks = tasks || [];
-    state.currentUser = lsGet('currentUser', "");
     state.project = Object.assign({title:"Untitled Project", icon:"", type:"Students", period:"", notes:"", nonWorkingDays:[], driveUrl:""}, project||{});
     state.notifications = notifications || [];
     state.forumPosts = forumPosts || [];
@@ -782,7 +809,7 @@ async function loadAll(){
       }
     });
     if(statusChanged) await saveTasks();
-    if(!state.currentUser && state.team.length){ state.currentUser = state.team[0].name; await saveCurrentUser(); }
+    syncCurrentUserFromAuth();
   }catch(e){
     console.error(e);
     toast("Could not load data — check your connection.");
@@ -792,7 +819,6 @@ async function saveTeam(){ await fsSet('team', state.team); }
 async function saveCategories(){ await fsSet('categories', state.categories); }
 async function saveTaskListGroups(){ await fsSet('taskLists', state.taskLists); }
 async function saveTasks(){ await fsSet('tasks', state.tasks); }
-async function saveCurrentUser(){ lsSet('currentUser', state.currentUser); }
 async function saveTimelineLabelsWidth(){ lsSet('timelineLabelsWidth', state.timelineLabelsWidth); }
 async function saveTheme(){ lsSet('theme', state.theme); }
 async function saveForumPosts(){ await fsSet('forumPosts', state.forumPosts); }
@@ -910,10 +936,38 @@ function renderNav(){
     </button>`).join('');
 }
 function renderWhoAmI(){
-  const sel = document.getElementById('whoami');
-  sel.innerHTML = state.team.map(m=>`<option value="${esc(m.name)}" ${m.name===state.currentUser?'selected':''}>${esc(m.name)} — ${esc(m.role||DEFAULT_ROLE)}</option>`).join('')
-    || '<option value="">Add a team member</option>';
-  sel.onchange = async (e)=>{ state.currentUser = e.target.value; await saveCurrentUser(); render(); };
+  const el = document.getElementById('whoami');
+  if(!el) return;
+  if(!authUser){
+    el.innerHTML = `<button class="btn btn-sm btn-gold" style="width:100%;justify-content:center" onclick="signInApp()">Sign in with Google</button>`;
+    return;
+  }
+  const member = state.team.find(m=>m.name===state.currentUser);
+  const photo = authUser.photoURL
+    ? `<div class="avatar-circle" style="width:32px;height:32px"><img src="${esc(authUser.photoURL)}"></div>`
+    : avatarForMember(member||null, 32);
+  if(member){
+    el.innerHTML = `<div class="row" style="justify-content:space-between;align-items:center">
+      <span class="row" style="gap:8px;min-width:0">
+        ${photo}
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <div style="font-weight:600;font-size:12.5px">${esc(member.name)}</div>
+          <div class="faint" style="font-size:10.5px">${esc(member.role||DEFAULT_ROLE)}</div>
+        </span>
+      </span>
+      <span class="chat-action-link" style="font-size:11px;flex:0 0 auto" onclick="signOutApp()">Sign out</span>
+    </div>`;
+  } else {
+    el.innerHTML = `<div>
+      <div class="row" style="gap:8px;margin-bottom:6px">
+        ${photo}
+        <span class="faint" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(authUser.email)}</span>
+      </div>
+      <div class="faint" style="font-size:11px;margin-bottom:8px">No profile in this project yet.</div>
+      <button class="btn btn-sm btn-gold" style="width:100%;justify-content:center;margin-bottom:6px" onclick="openClaimProfileDrawer()">+ Add yourself</button>
+      <div style="text-align:center"><span class="chat-action-link" style="font-size:11px" onclick="signOutApp()">Sign out</span></div>
+    </div>`;
+  }
 }
 function projectIconHTML(size){
   size = size || 26;
@@ -1438,6 +1492,55 @@ async function saveTeamMember(id){
   }
   pendingAvatar = null;
   await saveTeam();
+  closeDrawer();
+  render();
+}
+function openClaimProfileDrawer(){
+  if(!authUser){ toast('Sign in first'); return; }
+  pendingAvatar = null;
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = renderClaimProfileContent();
+}
+function renderClaimProfileContent(){
+  const photo = authUser.photoURL
+    ? `<div class="avatar-circle" style="width:56px;height:56px"><img src="${esc(authUser.photoURL)}"></div>`
+    : `<div class="avatar-circle" style="width:56px;height:56px">${esc((authUser.displayName||'?').slice(0,1).toUpperCase())}</div>`;
+  return `
+    <div class="drawer-head">
+      <div><h2 style="margin:0;font-size:17px">Add yourself to this project</h2></div>
+      <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="field" style="display:flex;align-items:center;gap:14px">
+        <div id="avatar-preview">${photo}</div>
+        <label class="btn btn-sm">Upload photo<input type="file" accept="image/*" style="display:none" onchange="handleAvatarPick(event)"></label>
+      </div>
+      <div class="field"><label>Name</label><input id="tm-name" value="${esc(authUser.displayName||'')}"></div>
+      ${state.team.length>0 ? `<div class="field"><label>Role</label>
+        <select id="tm-role">
+          ${ROLES.map(r=>`<option value="${r}" ${DEFAULT_ROLE===r?'selected':''}>${r}</option>`).join('')}
+        </select>
+      </div>` : `<div class="faint" style="margin-bottom:14px">No one's here yet — you'll be added as the first Supervisor.</div>`}
+      <div class="field"><label>Email <span class="faint" style="text-transform:none;font-weight:400">— your verified sign-in, can't be changed</span></label>
+        <input value="${esc(authUser.email)}" disabled></div>
+      <div class="field"><label>Phone <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label><input id="tm-phone" value=""></div>
+      <div class="field"><label>Notes <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label><textarea id="tm-notes" rows="2"></textarea></div>
+      <button class="btn btn-gold" onclick="saveMyProfile()">Add me</button>
+    </div>`;
+}
+async function saveMyProfile(){
+  if(!authUser) return;
+  const name = document.getElementById('tm-name').value.trim();
+  if(!name){ toast('Name is required'); return; }
+  const role = state.team.length===0 ? 'Supervisor' : (document.getElementById('tm-role').value || DEFAULT_ROLE);
+  const phone = document.getElementById('tm-phone').value;
+  const notes = document.getElementById('tm-notes').value;
+  state.team.push({id:uid('u'), name, role, email: authUser.email, phone, notes, avatar: pendingAvatar || authUser.photoURL || ''});
+  pendingAvatar = null;
+  await saveTeam();
+  syncCurrentUserFromAuth();
   closeDrawer();
   render();
 }
@@ -2364,7 +2467,7 @@ function renderSupportView(){
 }
 
 async function toggleVote(postId){
-  if(!state.currentUser){ toast('Pick who you are, top of the sidebar'); return; }
+  if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); return; }
   const p = state.forumPosts.find(x=>x.id===postId); if(!p) return;
   if(!p.votes) p.votes = [];
   if(p.votes.includes(state.currentUser)) p.votes = p.votes.filter(v=>v!==state.currentUser);
@@ -2375,7 +2478,7 @@ async function toggleVote(postId){
 }
 
 function openNewPostDrawer(){
-  if(!state.currentUser){ toast('Pick who you are, top of the sidebar'); return; }
+  if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); return; }
   state.drawerTaskId = null;
   document.getElementById('overlay').classList.add('open');
   const drawer = document.getElementById('drawer');
@@ -2481,7 +2584,7 @@ async function setPostStatus(postId, status){
   render();
 }
 async function postForumComment(postId){
-  if(!state.currentUser){ toast('Pick who you are, top of the sidebar'); return; }
+  if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); return; }
   const input = document.getElementById('post-comment-input');
   const text = input.value.trim();
   if(!text) return;
@@ -2784,7 +2887,7 @@ function renderDocumentsView(){
 
 let pendingDocThumbnail = null;
 function openNewDocDrawer(){
-  if(!state.currentUser){ toast('Pick who you are, top of the sidebar'); return; }
+  if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); return; }
   pendingDocThumbnail = null;
   state.drawerTaskId = null;
   document.getElementById('overlay').classList.add('open');
@@ -3317,7 +3420,7 @@ async function postMessage(taskId){
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
   if(!text && !pendingImageFile) return;
-  if(!state.currentUser){ toast("Pick who you are, top of the sidebar"); return; }
+  if(!state.currentUser){ toast("Sign in with Google first — top of the sidebar"); return; }
   const msg = {id:uid('m'), author: state.currentUser, text, ts: Date.now()};
   if(pendingImageFile){
     if(!state.driveSignedIn){
