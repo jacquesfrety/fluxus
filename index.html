@@ -215,6 +215,7 @@
   .tl-bar{position:absolute;top:7px;height:24px;border-radius:5px;cursor:grab;display:flex;
     align-items:center;padding:0 8px;font-size:11px;color:#101317;font-weight:600;white-space:nowrap;
     overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.3) inset;z-index:2;}
+  .tl-bar-avatar{position:absolute;z-index:6;}
   .tl-conflict-badge{position:absolute;height:13px;border-radius:3px 3px 0 0;background:var(--red);
     color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;
     cursor:pointer;z-index:6;box-shadow:0 0 0 1px var(--surface);}
@@ -1852,9 +1853,12 @@ function renderTimelineView(){
       }).join('');
     }
 
+    const assigneeIcon = (t.assignees && t.assignees.length)
+      ? `<div class="tl-bar-avatar" style="left:${(left+w+6).toFixed(1)}px;top:${top+2}px" title="${esc(assigneeNamesLabel(t.assignees))}">${avatarsForNames(t.assignees,20)}</div>`
+      : '';
     return `<div class="tl-bar" data-task-id="${t.id}" onclick="handleBarClick(event,'${t.id}')"
       style="left:${left}px;width:${w}px;top:${top}px;background:${progressGradient(t.pct,warn)};color:${warn?'#fff':'#101317'}"
-      title="${esc(t.name)} — ${t.pct||0}% — drag to move">${t.pct||0}%</div>${badge}`;
+      title="${esc(t.name)} — ${t.pct||0}% — drag to move">${t.pct||0}%</div>${badge}${assigneeIcon}`;
   }).join('');
 
   const depArrows = [];
