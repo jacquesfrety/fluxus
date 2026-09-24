@@ -1854,11 +1854,11 @@ function renderTimelineView(){
     }
 
     const assigneeIcon = (t.assignees && t.assignees.length)
-      ? `<div class="tl-bar-avatar" style="left:${(left+w+6).toFixed(1)}px;top:${top+2}px" title="${esc(assigneeNamesLabel(t.assignees))}">${avatarsForNames(t.assignees,20)}</div>`
+      ? `<span style="margin-left:auto;padding-left:5px;flex:0 0 auto;display:flex" title="${esc(assigneeNamesLabel(t.assignees))}">${avatarsForNames(t.assignees,18)}</span>`
       : '';
     return `<div class="tl-bar" data-task-id="${t.id}" onclick="handleBarClick(event,'${t.id}')"
       style="left:${left}px;width:${w}px;top:${top}px;background:${progressGradient(t.pct,warn)};color:${warn?'#fff':'#101317'}"
-      title="${esc(t.name)} — ${t.pct||0}% — drag to move">${t.pct||0}%</div>${badge}${assigneeIcon}`;
+      title="${esc(t.name)} — ${t.pct||0}% — drag to move"><span>${t.pct||0}%</span>${assigneeIcon}</div>${badge}`;
   }).join('');
 
   const depArrows = [];
