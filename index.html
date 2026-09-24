@@ -1948,7 +1948,7 @@ function renderTimelineView(){
       </div>
     </div>
     <div class="tl-scrollctl">
-      <div class="tl-cols-slider-spacer"></div>
+      <div style="flex:0 0 ${state.timelineLabelsWidth+6}px"></div>
       <input type="range" id="tl-scroll-input" min="0" max="100" value="0" oninput="scrollFromSlider(this.value)">
     </div>
   `;
@@ -1993,6 +1993,7 @@ function wireTimelineResize(){
       handle.classList.remove('dragging');
       state.timelineLabelsWidth = Math.round(currentWidth);
       await saveTimelineLabelsWidth();
+      render();
     }
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
