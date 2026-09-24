@@ -1785,8 +1785,6 @@ function renderTimelineView(){
       <input type="range" id="tl-zoom-input" min="8" max="60" step="2" value="${state.timelineZoom||26}" oninput="setZoom(parseInt(this.value))">
     </span>
     <button class="btn btn-sm btn-ghost" onclick="scrollToToday()">Today</button>
-    <button class="btn btn-sm btn-ghost" onclick="panTimeline(-7)">◀ 7d</button>
-    <button class="btn btn-sm btn-ghost" onclick="panTimeline(7)">7d ▶</button>
     <span class="faint" style="font-size:11.5px">Gold line = today · gradient reflects progress · solid red / red arrow = dependency issue · ! = double-booked</span>
   </div>`;
 
@@ -1949,6 +1947,10 @@ function renderTimelineView(){
           ${depArrowsSvg}
         </div>
       </div>
+    </div>
+    <div class="row" style="justify-content:center;gap:8px;margin-top:10px">
+      <button class="btn btn-sm btn-ghost" onclick="panTimeline(-7)">◀ 7d</button>
+      <button class="btn btn-sm btn-ghost" onclick="panTimeline(7)">7d ▶</button>
     </div>
   `;
 }
