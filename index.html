@@ -1922,16 +1922,10 @@ function renderTimelineView(){
     </div>
   </div>`;
 
-  const colsSliderRow = `<div class="tl-cols-slider-row">
-    <div class="tl-cols-slider-spacer"></div>
-    <div class="tl-cols-slider-wrap"><input type="range" id="tl-cols-slider" min="0" max="100" value="0" oninput="scrollOtherColsFromSlider(this.value)"></div>
-  </div>`;
-
   return controlsBar + `
     <div class="tl-outer">
       <div class="tl-labels" id="tl-labels" style="flex:0 0 ${state.timelineLabelsWidth}px">
         ${labelsHead}
-        ${colsSliderRow}
         ${labelRows}
       </div>
       <div class="tl-resize-handle" id="tl-resize-handle" title="Drag to resize"></div>
@@ -1947,9 +1941,11 @@ function renderTimelineView(){
         </div>
       </div>
     </div>
-    <div class="tl-scrollctl">
-      <div style="flex:0 0 ${state.timelineLabelsWidth+6}px"></div>
-      <input type="range" id="tl-scroll-input" min="0" max="100" value="0" oninput="scrollFromSlider(this.value)">
+    <div style="display:flex;align-items:center;gap:0;margin-top:10px">
+      <div style="flex:0 0 200px"></div>
+      <div style="flex:0 0 ${Math.max(0, state.timelineLabelsWidth-200)}px"><input type="range" id="tl-cols-slider" min="0" max="100" value="0" oninput="scrollOtherColsFromSlider(this.value)" style="width:100%"></div>
+      <div style="flex:0 0 6px"></div>
+      <input type="range" id="tl-scroll-input" min="0" max="100" value="0" oninput="scrollFromSlider(this.value)" style="flex:1;min-width:0">
     </div>
   `;
 }
