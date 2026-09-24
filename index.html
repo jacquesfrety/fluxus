@@ -1,0 +1,3480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fluxus — Project Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#14171C; --surface:#1C2028; --surface2:#242A33; --surface3:#2C333E;
+    --line:#333B47; --ink:#EDEAE1; --ink-dim:#9BA3AE; --ink-faint:#5B6472;
+    --gold:#D9A441; --gold-dim:#B98A34; --teal:#4FB6AC; --blue:#3B82F6;
+    --grey:#6B7280; --violet:#B08BE0; --green:#6FCF97; --red:#E5646A;
+    --chart-line:#333B47; --chart-label:#5B6472; --chart-value:#9BA3AE; --chart-value-strong:#0F1216;
+    --weekend-bg:rgba(255,255,255,.07); --holiday-bg:rgba(229,100,106,.16);
+    --r:7px;
+  }
+  html[data-theme="light"]{
+    --bg:#F3F4F6; --surface:#FFFFFF; --surface2:#F1F2F5; --surface3:#E5E7EB;
+    --line:#DDE1E6; --ink:#171A1F; --ink-dim:#4B5563; --ink-faint:#8A94A3;
+    --chart-line:#DDE1E6; --chart-label:#8A94A3; --chart-value:#4B5563; --chart-value-strong:#0F1216;
+    --weekend-bg:rgba(0,0,0,.045); --holiday-bg:rgba(229,100,106,.13);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--ink);
+    font-family:'IBM Plex Sans',system-ui,sans-serif; font-size:14px;}
+  h1,h2,h3,.display{font-family:'Space Grotesk',system-ui,sans-serif;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  ::-webkit-scrollbar{width:9px;height:9px;}
+  ::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:6px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  button{font-family:inherit;cursor:pointer;}
+  input,select,textarea{font-family:inherit;font-size:13px;background:var(--surface2);
+    color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px 9px;}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold-dim);}
+  a{color:var(--teal);}
+
+  #app{display:flex;height:100vh;overflow:hidden;}
+  #picker{height:100vh;align-items:center;justify-content:center;}
+  .picker-card{width:340px;max-width:92vw;background:var(--surface);border:1px solid var(--line);
+    border-radius:12px;padding:28px 26px;}
+  .picker-list{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;margin-bottom:4px;}
+  .picker-item{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;
+    background:var(--surface2);border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:13px;}
+  .picker-item:hover{border-color:var(--ink-faint);}
+
+  /* ---- sidebar ---- */
+  #sidebar{width:196px;flex:0 0 196px;background:var(--surface);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;padding:18px 12px;}
+  .brand{display:flex;align-items:center;gap:9px;padding:4px 8px 22px;border-radius:8px;}
+  .brand.editable{cursor:pointer;}
+  .brand.editable:hover{background:var(--surface2);}
+  .brand.editable:hover .brand-name{color:var(--gold);}
+  .brand-mark{width:26px;height:26px;border-radius:6px;background:linear-gradient(135deg,var(--gold),var(--teal));
+    flex:0 0 auto;}
+  .brand-name{font-size:15px;font-weight:600;letter-spacing:.2px;}
+  .brand-sub{font-size:10.5px;color:var(--ink-faint);margin-top:1px;}
+  .project-header{display:flex;gap:16px;align-items:flex-start;background:var(--surface);
+    border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;margin-bottom:18px;}
+  .project-header-title{font-size:20px;font-weight:700;font-family:'Space Grotesk',sans-serif;}
+  .project-header-meta{display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;}
+  .project-header-notes{margin-top:9px;color:var(--ink-dim);font-size:13px;white-space:pre-wrap;line-height:1.5;}
+  nav{display:flex;flex-direction:column;gap:2px;}
+  .nav-btn{display:flex;align-items:center;gap:10px;padding:9px 10px;border:none;background:none;
+    color:var(--ink-dim);border-radius:6px;text-align:left;font-size:13.5px;font-weight:500;}
+  .nav-btn:hover{background:var(--surface2);color:var(--ink);}
+  .nav-btn.active{background:var(--surface2);color:var(--gold);}
+  .nav-icon{width:16px;text-align:center;opacity:.85;font-size:14px;}
+  .sidebar-foot{margin-top:auto;padding-top:14px;border-top:1px solid var(--line);}
+  .theme-toggle{display:flex;gap:4px;margin-top:10px;background:var(--surface2);border-radius:7px;padding:3px;}
+  .theme-toggle button{flex:1;border:none;background:none;color:var(--ink-faint);font-size:11.5px;
+    font-family:inherit;padding:6px 0;border-radius:5px;cursor:pointer;}
+  html[data-theme="dark"] .theme-toggle button[data-mode="dark"],
+  html[data-theme="light"] .theme-toggle button[data-mode="light"]{background:var(--surface3);color:var(--ink);font-weight:600;}
+  .whoami-label{font-size:10.5px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.5px;
+    margin-bottom:6px;padding-left:2px;}
+
+  /* ---- main ---- */
+  #main{flex:1;display:flex;flex-direction:column;min-width:0;}
+  #topbar{padding:16px 26px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;
+    justify-content:space-between;gap:16px;flex-wrap:wrap;}
+  #topbar h1{font-size:19px;margin:0;font-weight:600;}
+  #topbar .sub{color:var(--ink-dim);font-size:12.5px;margin-top:2px;}
+  #view{flex:1;overflow:auto;padding:22px 26px 60px;}
+
+  .btn{background:var(--surface2);border:1px solid var(--line);color:var(--ink);padding:7px 13px;
+    border-radius:6px;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;}
+  .btn:hover{border-color:var(--ink-faint);}
+  .btn-gold{background:var(--gold);border-color:var(--gold);color:#1A1608;font-weight:600;}
+  .btn-gold:hover{background:#E5B355;}
+  .btn-ghost{background:none;border-color:transparent;color:var(--ink-dim);}
+  .btn-ghost:hover{color:var(--ink);background:var(--surface2);}
+  .btn-sm{padding:4px 9px;font-size:12px;}
+  .btn-danger{color:var(--red);}
+
+  .pill{display:inline-block;padding:2.5px 9px;border-radius:99px;font-size:11px;font-weight:600;
+    letter-spacing:.2px;white-space:nowrap;}
+  .row{display:flex;align-items:center;}
+  .grow{flex:1;}
+  .muted{color:var(--ink-dim);}
+  .faint{color:var(--ink-faint);}
+  .empty-state{padding:50px 20px;text-align:center;color:var(--ink-faint);}
+  .empty-state .display{color:var(--ink-dim);font-size:16px;margin-bottom:6px;}
+
+  /* filter bar */
+  .filterbar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;}
+  .filterbar select, .filterbar input{padding:6px 8px;font-size:12.5px;}
+
+  /* ---- task table ---- */
+  table{width:100%;border-collapse:collapse;}
+  .ttable th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;
+    color:var(--ink-faint);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);}
+  .ttable th.sortable{cursor:pointer;user-select:none;}
+  .ttable th.sortable:hover{color:var(--ink);}
+  .ttable td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:13px;}
+  .ttable tr.taskrow:hover td{background:var(--surface2);}
+  .taskname{font-weight:500;cursor:pointer;}
+  .taskname:hover{color:var(--gold);text-decoration:underline;}
+  .task-id{color:var(--ink-faint);font-size:11px;}
+  select.inline-edit, input.inline-edit{background:var(--surface3);border:1px solid var(--line);
+    color:var(--ink-dim);font:inherit;font-size:12.5px;padding:3px 6px;border-radius:5px;cursor:pointer;
+    max-width:140px;}
+  input.inline-edit.pct-input{width:44px;max-width:44px;-moz-appearance:textfield;text-align:right;}
+  input.inline-edit.pct-input::-webkit-outer-spin-button,
+  input.inline-edit.pct-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+  select.inline-edit:hover, input.inline-edit:hover{border-color:var(--ink-faint);}
+  select.inline-edit:focus, input.inline-edit:focus{outline:none;border-color:var(--gold-dim);cursor:text;}
+  input.inline-edit[type=date]{max-width:120px;cursor:text;}
+  input.inline-edit[type=number]{max-width:48px;cursor:text;text-align:right;}
+  .dep-warn{color:var(--red);font-size:11px;margin-top:2px;}
+  .dep-ok{color:var(--green);font-size:11px;margin-top:2px;}
+  .listtag{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:5px;background:var(--surface3);
+    color:var(--ink-dim);}
+  .tasklisttag{display:inline-block;font-size:10.5px;padding:1.5px 7px;border-radius:5px;
+    border:1px solid var(--line);color:var(--ink-dim);background:none;}
+  .tagpill{display:inline-block;font-size:10.5px;padding:2.5px 8px;border-radius:5px;font-weight:600;
+    white-space:nowrap;}
+  .statuspill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+    padding:3px 9px;border-radius:99px;white-space:nowrap;}
+  .bar-track{width:64px;height:5px;background:var(--surface3);border-radius:3px;overflow:hidden;}
+  .bar-fill{height:100%;background:var(--teal);}
+
+  /* ---- kanban ---- */
+  .kanban{display:flex;gap:14px;align-items:flex-start;overflow-x:auto;padding-bottom:10px;}
+  .kcol{flex:0 0 262px;background:var(--surface2);border:1px solid var(--surface3);border-radius:var(--r);
+    min-height:120px;box-shadow:0 3px 10px rgba(0,0,0,.22);}
+  .kcol-head{padding:10px 12px;font-size:12.5px;font-weight:700;border-top-left-radius:var(--r);
+    border-top-right-radius:var(--r);display:flex;justify-content:space-between;align-items:center;
+    border-bottom:1px solid rgba(255,255,255,.06);}
+  .kcol-body{padding:9px;display:flex;flex-direction:column;gap:8px;min-height:60px;}
+  .kcol-body.dragover{background:var(--surface3);}
+  .kcard{background:var(--surface3);border:1px solid var(--line);border-radius:6px;padding:10px 11px;
+    cursor:pointer;}
+  .kcard:hover{border-color:var(--ink-faint);}
+  .kcard.kcard-danger{background:rgba(229,100,106,.16);border-color:var(--red);}
+  .kcard .tagpill{margin-bottom:6px;margin-right:4px;}
+  .kcard-name{font-size:13px;font-weight:500;line-height:1.35;margin-bottom:6px;}
+  .kcard-meta{font-size:11.5px;color:var(--ink-dim);display:flex;justify-content:space-between;align-items:center;}
+  .kcard-warn{margin-top:6px;font-size:11px;color:#FFC2C5;font-weight:600;}
+
+  /* ---- timeline ---- */
+  .tl-controls{display:flex;gap:14px;align-items:center;margin-bottom:14px;flex-wrap:wrap;}
+  .tl-zoom{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-dim);}
+  .tl-zoom input[type=range]{width:110px;}
+  .tl-scrollctl{display:flex;align-items:center;gap:8px;margin-top:10px;}
+  .tl-scrollctl input[type=range]{flex:1;}
+  .tl-outer{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:flex;}
+  .tl-labels{flex:0 0 520px;min-width:200px;background:var(--surface);border-right:1px solid var(--line);}
+  .tl-resize-handle{flex:0 0 6px;cursor:col-resize;background:var(--surface3);position:relative;}
+  .tl-resize-handle::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:2px;height:26px;border-radius:2px;background:var(--ink-faint);}
+  .tl-resize-handle:hover, .tl-resize-handle.dragging{background:var(--gold-dim);}
+  .tl-resize-handle:hover::after, .tl-resize-handle.dragging::after{background:#1A1608;}
+  .tl-labels-row{display:flex;align-items:center;height:38px;border-bottom:1px solid var(--line);cursor:pointer;}
+  .tl-labels-row:last-child{border-bottom:none;}
+  .tl-labels-row:not(.head):hover{background:var(--surface2);}
+  .tl-labels-row.head{height:44px;background:var(--surface3);font-size:11px;color:var(--ink-faint);
+    text-transform:uppercase;letter-spacing:.4px;cursor:default;}
+  .tl-labels-row.head select.inline-edit{max-width:100%;font-size:10.5px;text-transform:none;letter-spacing:0;}
+  .tl-col-task-fixed{flex:0 0 200px;padding:0 12px;display:flex;align-items:center;gap:6px;overflow:hidden;}
+  .tl-col-task-fixed .task-id{flex:0 0 auto;white-space:nowrap;}
+  .tl-col-task-fixed span:last-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tl-col-task-fixed>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tl-cols-scroll-outer{flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;border-left:1px solid var(--line);
+    scrollbar-width:none;}
+  .tl-cols-scroll-outer::-webkit-scrollbar{display:none;}
+  .tl-cols-scroll-inner{display:flex;align-items:center;gap:8px;padding:0 10px;width:max-content;}
+  .tl-col-assignee{flex:0 0 92px;display:flex;align-items:center;gap:5px;font-size:11.5px;
+    color:var(--ink-dim);overflow:hidden;}
+  .tl-col-assignee>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tl-col-estimation{flex:0 0 68px;font-size:11.5px;color:var(--ink-dim);text-align:center;}
+  .tl-col-category{flex:0 0 104px;overflow:hidden;}
+  .tl-col-list{flex:0 0 96px;overflow:hidden;}
+  .tl-cols-slider-row{display:flex;align-items:center;height:20px;background:var(--surface3);
+    border-bottom:1px solid var(--line);}
+  .tl-cols-slider-spacer{flex:0 0 200px;}
+  .tl-cols-slider-wrap{flex:1;min-width:0;padding:0 8px;border-left:1px solid var(--line);}
+  .tl-cols-slider-wrap input[type=range]{width:100%;height:14px;margin:0;display:block;}
+  .tl-scrollarea{flex:1;overflow-x:auto;overflow-y:hidden;background:var(--surface);}
+  .tl-inner{position:relative;}
+  .tl-daycol{position:absolute;top:0;border-left:1px solid var(--line);opacity:.45;}
+  .tl-daycol.month-start{opacity:1;border-left:1px solid var(--ink-faint);}
+  .tl-weekend{position:absolute;top:0;background:var(--weekend-bg);}
+  .tl-weekend.tl-holiday{background:var(--holiday-bg);}
+  .tl-monthlabel{position:absolute;top:5px;font-size:11px;font-weight:600;color:var(--ink-dim);
+    white-space:nowrap;}
+  .tl-daynum{position:absolute;top:24px;font-size:10px;color:var(--chart-label);text-align:center;}
+  .tl-headerband{height:44px;border-bottom:1px solid var(--line);position:relative;background:var(--surface3);}
+  .tl-cal-slider-row{position:sticky;left:0;top:0;height:20px;background:var(--surface3);
+    border-bottom:1px solid var(--line);z-index:8;display:flex;align-items:center;padding:0;box-sizing:border-box;}
+  .tl-cal-slider-row input[type=range]{width:100%;display:block;}
+  .tl-rowband{position:absolute;left:0;right:0;height:38px;border-bottom:1px solid var(--line);}
+  .tl-today{position:absolute;top:0;border-left:2px solid var(--gold);z-index:3;}
+  .tl-bar{position:absolute;top:7px;height:24px;border-radius:5px;cursor:grab;display:flex;
+    align-items:center;padding:0 8px;font-size:11px;color:#101317;font-weight:600;white-space:nowrap;
+    overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.3) inset;z-index:2;}
+  .tl-conflict-badge{position:absolute;height:13px;border-radius:3px 3px 0 0;background:var(--red);
+    color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;z-index:6;box-shadow:0 0 0 1px var(--surface);}
+  .tl-conflict-badge:hover{background:#ff7b81;}
+
+  /* ---- dashboard ---- */
+  .dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-bottom:18px;}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;}
+  .card h3{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink-faint);
+    margin:0 0 12px;font-weight:600;}
+  .stat-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px;}
+  .stat-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:8px;}
+  .bignum{font-size:34px;font-weight:700;font-family:'Space Grotesk',sans-serif;}
+  .bignum.warn{color:var(--red);}
+  .dash-list-card{margin-bottom:14px;}
+  #drive-dropzone{transition:border-color .15s,background .15s;}
+  #drive-dropzone.drive-drag-over{border-color:var(--gold);background:rgba(217,164,65,.06);}
+  .dash-2col{display:flex;gap:14px;align-items:stretch;margin-bottom:14px;}
+  .dash-2col > div{flex:1;min-width:0;}
+  .dash-2col .dash-list-card{margin-bottom:0;height:100%;}
+  .dash-2col .project-header{margin-bottom:0;height:100%;}
+  .dash-task-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:7px 2px;
+    border-bottom:1px solid var(--line);cursor:pointer;font-size:12.5px;}
+  .dash-task-row:last-child{border-bottom:none;}
+  .dash-task-row:hover{background:var(--surface2);}
+  .dash-task-main{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    display:flex;align-items:center;gap:7px;}
+  .dash-task-side{display:flex;align-items:center;gap:10px;flex:0 0 auto;font-size:11.5px;color:var(--ink-dim);}
+  .dash-more{padding-top:8px;font-size:12px;color:var(--teal);cursor:pointer;}
+  .dash-more:hover{text-decoration:underline;}
+  /* ---- forum / PMS support ---- */
+  .forum-post-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+    padding:14px 16px;margin-bottom:10px;cursor:pointer;}
+  .forum-post-card:hover{border-color:var(--ink-faint);}
+  .forum-post-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
+  .forum-post-title{font-weight:600;font-size:14px;flex:1;min-width:0;}
+  .forum-post-desc{font-size:12.5px;color:var(--ink-dim);line-height:1.5;margin-top:2px;
+    overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+  .forum-post-meta{font-size:11.5px;color:var(--ink-faint);display:flex;align-items:center;gap:14px;margin-top:10px;flex-wrap:wrap;}
+  .forum-vote-btn{display:flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--line);
+    border-radius:6px;padding:3px 10px;font-size:12px;color:var(--ink-dim);cursor:pointer;}
+  .forum-vote-btn:hover{border-color:var(--ink-faint);}
+  .forum-vote-btn.voted{background:rgba(217,164,65,.16);border-color:var(--gold-dim);color:var(--gold);font-weight:600;}
+
+  /* ---- documents ---- */
+  .doc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;}
+  .doc-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;cursor:pointer;}
+  .doc-card:hover{border-color:var(--ink-faint);}
+  .doc-thumb{width:100%;height:110px;background:var(--surface2);display:flex;align-items:center;
+    justify-content:center;font-size:34px;overflow:hidden;}
+  .doc-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .doc-card-body{padding:10px 12px;}
+  .doc-card-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .doc-card-meta{font-size:11px;color:var(--ink-faint);margin-top:6px;display:flex;align-items:center;
+    justify-content:space-between;gap:6px;}
+  .chart-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:16px;padding-top:14px;
+    border-top:1px solid var(--line);}
+  .chart-legend-item{font-size:12px;color:var(--ink-dim);display:flex;align-items:center;gap:6px;}
+  .chart-legend-item[onclick]:hover{color:var(--gold);}
+  .chart-legend-dot{width:10px;height:10px;border-radius:3px;display:inline-block;flex:0 0 auto;}
+  .assignee-chart{display:flex;flex-direction:column;}
+  .assignee-row{display:flex;align-items:center;gap:10px;padding:6px 0;}
+  .assignee-label{flex:0 0 132px;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .assignee-label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .assignee-barwrap{flex:1;display:flex;align-items:center;gap:8px;min-width:0;}
+  .assignee-bar{flex:1;display:flex;height:22px;border-radius:4px;overflow:hidden;background:var(--surface3);}
+  .assignee-seg{display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;
+    color:#101317;white-space:nowrap;}
+  .assignee-total{flex:0 0 26px;font-size:12px;font-weight:600;color:var(--ink-dim);text-align:right;}
+  .assignee-axis{display:flex;margin-top:2px;}
+  .assignee-axis-spacer{flex:0 0 132px;}
+  .assignee-axis-ticks{flex:1;position:relative;height:16px;margin-right:34px;}
+  .assignee-axis-ticks span{position:absolute;top:0;font-size:10px;color:var(--ink-faint);transform:translateX(-50%);}
+
+  /* ---- team ---- */
+  .team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;}
+  .tcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;}
+  .tcard-top{display:flex;align-items:center;gap:11px;margin-bottom:10px;}
+  .avatar-circle{border-radius:50%;background:var(--surface3);display:flex;align-items:center;
+    justify-content:center;font-weight:700;color:var(--gold);flex:0 0 auto;overflow:hidden;}
+  .avatar-circle img{width:100%;height:100%;object-fit:cover;display:block;}
+  .tcard-name{font-weight:600;font-size:14.5px;}
+  .tcard-role{color:var(--gold);font-size:12px;margin-top:1px;}
+  .tcard-field{font-size:12px;color:var(--ink-dim);margin-top:3px;}
+  .tcard-actions{margin-top:10px;display:flex;gap:6px;}
+
+  /* ---- drawer ---- */
+  #overlay{position:fixed;inset:0;background:rgba(8,9,11,.55);display:none;z-index:40;}
+  #overlay.open{display:block;}
+  #drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,100vw);background:var(--surface);
+    border-left:1px solid var(--line);z-index:41;transform:translateX(100%);transition:transform .22s ease;
+    display:flex;flex-direction:column;}
+  #drawer.open{transform:translateX(0);}
+  .drawer-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;
+    align-items:flex-start;gap:10px;}
+  .drawer-body{flex:1;overflow:auto;padding:18px 20px;}
+  .field{margin-bottom:13px;}
+  .field label{display:block;font-size:11px;color:var(--ink-faint);text-transform:uppercase;
+    letter-spacing:.3px;margin-bottom:5px;font-weight:600;}
+  .field input,.field select,.field textarea{width:100%;}
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .dep-checks{display:flex;flex-wrap:wrap;gap:6px;}
+  .dep-chip{font-size:11.5px;padding:4px 9px;border-radius:99px;border:1px solid var(--line);
+    background:var(--surface2);color:var(--ink-dim);}
+  .dep-chip.on{background:var(--gold);border-color:var(--gold);color:#1A1608;font-weight:600;}
+  .warn-box{background:rgba(229,100,106,.12);border:1px solid rgba(229,100,106,.4);color:#F3A2A6;
+    padding:9px 11px;border-radius:6px;font-size:12.5px;margin-bottom:13px;}
+  .manage-list{display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;}
+  .manage-row{display:flex;align-items:center;gap:8px;}
+  .manage-row input[type=text]{flex:1;}
+  .manage-row input[type=color]{width:34px;height:34px;padding:2px;flex:0 0 auto;border-radius:6px;}
+
+  /* chat */
+  .chat-divider{border-top:1px solid var(--line);margin:18px 0 14px;padding-top:16px;}
+  .chat-divider h3{font-size:13px;margin:0 0 12px;font-weight:600;}
+  .chat-thread{display:flex;flex-direction:column;gap:12px;margin-bottom:14px;}
+  .chat-msg{display:flex;gap:9px;}
+  .chat-avatar{width:26px;height:26px;border-radius:50%;background:var(--surface3);flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--gold);}
+  .chat-bubble{background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:8px 11px;
+    max-width:100%;}
+  .chat-meta{font-size:11px;color:var(--ink-faint);margin-bottom:3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .chat-meta b{color:var(--ink-dim);}
+  .chat-actions{margin-left:auto;display:flex;gap:8px;}
+  .chat-action-link{font-size:10.5px;color:var(--ink-faint);cursor:pointer;}
+  .chat-action-link:hover{color:var(--teal);text-decoration:underline;}
+  .chat-text{font-size:13px;line-height:1.45;white-space:pre-wrap;}
+  .chat-text .mention{color:var(--gold);font-weight:600;}
+  .chat-img{margin-top:7px;max-width:100%;border-radius:6px;display:block;cursor:zoom-in;border:1px solid var(--line);}
+  .chat-empty{color:var(--ink-faint);font-size:12.5px;padding:10px 2px;}
+  .chat-reply-quote{font-size:11px;color:var(--ink-faint);border-left:2px solid var(--line);padding-left:7px;
+    margin-bottom:5px;}
+  .chat-edit-row textarea{width:100%;min-height:50px;}
+  .chat-edit-row .row{gap:6px;margin-top:6px;}
+  .chat-compose{border:1px solid var(--line);border-radius:8px;padding:9px;background:var(--surface2);}
+  .chat-compose textarea{width:100%;border:none;background:none;resize:vertical;min-height:52px;padding:2px;}
+  .chat-compose textarea:focus{outline:none;}
+  .chat-compose-foot{display:flex;justify-content:space-between;align-items:center;margin-top:6px;}
+  .chat-preview{position:relative;display:inline-block;margin-top:8px;}
+  .chat-preview img{max-height:90px;border-radius:6px;border:1px solid var(--line);display:block;}
+  .chat-preview button{position:absolute;top:-7px;right:-7px;width:19px;height:19px;border-radius:50%;
+    background:var(--red);color:#fff;border:none;font-size:11px;line-height:1;padding:0;}
+  .chat-reply-banner{display:flex;align-items:center;gap:8px;background:var(--surface3);border-radius:6px;
+    padding:6px 9px;margin-bottom:7px;font-size:11.5px;color:var(--ink-dim);}
+  .chat-reply-banner b{color:var(--gold);}
+  .chat-reply-banner .close{margin-left:auto;cursor:pointer;color:var(--ink-faint);font-weight:700;}
+  .mention-picker{position:absolute;background:var(--surface3);border:1px solid var(--line);border-radius:8px;
+    padding:5px;margin-top:4px;z-index:5;max-height:160px;overflow-y:auto;min-width:140px;
+    box-shadow:0 6px 18px rgba(0,0,0,.35);}
+  .mention-picker-item{padding:6px 9px;border-radius:5px;cursor:pointer;font-size:12.5px;display:flex;
+    align-items:center;gap:7px;}
+  .mention-picker-item:hover{background:var(--surface2);}
+  .assignee-picker-pop{position:fixed;background:var(--surface3);border:1px solid var(--line);border-radius:8px;
+    padding:5px;z-index:55;max-height:240px;overflow-y:auto;min-width:170px;box-shadow:0 10px 30px rgba(0,0,0,.4);}
+
+  /* notifications */
+  .notif-btn{position:relative;background:var(--surface2);border:1px solid var(--line);border-radius:8px;
+    width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:15px;
+    color:var(--ink-dim);flex:0 0 auto;}
+  .notif-btn:hover{color:var(--ink);border-color:var(--ink-faint);}
+  .notif-badge{position:absolute;top:-5px;right:-5px;background:var(--red);color:#fff;font-size:10px;
+    font-weight:700;min-width:16px;height:16px;border-radius:9px;display:flex;align-items:center;
+    justify-content:center;padding:0 4px;}
+  .notif-panel{position:absolute;top:44px;right:0;width:320px;max-height:420px;overflow-y:auto;
+    background:var(--surface2);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.4);
+    z-index:45;display:none;}
+  .notif-panel.open{display:block;}
+  .notif-panel-head{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;
+    border-bottom:1px solid var(--line);font-size:12.5px;font-weight:600;}
+  .notif-item{padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:12px;
+    display:flex;gap:9px;align-items:flex-start;}
+  .notif-item:last-child{border-bottom:none;}
+  .notif-item:hover{background:var(--surface3);}
+  .notif-item.unread{background:rgba(217,164,65,.08);}
+  .notif-icon{flex:0 0 auto;width:20px;text-align:center;margin-top:1px;}
+  .notif-text{flex:1;min-width:0;color:var(--ink-dim);line-height:1.4;}
+  .notif-text b{color:var(--ink);}
+  .notif-time{font-size:10px;color:var(--ink-faint);margin-top:2px;}
+  .notif-empty{padding:26px 14px;text-align:center;color:var(--ink-faint);font-size:12px;}
+
+  #lightbox{position:fixed;inset:0;background:rgba(6,7,9,.86);z-index:60;display:none;
+    align-items:center;justify-content:center;padding:30px;}
+  #lightbox.open{display:flex;}
+  #lightbox img{max-width:calc(100vw - 60px);max-height:calc(100vh - 90px);border-radius:6px;touch-action:none;user-select:none;-webkit-user-drag:none;}
+  #drive-lightbox{position:fixed;inset:0;background:rgba(6,7,9,.86);z-index:60;display:none;
+    align-items:center;justify-content:center;padding:30px;}
+  #drive-lightbox.open{display:flex;}
+  #drive-lightbox img, #drive-lightbox video{max-width:100%;max-height:100%;border-radius:6px;}
+  #drive-lightbox img{max-width:calc(100vw - 60px);max-height:calc(100vh - 130px);touch-action:none;user-select:none;-webkit-user-drag:none;}
+  .drive-lightbox-inner{display:flex;flex-direction:column;align-items:center;gap:10px;max-width:100%;max-height:100%;}
+
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface3);
+    border:1px solid var(--line);color:var(--ink);padding:9px 16px;border-radius:7px;font-size:12.5px;
+    z-index:80;opacity:0;pointer-events:none;transition:opacity .2s ease;}
+  .toast.show{opacity:1;}
+
+  @media (max-width:820px){
+    #sidebar{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);transition:transform .2s;z-index:50;}
+    #sidebar.open{transform:translateX(0);}
+    #main{width:100%;}
+    .field-row{grid-template-columns:1fr;}
+    #drawer{width:100vw;}
+    .dash-2col{flex-direction:column;}
+  }
+</style>
+</head>
+<body>
+
+<div id="picker" style="display:none"></div>
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand" id="brand-block">
+      <div id="brand-icon"><div class="brand-mark"></div></div>
+      <div>
+        <div class="brand-name" id="brand-title">Fluxus</div>
+        <div class="brand-sub" id="brand-sub">Project Tracker</div>
+      </div>
+    </div>
+    <nav id="nav"></nav>
+    <div class="sidebar-foot">
+      <div class="whoami-label">You are</div>
+      <select id="whoami" style="width:100%"></select>
+      <div class="theme-toggle" id="theme-toggle">
+        <button onclick="setTheme('dark')" data-mode="dark">☾ Dark</button>
+        <button onclick="setTheme('light')" data-mode="light">☀ Light</button>
+      </div>
+      <div style="text-align:center;margin-top:10px">
+        <span class="chat-action-link" style="font-size:11px" onclick="switchProject()">⇄ Switch project</span>
+      </div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="topbar">
+      <div>
+        <h1 id="view-title">Tasks</h1>
+        <div class="sub" id="view-sub"></div>
+      </div>
+      <div class="row" style="gap:10px;position:relative">
+        <div id="topbar-actions"></div>
+        <button class="notif-btn" id="notif-btn" onclick="toggleNotifPanel()">🔔<span id="notif-badge"></span></button>
+        <div class="notif-panel" id="notif-panel"></div>
+      </div>
+    </div>
+    <div id="view"></div>
+  </main>
+</div>
+
+<div id="overlay" onclick="closeDrawer()"></div>
+<div id="drawer"></div>
+<div id="lightbox" onclick="closeLightbox()">
+  <div onclick="event.stopPropagation()" style="display:flex;flex-direction:column;align-items:center;gap:8px;max-width:100%;max-height:100%">
+    <img id="lightbox-img" src="" />
+    <div class="faint" style="font-size:11px">Scroll to zoom · drag to pan · double-click to reset</div>
+  </div>
+</div>
+<div id="drive-lightbox" onclick="closeDriveMedia()"><div class="drive-lightbox-inner" onclick="event.stopPropagation()"><div id="drive-lightbox-content"></div><div class="faint" id="drive-lightbox-hint" style="font-size:11px"></div><a id="drive-lightbox-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ghost" style="text-decoration:none">Open in Google Drive ↗</a></div></div>
+<div id="assignee-picker"></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+/* ============================= constants ============================= */
+const STATUSES = ["Not Started","In Progress","In Review","Completed","Needs Revision","On Hold"];
+const STATUS_COLOR = {"Not Started":"var(--grey)","In Progress":"var(--blue)","In Review":"var(--violet)","Completed":"var(--green)","Needs Revision":"var(--teal)","On Hold":"var(--red)"};
+const STATUS_HEX = {"Not Started":"#6B7280","In Progress":"#3B82F6","In Review":"#B08BE0","Completed":"#6FCF97","Needs Revision":"#4FB6AC","On Hold":"#E5646A"};
+const PRIORITIES = ["Low","Medium","High"];
+const PRIORITY_COLOR = {"Low":"var(--green)","Medium":"var(--gold)","High":"var(--red)"};
+const PRIORITY_HEX = {"Low":"#6FCF97","Medium":"#D9A441","High":"#E5646A"};
+const ROLES = ["Supervisor","Student Lead","Student","Lecturer"];
+const DEFAULT_ROLE = "Student";
+const PROJECT_TYPES = ["Client","Internal","Students"];
+const PROJECT_TYPE_COLOR = {"Client":"#D9A441","Internal":"#4FB6AC","Students":"#3B82F6"};
+const FORUM_TYPES = ["Bug","Feature Request"];
+const FORUM_TYPE_COLOR = {"Bug":"#E5646A","Feature Request":"#4FB6AC"};
+const FORUM_STATUSES = ["Open","Planned","In Progress","Resolved","Declined"];
+const FORUM_STATUS_COLOR = {"Open":"#6B7280","Planned":"#3B82F6","In Progress":"#D9A441","Resolved":"#6FCF97","Declined":"#8A94A3"};
+const DOC_TYPES = ["Image","Video","Document","Website","Folder","Other"];
+const DOC_TYPE_ICON = {"Image":"🖼","Video":"🎬","Document":"📄","Website":"🌐","Folder":"📁","Other":"🔗"};
+const DOC_TYPE_COLOR = {"Image":"#3B82F6","Video":"#B08BE0","Document":"#4FB6AC","Website":"#7FA8D9","Folder":"#D9A441","Other":"#6B7280"};
+
+/* ============================= firebase ============================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyD8zC3Q78dan_ceYrHqCv0fl36c1dtNNG0",
+  authDomain: "pms-project-b11da.firebaseapp.com",
+  projectId: "pms-project-b11da",
+  storageBucket: "pms-project-b11da.firebasestorage.app",
+  messagingSenderId: "789284988664",
+  appId: "1:789284988664:web:488a48e861fe0768923d0d"
+};
+let db = null;
+try{
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+}catch(e){ console.error('Firebase init failed', e); }
+
+/* ---- google drive (real read/write, via OAuth) ---- */
+const GOOGLE_CLIENT_ID = '335855484636-f30688quamr1366ejqnqeo1fgev0o3vu.apps.googleusercontent.com';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
+let driveAccessToken = null;
+let driveTokenClient = null;
+function initDriveAuth(){
+  if(driveTokenClient || typeof google === 'undefined' || !google.accounts) return;
+  driveTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: DRIVE_SCOPE,
+    callback: (resp)=>{
+      if(resp.error){ toast('Google sign-in failed'); return; }
+      driveAccessToken = resp.access_token;
+      state.driveSignedIn = true;
+      const rootId = driveFolderId(state.project.driveUrl);
+      state.driveCurrentFolderId = rootId;
+      state.driveBreadcrumb = [{id: rootId, name: 'Team drive'}];
+      state.driveFiles = null;
+      render();
+      loadDriveFolder(rootId);
+    }
+  });
+}
+function signInGoogleDrive(){
+  initDriveAuth();
+  if(!driveTokenClient){ toast('Google sign-in is still loading — try again in a moment'); return; }
+  driveTokenClient.requestAccessToken();
+}
+function driveHeaders(extra){
+  return Object.assign({ Authorization: 'Bearer ' + driveAccessToken }, extra||{});
+}
+async function driveApiList(folderId){
+  const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
+  const fields = encodeURIComponent('files(id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size)');
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=${fields}&orderBy=folder,name&pageSize=300`, {
+    headers: driveHeaders()
+  });
+  if(!res.ok) throw new Error('list failed: '+res.status);
+  const data = await res.json();
+  return data.files || [];
+}
+async function driveApiUpload(file, folderId){
+  const metadata = { name: file.name, parents: [folderId] };
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(metadata)], {type:'application/json'}));
+  form.append('file', file);
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,thumbnailLink,webViewLink,mimeType', {
+    method: 'POST', headers: driveHeaders(), body: form
+  });
+  if(!res.ok) throw new Error('upload failed: '+res.status);
+  return res.json();
+}
+async function driveApiCreateFolder(name, parentId){
+  const res = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType', {
+    method: 'POST', headers: driveHeaders({'Content-Type':'application/json'}),
+    body: JSON.stringify({ name, mimeType:'application/vnd.google-apps.folder', parents:[parentId] })
+  });
+  if(!res.ok) throw new Error('create folder failed: '+res.status);
+  return res.json();
+}
+async function driveApiFindOrCreateFolder(name, parentId){
+  const safeName = name.replace(/'/g, "\\'");
+  const q = encodeURIComponent(`name='${safeName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`, { headers: driveHeaders() });
+  if(!res.ok) throw new Error('folder search failed: '+res.status);
+  const data = await res.json();
+  if(data.files && data.files.length>0) return data.files[0].id;
+  const created = await driveApiCreateFolder(name, parentId);
+  return created.id;
+}
+async function ensureTaskDriveFolder(task){
+  const rootId = driveFolderId(state.project.driveUrl);
+  if(!rootId) throw new Error('no team drive folder configured for this project');
+  if(!state.project.tasksFolderId){
+    state.project.tasksFolderId = await driveApiFindOrCreateFolder('Tasks', rootId);
+    await saveProject();
+  }
+  if(!task.driveFolderId){
+    task.driveFolderId = await driveApiFindOrCreateFolder(task.id, state.project.tasksFolderId);
+    await saveTasks();
+  }
+  return task.driveFolderId;
+}
+function driveThumbLarge(thumbnailLink, size){
+  if(!thumbnailLink) return '';
+  return /=s\d+$/.test(thumbnailLink) ? thumbnailLink.replace(/=s\d+$/, '=s'+(size||1600)) : thumbnailLink;
+}
+async function driveApiRename(fileId, newName){
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name`, {
+    method: 'PATCH', headers: driveHeaders({'Content-Type':'application/json'}),
+    body: JSON.stringify({ name: newName })
+  });
+  if(!res.ok) throw new Error('rename failed: '+res.status);
+  return res.json();
+}
+async function driveApiMove(fileId, newParentId, oldParentId){
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?addParents=${newParentId}&removeParents=${oldParentId}&fields=id,parents`, {
+    method: 'PATCH', headers: driveHeaders()
+  });
+  if(!res.ok) throw new Error('move failed: '+res.status);
+  return res.json();
+}
+async function driveApiTrash(fileId){
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,trashed`, {
+    method: 'PATCH', headers: driveHeaders({'Content-Type':'application/json'}),
+    body: JSON.stringify({ trashed: true })
+  });
+  if(!res.ok) throw new Error('trash failed: '+res.status);
+  return res.json();
+}
+
+/* ============================= state ============================= */
+let state = {
+  projectId: null,
+  team: [],
+  project: {title:"Untitled Project", icon:"", type:"Students", period:"", notes:"", nonWorkingDays:[], driveUrl:""},
+  notifications: [],
+  forumPosts: [],
+  supportFilters: { type: "", status: "" },
+  documents: [],
+  docFilters: { type: "", search: "" },
+  driveSignedIn: false,
+  driveCurrentFolderId: null,
+  driveBreadcrumb: [],
+  driveFiles: null,
+  driveLoading: false,
+  driveMovePending: null,
+  categories: [],      // work-type categories, e.g. Modelling, Audio, Web App
+  taskLists: [],        // actual task-list containers, e.g. "Environment 1"
+  tasks: [],
+  currentUser: "",
+  view: "dashboard",
+  drawerTaskId: null,
+  timelineZoom: 26,
+  timelineLabelsWidth: 520,
+  theme: 'dark',
+  timelineScrollFrac: null,
+  chatCache: {},
+  filters: { category: "", taskList: "", assignee: "", status: "", search: "" },
+  timelineFilters: { category: "", taskList: "", assignee: "" },
+  sort: { key: null, dir: "asc" },
+};
+
+function uid(prefix){ return prefix + Math.random().toString(36).slice(2,7); }
+function nextTaskId(){
+  let n = 1;
+  const ids = new Set(state.tasks.map(t=>t.id));
+  while(ids.has("T"+String(n).padStart(2,"0"))) n++;
+  return "T"+String(n).padStart(2,"0");
+}
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ============================= storage ============================= */
+function ensureCategoryShape(arr){
+  if(!Array.isArray(arr)) return [];
+  return arr.map((c,i)=> (c && typeof c === 'object') ? c : {name: c, color: TAG_PALETTE[i % TAG_PALETTE.length]});
+}
+/* ---- storage: Firestore for shared project data, localStorage for personal/device settings ---- */
+function lsGet(key, def){
+  try{ const v = localStorage.getItem(key); return v!==null ? JSON.parse(v) : def; }catch(e){ return def; }
+}
+function lsSet(key, value){
+  try{ localStorage.setItem(key, JSON.stringify(value)); }catch(e){}
+}
+async function fsGet(key){
+  if(!db || !state.projectId) return null;
+  try{
+    const snap = await db.collection('projects').doc(state.projectId).collection('store').doc(key).get();
+    return snap.exists ? JSON.parse(snap.data().value) : null;
+  }catch(e){ console.error(e); return null; }
+}
+async function fsSet(key, value){
+  if(!db || !state.projectId){ toast('Not connected — nothing was saved'); return; }
+  try{
+    await db.collection('projects').doc(state.projectId).collection('store').doc(key).set({value: JSON.stringify(value)});
+  }catch(e){ console.error(e); toast('Save failed'); }
+}
+async function loadAll(){
+  try{
+    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents] = await Promise.all([
+      fsGet('categories'), fsGet('taskLists'), fsGet('tasks'),
+      fsGet('team'), fsGet('project'),
+      fsGet('notifications'), fsGet('forumPosts'), fsGet('documents')
+    ]);
+    state.team = team || [];
+    state.tasks = tasks || [];
+    state.currentUser = lsGet('currentUser', "");
+    state.project = Object.assign({title:"Untitled Project", icon:"", type:"Students", period:"", notes:"", nonWorkingDays:[], driveUrl:""}, project||{});
+    state.notifications = notifications || [];
+    state.forumPosts = forumPosts || [];
+    state.documents = documents || [];
+    state.timelineLabelsWidth = lsGet('timelineLabelsWidth', 520);
+    state.theme = lsGet('theme', 'dark');
+    document.documentElement.setAttribute('data-theme', state.theme);
+    if(categories !== null){
+      // current shape: categories + taskLists are already separate
+      state.categories = ensureCategoryShape(categories);
+      state.taskLists = taskLists || [];
+    } else if(taskLists !== null){
+      // migrating from the older shape, where 'taskLists' held what are now categories
+      state.categories = ensureCategoryShape(taskLists);
+      state.taskLists = [];
+      state.tasks.forEach(t=>{ if(t.taskList && !t.category){ t.category = t.taskList; t.taskList = ""; } });
+      await saveCategories(); await saveTaskListGroups(); await saveTasks();
+    } else {
+      state.categories = []; state.taskLists = [];
+    }
+    // normalize roles to the fixed set, and guarantee at least one Supervisor exists once someone's on the team
+    let roleChanged = false;
+    state.team.forEach(m=>{ if(!ROLES.includes(m.role)){ m.role = DEFAULT_ROLE; roleChanged = true; } });
+    if(state.team.length && !state.team.some(m=>m.role==='Supervisor')){ state.team[0].role = 'Supervisor'; roleChanged = true; }
+    if(roleChanged) await saveTeam();
+    // migrate old status names (Done -> Completed, Blocked -> On Hold)
+    const STATUS_MIGRATE = {"Done":"Completed","Blocked":"On Hold"};
+    let statusChanged = false;
+    state.tasks.forEach(t=>{ if(STATUS_MIGRATE[t.status]){ t.status = STATUS_MIGRATE[t.status]; statusChanged = true; } });
+    // backfill fields added for the Reports page, for tasks saved before it existed
+    state.tasks.forEach(t=>{
+      if(t.revisionCount===undefined){ t.revisionCount = 0; statusChanged = true; }
+      if(t.completedAt===undefined){
+        t.completedAt = (t.status==='Completed') ? (t.due || todayISO()) : null;
+        statusChanged = true;
+      }
+    });
+    // migrate single "assignee" (string) to "assignees" (array), for tasks saved before multi-assignee support
+    state.tasks.forEach(t=>{
+      if(!Array.isArray(t.assignees)){
+        t.assignees = t.assignee ? [t.assignee] : [];
+        delete t.assignee;
+        statusChanged = true;
+      }
+    });
+    if(statusChanged) await saveTasks();
+    if(!state.currentUser && state.team.length){ state.currentUser = state.team[0].name; await saveCurrentUser(); }
+  }catch(e){
+    console.error(e);
+    toast("Could not load data — check your connection.");
+  }
+}
+async function saveTeam(){ await fsSet('team', state.team); }
+async function saveCategories(){ await fsSet('categories', state.categories); }
+async function saveTaskListGroups(){ await fsSet('taskLists', state.taskLists); }
+async function saveTasks(){ await fsSet('tasks', state.tasks); }
+async function saveCurrentUser(){ lsSet('currentUser', state.currentUser); }
+async function saveTimelineLabelsWidth(){ lsSet('timelineLabelsWidth', state.timelineLabelsWidth); }
+async function saveTheme(){ lsSet('theme', state.theme); }
+async function saveForumPosts(){ await fsSet('forumPosts', state.forumPosts); }
+async function saveDocuments(){ await fsSet('documents', state.documents); }
+async function setTheme(t){
+  state.theme = t;
+  document.documentElement.setAttribute('data-theme', t);
+  await saveTheme();
+}
+async function saveProject(){ await fsSet('project', state.project); }
+async function saveNotifications(){ await fsSet('notifications', state.notifications); }
+async function loadChat(taskId){
+  if(state.chatCache[taskId]) return state.chatCache[taskId];
+  if(!db || !state.projectId){ state.chatCache[taskId] = []; return []; }
+  try{
+    const snap = await db.collection('projects').doc(state.projectId).collection('chats').doc(taskId).get();
+    const msgs = snap.exists ? JSON.parse(snap.data().value) : [];
+    state.chatCache[taskId] = msgs;
+    return msgs;
+  }catch(e){ console.error(e); state.chatCache[taskId] = []; return []; }
+}
+async function saveChat(taskId, msgs){
+  state.chatCache[taskId] = msgs;
+  if(!db || !state.projectId){ toast('Not connected — message not saved'); return; }
+  try{
+    await db.collection('projects').doc(state.projectId).collection('chats').doc(taskId).set({value: JSON.stringify(msgs)});
+  }catch(e){ console.error(e); toast('Message failed to save'); }
+}
+
+function seedData(){
+  state.team = [
+    {id:uid('u'), name:"Jacques", role:"Supervisor", email:"", phone:"", notes:"", avatar:""},
+    {id:uid('u'), name:"Zoltan", role:"Student", email:"", phone:"", notes:"", avatar:""},
+    {id:uid('u'), name:"Nelly", role:"Student", email:"", phone:"", notes:"", avatar:""},
+    {id:uid('u'), name:"Nicole", role:"Student", email:"", phone:"", notes:"", avatar:""},
+    {id:uid('u'), name:"Sherlisse", role:"Student", email:"", phone:"", notes:"", avatar:""},
+    {id:uid('u'), name:"Deffanie", role:"Student", email:"", phone:"", notes:"", avatar:""},
+  ];
+  state.categories = [
+    {name:"Modelling", color: TAG_PALETTE[0]},
+    {name:"Web App", color: TAG_PALETTE[1]},
+    {name:"Audio", color: TAG_PALETTE[2]},
+    {name:"Interaction Design", color: TAG_PALETTE[3]},
+    {name:"QA & Performance", color: TAG_PALETTE[4]},
+    {name:"Cultural Review", color: TAG_PALETTE[5]},
+  ];
+  state.taskLists = ["Environment 1","Environment 2"];
+  state.tasks = [
+    tk("T01","Modelling","Environment 1","Scan and photogrammetry pass of Ganesh statue",[],["Zoltan"],"2026-08-03","2026-08-14",10,"Completed","High",100,"Reference set for modelling."),
+    tk("T02","Modelling","Environment 1","Retopologise and UV the deity model",["T01"],["Nelly"],"2026-08-10","2026-08-24",11,"In Progress","High",60,"Blocked briefly on scan cleanup, now moving."),
+    tk("T03","Interaction Design","Environment 1","Build Quest 3 URP lighting rig for shrine scene",[],["Nicole"],"2026-08-17","2026-08-28",10,"In Progress","Medium",40,""),
+    tk("T04","Web App","Environment 1","Kanban/Gantt sync between web app and OneDrive",[],["Sherlisse"],"2026-08-10","2026-08-21",10,"In Review","High",85,"Needs a second pass on Graph API auth."),
+    tk("T05","Audio","Environment 1","Write visitor narration script (EN + FR)",[],["Deffanie"],"2026-08-03","2026-08-10",6,"Completed","Medium",100,""),
+    tk("T06","Audio","Environment 2","Record and edit narration audio",["T05"],["Deffanie"],"2026-08-11","2026-08-20",8,"In Progress","Medium",30,""),
+    tk("T07","Web App","Environment 2","Implement subtask/comment schema in web app",[],["Sherlisse"],"2026-08-03","2026-08-12",8,"Completed","Medium",100,""),
+    tk("T08","Interaction Design","Environment 2","Interaction design: garland offering gesture",["T02"],["Zoltan","Nelly"],"2026-08-24","2026-09-04",10,"Not Started","Medium",0,""),
+    tk("T09","QA & Performance","Environment 2","Performance pass: draw calls on Quest 3",["T03"],["Nicole"],"2026-08-31","2026-09-11",10,"Not Started","High",0,""),
+    tk("T10","Cultural Review","Environment 2","Cultural accuracy review with consultant",["T02"],["Nelly"],"2026-08-17","2026-08-19",3,"On Hold","High",20,"Waiting on consultant availability."),
+  ];
+  // demo data for the Reports page: one task completed a couple of days late, one with a past revision cycle
+  state.tasks.find(t=>t.id==="T07").completedAt = "2026-08-14";
+  state.tasks.find(t=>t.id==="T02").revisionCount = 1;
+}
+function tk(id,category,taskList,name,deps,assignees,start,due,duration,status,priority,pct,notes){
+  return {id,category,taskList,name,dependsOn:deps,assignees:(assignees||[]),start,due,duration,status,priority,pct,notes,
+    completedAt: status==='Completed' ? due : null, revisionCount: 0};
+}
+
+/* ============================= dependency logic ============================= */
+function dependencyStatus(task){
+  if(!task.dependsOn || task.dependsOn.length===0) return {state:"none"};
+  const preds = task.dependsOn.map(id=>state.tasks.find(t=>t.id===id)).filter(Boolean);
+  if(preds.length !== task.dependsOn.length) return {state:"unknown", text:"References a task that no longer exists"};
+  if(!task.start) return {state:"none"};
+  const maxDue = preds.reduce((m,p)=> p.due && (!m || p.due>m) ? p.due : m, null);
+  if(maxDue && task.start < maxDue){
+    return {state:"warn", text:`Starts before ${task.dependsOn.join(", ")} ${preds.length>1?'end':'ends'} (${fmtDate(maxDue)})`};
+  }
+  return {state:"ok"};
+}
+function isOverdue(task){
+  if(task.status === "Completed" || !task.due) return false;
+  return task.due < todayISO();
+}
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function fmtDate(iso){
+  if(!iso) return "—";
+  const [y,m,d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+/* ============================= render shell ============================= */
+const NAV = [
+  {id:'dashboard', label:'Dashboard', icon:'◈'},
+  {id:'tasks', label:'Tasks', icon:'☰'},
+  {id:'timeline', label:'Timeline', icon:'▤'},
+  {id:'kanban', label:'Kanban', icon:'▦'},
+  {id:'documents', label:'Documents', icon:'📁'},
+  {id:'team', label:'Team', icon:'◐'},
+  {id:'support', label:'PMS Support', icon:'⚙'},
+  {id:'reports', label:'Reports', icon:'▣', supervisorOnly:true},
+];
+const TITLES = {team:["Team","Everyone working on this project"], tasks:["Tasks","The full list, grouped and filterable"],
+  kanban:["Kanban","Drag a card, or use the status menu"], timeline:["Timeline","Gantt-style view across the project"],
+  dashboard:["Dashboard","Where things stand right now"],
+  reports:["Reports","Per-member stats — visible to Supervisors only"],
+  support:["PMS Support","Report bugs, request features, and see what's planned"],
+  documents:["Documents","A library of files that live in the cloud (OneDrive, Drive…)"]};
+
+function renderNav(){
+  const nav = document.getElementById('nav');
+  nav.innerHTML = NAV.filter(n=>!n.supervisorOnly || isSupervisor()).map(n=>`
+    <button class="nav-btn ${state.view===n.id?'active':''}" onclick="setView('${n.id}')">
+      <span class="nav-icon">${n.icon}</span>${n.label}
+    </button>`).join('');
+}
+function renderWhoAmI(){
+  const sel = document.getElementById('whoami');
+  sel.innerHTML = state.team.map(m=>`<option value="${esc(m.name)}" ${m.name===state.currentUser?'selected':''}>${esc(m.name)} — ${esc(m.role||DEFAULT_ROLE)}</option>`).join('')
+    || '<option value="">Add a team member</option>';
+  sel.onchange = async (e)=>{ state.currentUser = e.target.value; await saveCurrentUser(); render(); };
+}
+function projectIconHTML(size){
+  size = size || 26;
+  const radius = Math.max(6, Math.round(size*0.22));
+  if(state.project.icon){
+    return `<div style="width:${size}px;height:${size}px;border-radius:${radius}px;overflow:hidden;flex:0 0 auto"><img src="${state.project.icon}" style="width:100%;height:100%;object-fit:cover;display:block"></div>`;
+  }
+  return `<div class="brand-mark" style="width:${size}px;height:${size}px;border-radius:${radius}px"></div>`;
+}
+function renderBrand(){
+  const iconWrap = document.getElementById('brand-icon');
+  if(iconWrap) iconWrap.innerHTML = projectIconHTML(26);
+  const subEl = document.getElementById('brand-sub');
+  if(subEl) subEl.textContent = state.project.title || 'Untitled Project';
+  const brandEl = document.getElementById('brand-block');
+  if(!brandEl) return;
+  if(isSupervisor() || state.team.length===0){
+    brandEl.classList.add('editable');
+    brandEl.onclick = openProjectDrawer;
+    brandEl.title = 'Click to edit project details';
+  } else {
+    brandEl.classList.remove('editable');
+    brandEl.onclick = null;
+    brandEl.removeAttribute('title');
+  }
+}
+let pendingProjectIcon = null;
+function openProjectDrawer(){
+  if(!isSupervisor() && state.team.length>0){ toast('Only Supervisors can edit the project'); return; }
+  pendingProjectIcon = null;
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = renderProjectDrawerContent();
+}
+function renderProjectDrawerContent(){
+  const p = state.project;
+  const previewSrc = pendingProjectIcon || p.icon;
+  return `
+    <div class="drawer-head">
+      <div><h2 style="margin:0;font-size:17px">Edit project</h2></div>
+      <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="field" style="display:flex;align-items:center;gap:14px">
+        <div id="project-icon-preview">${previewSrc
+          ? `<div style="width:56px;height:56px;border-radius:10px;overflow:hidden"><img src="${previewSrc}" style="width:100%;height:100%;object-fit:cover"></div>`
+          : `<div class="brand-mark" style="width:56px;height:56px;border-radius:10px"></div>`}</div>
+        <label class="btn btn-sm">Upload icon<input type="file" accept="image/*" style="display:none" onchange="handleProjectIconPick(event)"></label>
+      </div>
+      <div class="field"><label>Title</label><input id="proj-title" value="${esc(p.title)}"></div>
+      <div class="field"><label>Type of project</label>
+        <select id="proj-type">
+          ${PROJECT_TYPES.map(t=>`<option value="${t}" ${p.type===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Period</label><input id="proj-period" value="${esc(p.period)}" placeholder="e.g. Aug – Dec 2026"></div>
+      <div class="field"><label>Team drive folder <span class="faint" style="text-transform:none;font-weight:400">— a Google Drive folder link, shared as "Anyone with the link can view". The Documents page will show it directly.</span></label>
+        <input id="proj-drive-url" value="${esc(p.driveUrl||'')}" placeholder="https://drive.google.com/drive/folders/…"></div>
+      <div class="field"><label>Notes</label><textarea id="proj-notes" rows="3">${esc(p.notes)}</textarea></div>
+      <div class="field">
+        <label>Non-working days <span class="faint" style="text-transform:none;font-weight:400">— blocked like weekends, no estimation/scheduling counts them</span></label>
+        <div class="dep-checks" style="margin-bottom:8px">
+          ${(p.nonWorkingDays||[]).length ? p.nonWorkingDays.slice().sort().map(d=>`
+            <span class="dep-chip on">${fmtDate(d)}<span style="margin-left:6px;cursor:pointer" onclick="removeNonWorkingDay('${d}')">✕</span></span>
+          `).join('') : '<span class="faint">None set</span>'}
+        </div>
+        <div class="row" style="gap:8px">
+          <input type="date" id="new-holiday-date" style="flex:1">
+          <button class="btn btn-sm" onclick="addNonWorkingDay()">+ Add</button>
+        </div>
+      </div>
+      <button class="btn btn-gold" onclick="saveProjectDetails()">Save</button>
+      ${(isSupervisor() || state.team.length===0) ? `
+      <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line)">
+        <div class="faint" style="text-transform:uppercase;font-size:11px;letter-spacing:.4px;margin-bottom:8px;color:var(--red)">Danger zone</div>
+        <button class="btn btn-sm btn-danger" onclick="deleteProjectPrompt()">Delete this project</button>
+        <div class="faint" style="margin-top:6px;font-size:11px">Permanently removes this project and everything in it — tasks, team, chat, documents index. Files actually stored in Google Drive are not touched.</div>
+      </div>` : ''}
+    </div>`;
+}
+function handleProjectIconPick(e){
+  const file = e.target.files[0]; if(!file) return;
+  resizeImage(file, 300, 0.85).then(dataUrl=>{
+    pendingProjectIcon = dataUrl;
+    document.getElementById('project-icon-preview').innerHTML =
+      `<div style="width:56px;height:56px;border-radius:10px;overflow:hidden"><img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover"></div>`;
+  });
+}
+async function saveProjectDetails(){
+  if(!isSupervisor() && state.team.length>0){ toast('Only Supervisors can edit the project'); return; }
+  state.project.title = document.getElementById('proj-title').value.trim() || 'Untitled Project';
+  state.project.type = document.getElementById('proj-type').value;
+  state.project.period = document.getElementById('proj-period').value;
+  state.project.driveUrl = document.getElementById('proj-drive-url').value.trim();
+  state.project.notes = document.getElementById('proj-notes').value;
+  if(pendingProjectIcon) state.project.icon = pendingProjectIcon;
+  pendingProjectIcon = null;
+  await saveProject();
+  closeDrawer();
+  render();
+}
+async function deleteProjectPrompt(){
+  if(!isSupervisor() && state.team.length>0){ toast('Only Supervisors can delete a project'); return; }
+  const name = state.project.title;
+  const typed = prompt(`This permanently deletes "${name}" — all its tasks, team, chat, forum posts, and documents index. This cannot be undone.\n\nType the project name exactly to confirm:`);
+  if(typed === null) return; // cancelled
+  if(typed !== name){ toast('Name did not match — nothing was deleted'); return; }
+  try{
+    await deleteProjectData(state.projectId);
+    toast('Project deleted');
+    switchProject();
+  }catch(err){
+    console.error(err);
+    toast('Could not delete the project');
+  }
+}
+async function deleteProjectData(projectId){
+  const projectRef = db.collection('projects').doc(projectId);
+  const [storeSnap, chatsSnap] = await Promise.all([
+    projectRef.collection('store').get(),
+    projectRef.collection('chats').get()
+  ]);
+  const batch = db.batch();
+  storeSnap.forEach(doc => batch.delete(doc.ref));
+  chatsSnap.forEach(doc => batch.delete(doc.ref));
+  batch.delete(projectRef);
+  await batch.commit();
+}
+async function addNonWorkingDay(){
+  if(!isSupervisor() && state.team.length>0) return;
+  const input = document.getElementById('new-holiday-date');
+  const date = input.value;
+  if(!date) return;
+  if(!state.project.nonWorkingDays) state.project.nonWorkingDays = [];
+  if(!state.project.nonWorkingDays.includes(date)) state.project.nonWorkingDays.push(date);
+  await saveProject();
+  document.getElementById('drawer').innerHTML = renderProjectDrawerContent();
+  render();
+}
+async function removeNonWorkingDay(date){
+  if(!isSupervisor() && state.team.length>0) return;
+  state.project.nonWorkingDays = (state.project.nonWorkingDays||[]).filter(d=>d!==date);
+  await saveProject();
+  document.getElementById('drawer').innerHTML = renderProjectDrawerContent();
+  render();
+}
+async function addNotification(forUser, type, taskId, taskName, fromUser, snippet){
+  if(!forUser) return;
+  state.notifications.push({
+    id: uid('n'), forUser, type, taskId, taskName, fromUser, snippet,
+    ts: Date.now(), read: false
+  });
+  // keep the list from growing forever
+  if(state.notifications.length > 300) state.notifications = state.notifications.slice(-300);
+  await saveNotifications();
+  renderNotifBell();
+}
+function myNotifications(){
+  return state.notifications.filter(n=>n.forUser===state.currentUser).sort((a,b)=>b.ts-a.ts);
+}
+function renderNotifBell(){
+  const badge = document.getElementById('notif-badge');
+  const panel = document.getElementById('notif-panel');
+  if(!badge || !panel) return;
+  const mine = myNotifications();
+  const unread = mine.filter(n=>!n.read).length;
+  badge.textContent = unread>0 ? (unread>9?'9+':unread) : '';
+  badge.style.display = unread>0 ? 'flex' : 'none';
+  panel.innerHTML = `
+    <div class="notif-panel-head">
+      <span>Notifications</span>
+      ${mine.length ? `<span class="chat-action-link" onclick="markAllNotifsRead()">Mark all read</span>` : ''}
+    </div>
+    ${mine.length ? mine.slice(0,40).map(n=>`
+      <div class="notif-item ${n.read?'':'unread'}" onclick="openNotification('${n.id}')">
+        <div class="notif-icon">${n.type==='tag'?'@':'↩'}</div>
+        <div class="notif-text">
+          <b>${esc(n.fromUser)}</b> ${n.type==='tag'?'tagged you in':'replied to you in'} <b>${esc(n.taskName)}</b>
+          <div class="faint">${esc(n.snippet||'')}</div>
+          <div class="notif-time">${fmtWhen(n.ts)}</div>
+        </div>
+      </div>
+    `).join('') : `<div class="notif-empty">No notifications yet.</div>`}
+  `;
+}
+function toggleNotifPanel(){
+  const panel = document.getElementById('notif-panel');
+  if(!panel) return;
+  panel.classList.toggle('open');
+}
+function closeNotifPanel(){
+  const panel = document.getElementById('notif-panel');
+  if(panel) panel.classList.remove('open');
+}
+async function markAllNotifsRead(){
+  state.notifications.forEach(n=>{ if(n.forUser===state.currentUser) n.read = true; });
+  await saveNotifications();
+  renderNotifBell();
+}
+async function openNotification(id){
+  const n = state.notifications.find(x=>x.id===id); if(!n) return;
+  n.read = true;
+  await saveNotifications();
+  renderNotifBell();
+  closeNotifPanel();
+  setView('tasks');
+  openDrawer(n.taskId);
+}
+document.addEventListener('click', (e)=>{
+  const panel = document.getElementById('notif-panel');
+  const btn = document.getElementById('notif-btn');
+  if(panel && panel.classList.contains('open') && !panel.contains(e.target) && e.target!==btn && !btn.contains(e.target)){
+    panel.classList.remove('open');
+  }
+  const mp = document.getElementById('mention-picker');
+  if(mp && mentionPickerOpen && !mp.contains(e.target) && !e.target.closest('[onclick*="toggleMentionPicker"]')){
+    mentionPickerOpen = false; mp.innerHTML = '';
+  }
+});
+function setView(v){ state.view = v; state.drawerTaskId=null; render(); }
+function filterTasksByStatus(status){
+  state.filters = { category: "", taskList: "", assignee: "", status: status, search: "" };
+  setView('tasks');
+}
+
+function render(){
+  // preserve focus/cursor position across re-render (e.g. typing in a search box)
+  const active = document.activeElement;
+  const focusInfo = (active && active.id && (active.tagName==='INPUT' || active.tagName==='TEXTAREA'))
+    ? { id: active.id, start: active.selectionStart, end: active.selectionEnd }
+    : null;
+
+  if(state.view==='reports' && !isSupervisor()) state.view = 'dashboard';
+  renderNav(); renderWhoAmI(); renderBrand(); renderNotifBell();
+  document.getElementById('view-title').textContent = TITLES[state.view][0];
+  document.getElementById('view-sub').textContent = TITLES[state.view][1];
+  const actions = document.getElementById('topbar-actions');
+  actions.innerHTML = '';
+  if(state.view==='team') actions.innerHTML = (isSupervisor() || state.team.length===0)
+    ? `<button class="btn btn-gold" onclick="openTeamDrawer(null)">+ Add person</button>`
+    : `<span class="faint" style="font-size:12px">Only Supervisors can edit the team</span>`;
+  if(state.view==='tasks') actions.innerHTML = `<button class="btn btn-ghost" onclick="openManageTaskLists()">+ New task list</button><button class="btn btn-gold" onclick="createTask()">+ New task</button>`;
+  if(state.view==='support') actions.innerHTML = `<button class="btn btn-gold" onclick="openNewPostDrawer()">+ New post</button>`;
+  if(state.view==='documents') actions.innerHTML = '';
+
+  const v = document.getElementById('view');
+  if(state.view==='team') v.innerHTML = renderTeamView();
+  else if(state.view==='tasks') v.innerHTML = renderTasksView();
+  else if(state.view==='kanban') v.innerHTML = renderKanbanView();
+  else if(state.view==='timeline') v.innerHTML = renderTimelineView();
+  else if(state.view==='dashboard') v.innerHTML = renderDashboardView();
+  else if(state.view==='reports') v.innerHTML = renderReportsView();
+  else if(state.view==='support') v.innerHTML = renderSupportView();
+  else if(state.view==='documents') v.innerHTML = renderDocumentsView();
+
+  if(state.view==='kanban') wireKanbanDnD();
+  if(state.view==='timeline'){ wireTimelineControls(); wireTimelineDrag(); wireTimelineResize(); wireOtherColsSync(); }
+
+  if(focusInfo){
+    const el = document.getElementById(focusInfo.id);
+    if(el){
+      el.focus();
+      if(typeof focusInfo.start === 'number' && el.setSelectionRange){
+        try{ el.setSelectionRange(focusInfo.start, focusInfo.end); }catch(e){}
+      }
+    }
+  }
+}
+function esc(s){ return (s??'').toString().replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function polarToCartesian(cx, cy, r, angleDeg){
+  const rad = (angleDeg-90) * Math.PI/180;
+  return {x: cx + r*Math.cos(rad), y: cy + r*Math.sin(rad)};
+}
+function describeArc(cx, cy, r, startAngle, endAngle){
+  const start = polarToCartesian(cx, cy, r, endAngle);
+  const end = polarToCartesian(cx, cy, r, startAngle);
+  const largeArcFlag = endAngle-startAngle <= 180 ? "0" : "1";
+  return `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z`;
+}
+function pieChartSVG(data, size){
+  size = size || 110;
+  const total = data.reduce((s,d)=>s+d.value,0);
+  if(total===0) return `<div class="faint" style="width:${size}px;text-align:center;padding:${size/2-10}px 0">No tasks yet</div>`;
+  const cx=size/2, cy=size/2, r=size/2-1;
+  let angle = 0;
+  const slices = data.filter(d=>d.value>0).map(d=>{
+    const sweep = d.value/total*360;
+    const path = sweep>=359.9
+      ? `M ${cx} ${cy-r} A ${r} ${r} 0 1 1 ${cx-0.01} ${cy-r} Z`
+      : describeArc(cx, cy, r, angle, angle+sweep);
+    angle += sweep;
+    return `<path d="${path}" fill="${d.color}" ${d.onclick?`style="cursor:pointer" onclick="${esc(d.onclick)}"`:''}><title>${esc(d.label)}: ${d.value}</title></path>`;
+  }).join('');
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex:0 0 auto">${slices}</svg>`;
+}
+function niceAxisMax(v){
+  if(v<=0) return 1;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(v)));
+  const residual = v/magnitude;
+  let nice;
+  if(residual<=1) nice=1; else if(residual<=2) nice=2; else if(residual<=5) nice=5; else nice=10;
+  return nice*magnitude;
+}
+function formatNum(v){
+  if(Number.isInteger(v)) return String(v);
+  return (Math.round(v*100)/100).toString();
+}
+function labelShort(s){ return s.length>10 ? s.slice(0,9)+'…' : s; }
+function verticalBarChart(categories, series, opts){
+  opts = opts || {};
+  const width = opts.width || 480, height = opts.height || 220;
+  const stacked = !!opts.stacked;
+  const padTop=22, padBottom=32, padLeft=6, padRight=6;
+  const plotH = height-padTop-padBottom, plotW = width-padLeft-padRight;
+  const n = categories.length;
+  if(n===0) return `<div class="faint" style="padding:20px 0;text-align:center">No data yet</div>`;
+  const groupW = plotW/n;
+  const barGap = 5;
+  let bars='', catLabels='';
+
+  if(stacked){
+    const totals = categories.map((_,i)=> series.reduce((s,se)=>s+(se.values[i]||0),0));
+    const axisMax = niceAxisMax(Math.max(...totals, 0));
+    const barW = Math.max(10, groupW - barGap*2);
+    categories.forEach((cat,i)=>{
+      const groupX = padLeft + i*groupW;
+      const x = groupX + (groupW-barW)/2;
+      let cumTop = padTop + plotH;
+      series.forEach(s=>{
+        const val = s.values[i]||0;
+        const barH = axisMax>0 ? (val/axisMax*plotH) : 0;
+        const y = cumTop - barH;
+        const color = s.colors ? s.colors[i] : s.color;
+        if(val>0){
+          bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${color}"><title>${esc(cat)} — ${esc(s.name)}: ${formatNum(val)}</title></rect>`;
+          if(barH>13) bars += `<text x="${(x+barW/2).toFixed(1)}" y="${(y+barH/2+3.5).toFixed(1)}" font-size="9.5" style="fill:var(--chart-value-strong)" text-anchor="middle" font-weight="700">${formatNum(val)}</text>`;
+        }
+        cumTop = y;
+      });
+      if(totals[i]>0) bars += `<text x="${(x+barW/2).toFixed(1)}" y="${(cumTop-5).toFixed(1)}" font-size="10" style="fill:var(--chart-value)" text-anchor="middle" font-weight="600">${formatNum(totals[i])}</text>`;
+      catLabels += `<text x="${(groupX+groupW/2).toFixed(1)}" y="${(height-14).toFixed(1)}" font-size="10" style="fill:var(--chart-label)" text-anchor="middle">${esc(labelShort(cat))}</text>`;
+    });
+  } else {
+    const allVals = series.flatMap(s=>s.values);
+    const axisMax = niceAxisMax(Math.max(...allVals, 0));
+    const seriesCount = series.length;
+    const barW = Math.max(5, (groupW-barGap*(seriesCount+1))/seriesCount);
+    categories.forEach((cat,i)=>{
+      const groupX = padLeft + i*groupW;
+      series.forEach((s,si)=>{
+        const val = s.values[i]||0;
+        const barH = axisMax>0 ? (val/axisMax*plotH) : 0;
+        const x = groupX + barGap + si*(barW+barGap);
+        const y = padTop + (plotH-barH);
+        const color = s.colors ? s.colors[i] : s.color;
+        bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="3" fill="${color}"><title>${esc(cat)} — ${esc(s.name)}: ${formatNum(val)}</title></rect>`;
+        if(barH>13){
+          bars += `<text x="${(x+barW/2).toFixed(1)}" y="${(y-4).toFixed(1)}" font-size="9.5" style="fill:var(--chart-value)" text-anchor="middle">${formatNum(val)}</text>`;
+        }
+      });
+      catLabels += `<text x="${(groupX+groupW/2).toFixed(1)}" y="${(height-14).toFixed(1)}" font-size="10" style="fill:var(--chart-label)" text-anchor="middle">${esc(labelShort(cat))}</text>`;
+    });
+  }
+  const axisLine = `<line x1="${padLeft}" y1="${padTop+plotH}" x2="${width-padRight}" y2="${padTop+plotH}" style="stroke:var(--chart-line)" stroke-width="1"/>`;
+  return `<svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}">${axisLine}${bars}${catLabels}</svg>`;
+}
+function taskRowMini(t, showStatus){
+  const overdue = isOverdue(t);
+  return `<div class="dash-task-row" onclick="openDrawer('${t.id}')">
+    <div class="dash-task-main">
+      <span class="task-id mono">${t.id}</span>
+      <span>${esc(t.name)}</span>
+      ${showStatus ? `<span class="tagpill" style="background:${STATUS_HEX[t.status]}29;color:${STATUS_COLOR[t.status]};border:1px solid ${STATUS_HEX[t.status]}66">${t.status}</span>` : ''}
+    </div>
+    <div class="dash-task-side">
+      <span class="row" style="gap:5px">${avatarsForNames(t.assignees,16)}${esc(assigneeNamesLabel(t.assignees))}</span>
+      <span class="${overdue?'dep-warn':''}">${fmtDate(t.due)}</span>
+    </div>
+  </div>`;
+}
+function avatarForMember(m, size){
+  size = size || 28;
+  const fs = Math.round(size*0.42);
+  if(m && m.avatar){
+    return `<div class="avatar-circle" style="width:${size}px;height:${size}px"><img src="${m.avatar}"></div>`;
+  }
+  const initial = esc(((m && m.name) || '?').slice(0,1).toUpperCase());
+  return `<div class="avatar-circle" style="width:${size}px;height:${size}px;font-size:${fs}px">${initial}</div>`;
+}
+function avatarForName(name, size){
+  return avatarForMember(state.team.find(x=>x.name===name), size);
+}
+function avatarsForNames(names, size){
+  size = size || 18;
+  names = names && names.length ? names : [];
+  if(names.length===0) return avatarForMember(null, size);
+  const shown = names.slice(0,3);
+  let html = `<span style="display:inline-flex;align-items:center;gap:3px;flex:0 0 auto">`;
+  shown.forEach(n=>{ html += avatarForName(n, size); });
+  if(names.length>3) html += `<span class="faint" style="margin-left:2px;font-size:10px">+${names.length-3}</span>`;
+  html += `</span>`;
+  return html;
+}
+function assigneeNamesLabel(names){
+  return (names && names.length) ? names.join(', ') : '—';
+}
+function isSupervisor(){
+  const m = state.team.find(x=>x.name===state.currentUser);
+  return !!(m && m.role === 'Supervisor');
+}
+const TAG_PALETTE = ['#4FB6AC','#D9A441','#B08BE0','#6FCF97','#E5646A','#7FA8D9','#E3915B','#5EC8C0'];
+function categoryColor(name){
+  const c = state.categories.find(x=>x.name===name);
+  return c ? c.color : null;
+}
+function categoryTag(name){
+  const c = categoryColor(name) || '#6B7280';
+  return `<span class="tagpill" style="background:${c}29;color:${c};border:1px solid ${c}66">${esc(name||'—')}</span>`;
+}
+function taskListTag(name){
+  return `<span class="tasklisttag">${esc(name||'—')}</span>`;
+}
+
+/* ============================= TEAM VIEW ============================= */
+function renderTeamView(){
+  if(state.team.length===0){
+    return `<div class="empty-state"><div class="display">No one here yet</div>Add your first team member to get started.</div>`;
+  }
+  const canEdit = isSupervisor();
+  return `<div class="team-grid">${state.team.map(m=>`
+    <div class="tcard">
+      <div class="tcard-top">
+        ${avatarForMember(m, 88)}
+        <div>
+          <div class="tcard-name">${esc(m.name)}</div>
+          <div class="tcard-role">${esc(m.role||'—')}</div>
+        </div>
+      </div>
+      ${m.email?`<div class="tcard-field">✉ ${esc(m.email)}</div>`:''}
+      ${m.phone?`<div class="tcard-field">☎ ${esc(m.phone)}</div>`:''}
+      ${m.notes?`<div class="tcard-field faint">${esc(m.notes)}</div>`:''}
+      ${canEdit ? `<div class="tcard-actions">
+        <button class="btn btn-sm" onclick="openTeamDrawer('${m.id}')">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteTeamMember('${m.id}')">Remove</button>
+      </div>` : ''}
+    </div>`).join('')}</div>`;
+}
+async function deleteTeamMember(id){
+  if(!isSupervisor()){ toast('Only Supervisors can edit team profiles'); return; }
+  if(!confirm("Remove this person?")) return;
+  state.team = state.team.filter(x=>x.id!==id);
+  await saveTeam();
+  closeDrawer();
+  render();
+}
+
+/* ---- team drawer (edit + photo upload) ---- */
+let pendingAvatar = null;
+function openTeamDrawer(id){
+  if(!isSupervisor() && state.team.length>0){ toast('Only Supervisors can edit team profiles'); return; }
+  pendingAvatar = null;
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = renderTeamDrawerContent(id);
+}
+function renderTeamDrawerContent(id){
+  const isNew = !id;
+  const m = isNew ? {id:null,name:'',role:DEFAULT_ROLE,email:'',phone:'',notes:'',avatar:''} : state.team.find(x=>x.id===id);
+  if(!m) return '';
+  const previewSrc = pendingAvatar || m.avatar;
+  return `
+    <div class="drawer-head">
+      <div><h2 style="margin:0;font-size:17px">${isNew?'New team member':'Edit team member'}</h2></div>
+      <div class="row" style="gap:6px">
+        ${!isNew?`<button class="btn btn-sm btn-danger" onclick="deleteTeamMember('${m.id}')">Remove</button>`:''}
+        <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
+      </div>
+    </div>
+    <div class="drawer-body">
+      <div class="field" style="display:flex;align-items:center;gap:14px">
+        <div id="avatar-preview">${previewSrc ? `<div class="avatar-circle" style="width:56px;height:56px"><img src="${previewSrc}"></div>` : avatarForMember(m,56)}</div>
+        <label class="btn btn-sm">Upload photo<input type="file" accept="image/*" style="display:none" onchange="handleAvatarPick(event)"></label>
+      </div>
+      <div class="field"><label>Name</label><input id="tm-name" value="${esc(m.name)}"></div>
+      <div class="field"><label>Role</label>
+        <select id="tm-role">
+          ${ROLES.map(r=>`<option value="${r}" ${(m.role||DEFAULT_ROLE)===r?'selected':''}>${r}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Email</label><input id="tm-email" value="${esc(m.email)}"></div>
+        <div class="field"><label>Phone</label><input id="tm-phone" value="${esc(m.phone)}"></div>
+      </div>
+      <div class="field"><label>Notes</label><textarea id="tm-notes" rows="2">${esc(m.notes)}</textarea></div>
+      <button class="btn btn-gold" onclick="saveTeamMember('${isNew?'':m.id}')">Save</button>
+    </div>`;
+}
+function handleAvatarPick(e){
+  const file = e.target.files[0]; if(!file) return;
+  resizeImage(file, 240, 0.82).then(dataUrl=>{
+    pendingAvatar = dataUrl;
+    document.getElementById('avatar-preview').innerHTML = `<div class="avatar-circle" style="width:56px;height:56px"><img src="${dataUrl}"></div>`;
+  });
+}
+async function saveTeamMember(id){
+  if(!isSupervisor() && state.team.length>0){ toast('Only Supervisors can edit team profiles'); return; }
+  const name = document.getElementById('tm-name').value.trim();
+  if(!name){ toast('Name is required'); return; }
+  const role = document.getElementById('tm-role').value || DEFAULT_ROLE;
+  const email = document.getElementById('tm-email').value;
+  const phone = document.getElementById('tm-phone').value;
+  const notes = document.getElementById('tm-notes').value;
+  if(id){
+    const m = state.team.find(x=>x.id===id);
+    Object.assign(m, {name, role, email, phone, notes});
+    if(pendingAvatar) m.avatar = pendingAvatar;
+  } else {
+    state.team.push({id:uid('u'), name, role, email, phone, notes, avatar: pendingAvatar || ''});
+  }
+  pendingAvatar = null;
+  await saveTeam();
+  closeDrawer();
+  render();
+}
+
+/* ============================= TASKS VIEW ============================= */
+function filteredTasks(){
+  const q = (state.filters.search||'').trim().toLowerCase();
+  return state.tasks.filter(t=>
+    (!state.filters.category || t.category===state.filters.category) &&
+    (!state.filters.taskList || t.taskList===state.filters.taskList) &&
+    (!state.filters.assignee || (t.assignees||[]).includes(state.filters.assignee)) &&
+    (!state.filters.status || t.status===state.filters.status) &&
+    (!q || (t.name||'').toLowerCase().includes(q) || (t.notes||'').toLowerCase().includes(q))
+  );
+}
+function filteredTasksForTimeline(){
+  return state.tasks.filter(t=>
+    (!state.timelineFilters.category || t.category===state.timelineFilters.category) &&
+    (!state.timelineFilters.taskList || t.taskList===state.timelineFilters.taskList) &&
+    (!state.timelineFilters.assignee || (t.assignees||[]).includes(state.timelineFilters.assignee))
+  );
+}
+function compareTasks(a,b,key,dir){
+  let av,bv;
+  switch(key){
+    case 'name': av=(a.name||'').toLowerCase(); bv=(b.name||'').toLowerCase(); break;
+    case 'category': av=(a.category||'').toLowerCase(); bv=(b.category||'').toLowerCase(); break;
+    case 'taskList': av=(a.taskList||'').toLowerCase(); bv=(b.taskList||'').toLowerCase(); break;
+    case 'assignee': av=(a.assignees||[]).join(', ').toLowerCase(); bv=(b.assignees||[]).join(', ').toLowerCase(); break;
+    case 'status': av=STATUSES.indexOf(a.status); bv=STATUSES.indexOf(b.status); break;
+    case 'priority': av=PRIORITIES.indexOf(a.priority); bv=PRIORITIES.indexOf(b.priority); break;
+    case 'due': av=a.due||''; bv=b.due||''; break;
+    case 'pct': av=a.pct||0; bv=b.pct||0; break;
+    default: return 0;
+  }
+  const cmp = av<bv?-1:av>bv?1:0;
+  return dir==='asc'?cmp:-cmp;
+}
+function setSort(key){
+  if(state.sort.key===key){ state.sort.dir = state.sort.dir==='asc'?'desc':'asc'; }
+  else { state.sort.key=key; state.sort.dir='asc'; }
+  render();
+}
+function sortArrow(key){
+  return state.sort.key===key ? (state.sort.dir==='asc' ? ' ▲' : ' ▼') : '';
+}
+function renderTasksView(){
+  const tasks = filteredTasks();
+  if(state.sort.key) tasks.sort((a,b)=>compareTasks(a,b,state.sort.key,state.sort.dir));
+  const filterBar = `<div class="filterbar">
+    <input type="text" id="tasks-search-input" placeholder="Search tasks…" value="${esc(state.filters.search)}"
+      oninput="state.filters.search=this.value;render()" style="min-width:180px">
+    <select onchange="state.filters.category=this.value;render()">
+      <option value="">All categories</option>
+      ${state.categories.map(c=>`<option value="${esc(c.name)}" ${state.filters.category===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
+    </select>
+    <select onchange="state.filters.taskList=this.value;render()">
+      <option value="">All task lists</option>
+      ${state.taskLists.map(l=>`<option value="${esc(l)}" ${state.filters.taskList===l?'selected':''}>${esc(l)}</option>`).join('')}
+    </select>
+    <select onchange="state.filters.assignee=this.value;render()">
+      <option value="">All assignees</option>
+      ${state.team.map(m=>`<option value="${esc(m.name)}" ${state.filters.assignee===m.name?'selected':''}>${esc(m.name)}</option>`).join('')}
+    </select>
+    <select onchange="state.filters.status=this.value;render()">
+      <option value="">All statuses</option>
+      ${STATUSES.map(s=>`<option value="${s}" ${state.filters.status===s?'selected':''}>${s}</option>`).join('')}
+    </select>
+    <button class="btn btn-ghost btn-sm" onclick="openManageCategories()">Manage categories</button>
+    <button class="btn btn-ghost btn-sm" onclick="openManageTaskLists()">Manage task lists</button>
+  </div>`;
+
+  if(tasks.length===0){
+    return filterBar + `<div class="empty-state"><div class="display">No tasks match</div>Adjust the filters, or add a new task.</div>`;
+  }
+
+  const rows = tasks.map(t=>{
+    const dep = dependencyStatus(t);
+    const overdue = isOverdue(t);
+    const catColor = categoryColor(t.category);
+    const catStyle = catColor ? `background:${catColor}22;color:${catColor};border-color:${catColor}66` : '';
+    return `<tr class="taskrow">
+      <td><span class="task-id mono">${t.id}</span><br/><span class="taskname" onclick="openDrawer('${t.id}')">${esc(t.name)}</span>
+        ${dep.state==='warn'?`<div class="dep-warn">⚠ ${esc(dep.text)}</div>`:''}
+        ${dep.state==='unknown'?`<div class="dep-warn">⚠ ${esc(dep.text)}</div>`:''}
+      </td>
+      <td><select class="inline-edit" style="${catStyle}" onchange="updateField('${t.id}','category',this.value)">
+        <option value="">—</option>
+        ${state.categories.map(c=>`<option value="${esc(c.name)}" ${t.category===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
+      </select></td>
+      <td><select class="inline-edit" onchange="updateField('${t.id}','taskList',this.value)">
+        <option value="">—</option>
+        ${state.taskLists.map(l=>`<option value="${esc(l)}" ${t.taskList===l?'selected':''}>${esc(l)}</option>`).join('')}
+      </select></td>
+      <td><span class="row" style="gap:6px;cursor:pointer" title="Click to change assignees" onclick="event.stopPropagation();openAssigneePicker('${t.id}', this)">${avatarsForNames(t.assignees,20)}<span class="faint" style="font-size:11.5px">${esc(assigneeNamesLabel(t.assignees))}</span></span></td>
+      <td><select class="inline-edit" style="background:${STATUS_HEX[t.status]}30;color:${STATUS_COLOR[t.status]};border-color:${STATUS_HEX[t.status]}66" onchange="updateField('${t.id}','status',this.value)">
+        ${STATUSES.map(s=>`<option value="${s}" ${t.status===s?'selected':''}>${s}</option>`).join('')}
+      </select></td>
+      <td><select class="inline-edit" style="background:${PRIORITY_HEX[t.priority]}30;color:${PRIORITY_COLOR[t.priority]};border-color:${PRIORITY_HEX[t.priority]}66" onchange="updateField('${t.id}','priority',this.value)">
+        ${PRIORITIES.map(p=>`<option value="${p}" ${t.priority===p?'selected':''}>${p}</option>`).join('')}
+      </select></td>
+      <td class="${overdue?'dep-warn':''}"><input type="date" class="inline-edit" style="${overdue?'border-color:var(--red)':''}" value="${t.due||''}" onchange="updateField('${t.id}','due',this.value)"></td>
+      <td><span class="row" style="gap:7px"><input type="number" class="inline-edit pct-input" min="0" max="100" step="5" value="${t.pct||0}" onchange="updateField('${t.id}','pct',parseInt(this.value)||0)">%</span></td>
+    </tr>`;
+  }).join('');
+
+  return filterBar + `<table class="ttable"><thead><tr>
+    <th class="sortable" onclick="setSort('name')">Task${sortArrow('name')}</th>
+    <th class="sortable" onclick="setSort('category')">Category${sortArrow('category')}</th>
+    <th class="sortable" onclick="setSort('taskList')">Task list${sortArrow('taskList')}</th>
+    <th class="sortable" onclick="setSort('assignee')">Assignee${sortArrow('assignee')}</th>
+    <th class="sortable" onclick="setSort('status')">Status${sortArrow('status')}</th>
+    <th class="sortable" onclick="setSort('priority')">Priority${sortArrow('priority')}</th>
+    <th class="sortable" onclick="setSort('due')">Due${sortArrow('due')}</th>
+    <th class="sortable" onclick="setSort('pct')">Progress${sortArrow('pct')}</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+}
+function openManageCategories(){
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = renderManageCategoriesContent();
+}
+function renderManageCategoriesContent(){
+  const rows = state.categories.map((c,i)=>`
+    <div class="manage-row">
+      <input type="color" value="${c.color}" onchange="setCategoryColor(${i}, this.value)">
+      <input type="text" value="${esc(c.name)}" onchange="renameCategory(${i}, this.value)">
+      <button class="btn btn-sm btn-danger" onclick="deleteCategory(${i})">Remove</button>
+    </div>`).join('') || '<div class="faint">No categories yet</div>';
+  return `
+    <div class="drawer-head">
+      <div><h2 style="margin:0;font-size:17px">Manage categories</h2><div class="faint" style="margin-top:3px">The type of work — Modelling, Audio, Rendering…</div></div>
+      <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="manage-list">${rows}</div>
+      <div class="field-row" style="margin-top:14px;align-items:end">
+        <div class="field" style="margin-bottom:0"><label>New category</label><input id="new-cat-name" placeholder="e.g. Rendering"></div>
+        <button class="btn btn-gold" style="height:34px" onclick="addCategory()">+ Add</button>
+      </div>
+    </div>`;
+}
+async function renameCategory(i, newName){
+  newName = (newName||'').trim();
+  const cat = state.categories[i]; if(!cat) return;
+  if(!newName){ document.getElementById('drawer').innerHTML = renderManageCategoriesContent(); return; }
+  const old = cat.name;
+  if(old===newName) return;
+  if(state.categories.some((c,j)=>j!==i && c.name===newName)){ toast('That category already exists'); document.getElementById('drawer').innerHTML = renderManageCategoriesContent(); return; }
+  cat.name = newName;
+  state.tasks.forEach(t=>{ if(t.category===old) t.category = newName; });
+  await saveCategories(); await saveTasks();
+  document.getElementById('drawer').innerHTML = renderManageCategoriesContent();
+  render();
+}
+async function setCategoryColor(i, color){
+  if(!state.categories[i]) return;
+  state.categories[i].color = color;
+  await saveCategories();
+  document.getElementById('drawer').innerHTML = renderManageCategoriesContent();
+  render();
+}
+async function addCategory(){
+  const input = document.getElementById('new-cat-name');
+  const name = input.value.trim();
+  if(!name) return;
+  if(state.categories.some(c=>c.name===name)){ toast('That category already exists'); return; }
+  state.categories.push({name, color: TAG_PALETTE[state.categories.length % TAG_PALETTE.length]});
+  await saveCategories();
+  document.getElementById('drawer').innerHTML = renderManageCategoriesContent();
+  render();
+}
+async function deleteCategory(i){
+  const cat = state.categories[i]; if(!cat) return;
+  const affected = state.tasks.filter(t=>t.category===cat.name).length;
+  if(!confirm(`Delete "${cat.name}"?` + (affected ? ` ${affected} task(s) using it will have their category cleared.` : ''))) return;
+  state.tasks.forEach(t=>{ if(t.category===cat.name) t.category=''; });
+  state.categories.splice(i,1);
+  await saveCategories(); await saveTasks();
+  document.getElementById('drawer').innerHTML = renderManageCategoriesContent();
+  render();
+}
+
+function openManageTaskLists(){
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = renderManageTaskListsContent();
+}
+function renderManageTaskListsContent(){
+  const rows = state.taskLists.map((name,i)=>`
+    <div class="manage-row">
+      <input type="text" value="${esc(name)}" onchange="renameTaskListEntry(${i}, this.value)">
+      <button class="btn btn-sm btn-danger" onclick="deleteTaskListEntry(${i})">Remove</button>
+    </div>`).join('') || '<div class="faint">No task lists yet</div>';
+  return `
+    <div class="drawer-head">
+      <div><h2 style="margin:0;font-size:17px">Manage task lists</h2><div class="faint" style="margin-top:3px">Groupings of tasks — Environment 1, Environment 2…</div></div>
+      <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="manage-list">${rows}</div>
+      <div class="field-row" style="margin-top:14px;align-items:end">
+        <div class="field" style="margin-bottom:0"><label>New task list</label><input id="new-tl-name" placeholder="e.g. Environment 3"></div>
+        <button class="btn btn-gold" style="height:34px" onclick="addTaskListEntry()">+ Add</button>
+      </div>
+    </div>`;
+}
+async function renameTaskListEntry(i, newName){
+  newName = (newName||'').trim();
+  const old = state.taskLists[i]; if(old===undefined) return;
+  if(!newName){ document.getElementById('drawer').innerHTML = renderManageTaskListsContent(); return; }
+  if(old===newName) return;
+  if(state.taskLists.some((n,j)=>j!==i && n===newName)){ toast('That task list already exists'); document.getElementById('drawer').innerHTML = renderManageTaskListsContent(); return; }
+  state.taskLists[i] = newName;
+  state.tasks.forEach(t=>{ if(t.taskList===old) t.taskList = newName; });
+  await saveTaskListGroups(); await saveTasks();
+  document.getElementById('drawer').innerHTML = renderManageTaskListsContent();
+  render();
+}
+async function addTaskListEntry(){
+  const input = document.getElementById('new-tl-name');
+  const name = input.value.trim();
+  if(!name) return;
+  if(state.taskLists.includes(name)){ toast('That task list already exists'); return; }
+  state.taskLists.push(name);
+  await saveTaskListGroups();
+  document.getElementById('drawer').innerHTML = renderManageTaskListsContent();
+  render();
+}
+async function deleteTaskListEntry(i){
+  const name = state.taskLists[i]; if(name===undefined) return;
+  const affected = state.tasks.filter(t=>t.taskList===name).length;
+  if(!confirm(`Delete "${name}"?` + (affected ? ` ${affected} task(s) using it will have their task list cleared.` : ''))) return;
+  state.tasks.forEach(t=>{ if(t.taskList===name) t.taskList=''; });
+  state.taskLists.splice(i,1);
+  await saveTaskListGroups(); await saveTasks();
+  document.getElementById('drawer').innerHTML = renderManageTaskListsContent();
+  render();
+}
+async function createTask(){
+  const id = nextTaskId();
+  const start = todayISO();
+  const t = tk(id, (state.categories[0]&&state.categories[0].name)||"", state.taskLists[0]||"", "New task", [], [], start, start, 1, "Not Started", "Medium", 0, "");
+  state.tasks.push(t);
+  await saveTasks();
+  state.view='tasks'; render();
+  openDrawer(id, true);
+}
+
+/* ============================= KANBAN VIEW ============================= */
+function renderKanbanView(){
+  return `<div class="kanban">${STATUSES.map(s=>{
+    const items = state.tasks.filter(t=>t.status===s);
+    return `<div class="kcol">
+      <div class="kcol-head" style="background:${STATUS_COLOR[s]};color:#0F1216">
+        <span class="statuspill" style="background:rgba(0,0,0,.16);color:#0F1216">${s}</span><span style="font-weight:700;opacity:.75">${items.length}</span>
+      </div>
+      <div class="kcol-body" data-status="${s}">
+        ${items.map(t=>{
+          const dep = dependencyStatus(t);
+          const warn = dep.state==='warn'||dep.state==='unknown';
+          return `<div class="kcard ${warn?'kcard-danger':''}" draggable="true" data-id="${t.id}" onclick="openDrawer('${t.id}')">
+            ${categoryTag(t.category)}
+            ${t.taskList?taskListTag(t.taskList):''}
+            <div class="kcard-name">${t.id} · ${esc(t.name)}</div>
+            <div class="kcard-meta"><span class="row" style="gap:6px">${avatarsForNames(t.assignees,18)}${esc(assigneeNamesLabel(t.assignees))}</span><span>${t.pct||0}%</span></div>
+            ${warn ? `<div class="kcard-warn">⚠ ${esc(dep.text)}</div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+function wireKanbanDnD(){
+  document.querySelectorAll('.kcard').forEach(card=>{
+    card.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', card.dataset.id); });
+  });
+  document.querySelectorAll('.kcol-body').forEach(col=>{
+    col.addEventListener('dragover', e=>{ e.preventDefault(); col.classList.add('dragover'); });
+    col.addEventListener('dragleave', ()=> col.classList.remove('dragover'));
+    col.addEventListener('drop', async e=>{
+      e.preventDefault(); col.classList.remove('dragover');
+      const id = e.dataTransfer.getData('text/plain');
+      const t = state.tasks.find(x=>x.id===id);
+      if(t){ t.status = col.dataset.status; await saveTasks(); render(); }
+    });
+  });
+}
+
+/* ============================= TIMELINE VIEW ============================= */
+function daysBetween(a,b){ return Math.round((new Date(b)-new Date(a))/86400000); }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function isoOf(d){ return d.toISOString().slice(0,10); }
+function isNonWorkingDay(dateISO){
+  return (state.project.nonWorkingDays||[]).includes(dateISO);
+}
+function isWorkday(d){
+  return d.getDay()!==0 && d.getDay()!==6 && !isNonWorkingDay(isoOf(d));
+}
+function addWorkdays(startISO, days){
+  if(!startISO || !days || days<1) return startISO;
+  const d = new Date(startISO);
+  let added = 0;
+  while(added < days-1){
+    d.setDate(d.getDate()+1);
+    if(isWorkday(d)) added++;
+  }
+  return isoOf(d);
+}
+
+function progressGradient(pct, warn){
+  if(warn) return 'var(--red)';
+  const p = Math.max(0, Math.min(100, pct||0));
+  const spread = 16; // width of the soft fade, in percentage points
+  const fadeStart = Math.max(0, p - spread/2);
+  const fadeEnd = Math.min(100, p + spread/2);
+  return `linear-gradient(90deg, var(--green) 0%, var(--green) ${fadeStart}%, var(--gold) ${fadeEnd}%, var(--gold) 100%)`;
+}
+
+function getTaskConflicts(taskId){
+  const t = state.tasks.find(x=>x.id===taskId);
+  if(!t || !t.assignees || !t.assignees.length || !t.start || !t.due) return [];
+  return state.tasks.filter(o=>
+    o.id!==t.id && o.assignees && o.assignees.some(a=>t.assignees.includes(a)) && o.start && o.due &&
+    t.start<=o.due && o.start<=t.due
+  );
+}
+function showConflictInfo(e, taskId){
+  e.stopPropagation();
+  const t = state.tasks.find(x=>x.id===taskId); if(!t) return;
+  const conflicts = getTaskConflicts(taskId);
+  if(conflicts.length===0) return;
+  const lines = conflicts.map(c=>{
+    const shared = c.assignees.filter(a=>t.assignees.includes(a));
+    return `• ${c.id} — ${c.name} (${fmtDate(c.start)} – ${fmtDate(c.due)}) — shared: ${shared.join(', ')}`;
+  }).join('\n');
+  alert(`Double-booking on "${t.name}":\n\n${lines}`);
+}
+function renderTimelineView(){
+  const tasks = filteredTasksForTimeline().filter(t=>t.start && t.due);
+  const controlsBar = `<div class="tl-controls">
+    <span class="tl-zoom">
+      Zoom
+      <input type="range" id="tl-zoom-input" min="8" max="60" step="2" value="${state.timelineZoom||26}" oninput="setZoom(parseInt(this.value))">
+    </span>
+    <button class="btn btn-sm btn-ghost" onclick="scrollToToday()">Today</button>
+    <button class="btn btn-sm btn-ghost" onclick="panTimeline(-7)">◀ 7d</button>
+    <button class="btn btn-sm btn-ghost" onclick="panTimeline(7)">7d ▶</button>
+    <span class="faint" style="font-size:11.5px">Gold line = today · gradient reflects progress · solid red / red arrow = dependency issue · ! = double-booked</span>
+  </div>`;
+
+  if(tasks.length===0){
+    return controlsBar + `<div class="empty-state"><div class="display">Nothing to plot</div>No tasks match these filters with both a start and due date — try clearing a filter above, or add a new task.</div>`;
+  }
+
+  const starts = tasks.map(t=>new Date(t.start)), dues = tasks.map(t=>new Date(t.due));
+  let min = addDays(new Date(Math.min(...starts)), -4);
+  let max = addDays(new Date(Math.max(...dues)), 4);
+  const totalDays = Math.max(1, daysBetween(min,max));
+  const zoom = state.timelineZoom || 26; // px per day
+  const width = totalDays * zoom;
+  const rowH = 38, headH = 64;
+  const totalH = headH + tasks.length*rowH;
+
+  // day columns (gridlines, weekend/holiday shading, day numbers, month labels)
+  let dayCols = '', weekendBands = '', dayNums = '', monthLabels = '';
+  for(let i=0;i<=totalDays;i++){
+    const d = addDays(min, i);
+    const x = i*zoom;
+    const isMonthStart = d.getDate()===1;
+    const dISO = isoOf(d);
+    const isWeekend = d.getDay()===0 || d.getDay()===6;
+    const isHoliday = isNonWorkingDay(dISO);
+    dayCols += `<div class="tl-daycol ${isMonthStart?'month-start':''}" style="left:${x}px;height:${totalH}px"></div>`;
+    if(isWeekend || isHoliday){
+      weekendBands += `<div class="tl-weekend ${isHoliday?'tl-holiday':''}" style="left:${x}px;width:${zoom}px;height:${totalH}px" title="${isHoliday?'Non-working day':'Weekend'}"></div>`;
+    }
+    if(zoom>=14){
+      dayNums += `<div class="tl-daynum" style="left:${x}px;width:${zoom}px">${d.getDate()}</div>`;
+    }
+    if(isMonthStart || i===0){
+      monthLabels += `<div class="tl-monthlabel" style="left:${x+3}px">${d.toLocaleDateString('en-GB',{month:'short',year:'2-digit'})}</div>`;
+    }
+  }
+  const todayOffset = daysBetween(min, todayISO());
+  const todayLine = (todayOffset>=0 && todayOffset<=totalDays)
+    ? `<div class="tl-today" style="left:${todayOffset*zoom}px;height:${totalH}px"></div>` : '';
+
+  const rowBands = tasks.map((t,i)=>`<div class="tl-rowband" style="top:${headH+i*rowH}px"></div>`).join('');
+
+  const barRects = {};
+  const bars = tasks.map((t,i)=>{
+    const dep = dependencyStatus(t);
+    const warn = dep.state==='warn'||dep.state==='unknown';
+    const left = Math.max(0, daysBetween(min,t.start))*zoom;
+    const rightDay = Math.max(daysBetween(min,t.start)+1, daysBetween(min,t.due)+1);
+    const w = Math.max(zoom*1.1, rightDay*zoom - left);
+    const top = headH + i*rowH + 7;
+    barRects[t.id] = {left, right: left+w, midY: top+12};
+
+    const conflicts = getTaskConflicts(t.id);
+    let badge = '';
+    if(conflicts.length>0){
+      const overlapDays = new Set();
+      conflicts.forEach(c=>{
+        const os = t.start>c.start ? t.start : c.start; // later of the two starts = day overlap begins
+        overlapDays.add(os);
+      });
+      badge = [...overlapDays].map(day=>{
+        const dayIndex = daysBetween(min, day);
+        const bx = dayIndex*zoom;
+        return `<div class="tl-conflict-badge" style="left:${bx.toFixed(1)}px;width:${zoom.toFixed(1)}px;top:${top-6}px" onclick="showConflictInfo(event,'${t.id}')" title="${esc(assigneeNamesLabel(t.assignees))} double-booked from ${fmtDate(day)} — click for details">!</div>`;
+      }).join('');
+    }
+
+    return `<div class="tl-bar" data-task-id="${t.id}" onclick="handleBarClick(event,'${t.id}')"
+      style="left:${left}px;width:${w}px;top:${top}px;background:${progressGradient(t.pct,warn)};color:${warn?'#fff':'#101317'}"
+      title="${esc(t.name)} — ${t.pct||0}% — drag to move">${t.pct||0}%</div>${badge}`;
+  }).join('');
+
+  const depArrows = [];
+  tasks.forEach(t=>{
+    (t.dependsOn||[]).forEach(depId=>{
+      const pred = barRects[depId], succ = barRects[t.id];
+      if(!pred || !succ) return; // predecessor not visible under current filters
+      const warn = dependencyStatus(t).state==='warn' || dependencyStatus(t).state==='unknown';
+      const stroke = warn ? 'var(--red)' : 'var(--ink-faint)';
+      const marker = warn ? 'url(#tl-arrow-warn)' : 'url(#tl-arrow)';
+      const midX = pred.right + 10;
+      const d = `M ${pred.right} ${pred.midY} L ${midX} ${pred.midY} L ${midX} ${succ.midY} L ${succ.left-2} ${succ.midY}`;
+      depArrows.push(`<path d="${d}" style="stroke:${stroke}" stroke-width="1.6" fill="none" marker-end="${marker}"/>`);
+    });
+  });
+  const depArrowsSvg = `<svg width="${width}" height="${totalH}" style="position:absolute;top:0;left:0;pointer-events:none;z-index:4">
+    <defs>
+      <marker id="tl-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink-faint)"/>
+      </marker>
+      <marker id="tl-arrow-warn" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" style="fill:var(--red)"/>
+      </marker>
+    </defs>
+    ${depArrows.join('')}
+  </svg>`;
+
+  const labelRows = tasks.map(t=>`
+    <div class="tl-labels-row" onclick="openDrawer('${t.id}')">
+      <div class="tl-col-task-fixed"><span class="task-id mono">${t.id}</span><span>${esc(t.name)}</span></div>
+      <div class="tl-cols-scroll-outer other-cols-scroll">
+        <div class="tl-cols-scroll-inner">
+          <span class="tl-col-assignee">${avatarsForNames(t.assignees,18)}<span>${esc(assigneeNamesLabel(t.assignees))}</span></span>
+          <span class="tl-col-estimation">${t.duration?t.duration+'d':'—'}</span>
+          <span class="tl-col-category">${categoryTag(t.category)}</span>
+          <span class="tl-col-list">${taskListTag(t.taskList)}</span>
+        </div>
+      </div>
+    </div>`).join('');
+
+  const labelsHead = `<div class="tl-labels-row head">
+    <div class="tl-col-task-fixed">Task</div>
+    <div class="tl-cols-scroll-outer other-cols-scroll">
+      <div class="tl-cols-scroll-inner">
+        <span class="tl-col-assignee" onclick="event.stopPropagation()">
+          <select class="inline-edit" onchange="state.timelineFilters.assignee=this.value;render()">
+            <option value="">Assignee</option>
+            ${state.team.map(m=>`<option value="${esc(m.name)}" ${state.timelineFilters.assignee===m.name?'selected':''}>${esc(m.name)}</option>`).join('')}
+          </select>
+        </span>
+        <span class="tl-col-estimation">Est.</span>
+        <span class="tl-col-category" onclick="event.stopPropagation()">
+          <select class="inline-edit" onchange="state.timelineFilters.category=this.value;render()">
+            <option value="">Category</option>
+            ${state.categories.map(c=>`<option value="${esc(c.name)}" ${state.timelineFilters.category===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
+          </select>
+        </span>
+        <span class="tl-col-list" onclick="event.stopPropagation()">
+          <select class="inline-edit" onchange="state.timelineFilters.taskList=this.value;render()">
+            <option value="">Task list</option>
+            ${state.taskLists.map(l=>`<option value="${esc(l)}" ${state.timelineFilters.taskList===l?'selected':''}>${esc(l)}</option>`).join('')}
+          </select>
+        </span>
+      </div>
+    </div>
+  </div>`;
+
+  const colsSliderRow = `<div class="tl-cols-slider-row">
+    <div class="tl-cols-slider-spacer"></div>
+    <div class="tl-cols-slider-wrap"><input type="range" id="tl-cols-slider" min="0" max="100" value="0" oninput="scrollOtherColsFromSlider(this.value)"></div>
+  </div>`;
+
+  return controlsBar + `
+    <div class="tl-outer">
+      <div class="tl-labels" id="tl-labels" style="flex:0 0 ${state.timelineLabelsWidth}px">
+        ${labelsHead}
+        ${colsSliderRow}
+        ${labelRows}
+      </div>
+      <div class="tl-resize-handle" id="tl-resize-handle" title="Drag to resize"></div>
+      <div class="tl-scrollarea" id="tl-scrollarea">
+        <div class="tl-inner" style="width:${width}px;height:${totalH}px">
+          ${weekendBands}
+          ${dayCols}
+          <div class="tl-headerband">${monthLabels}${dayNums}</div>
+          <div class="tl-cal-slider-row"><input type="range" id="tl-scroll-input" min="0" max="100" value="0" oninput="scrollFromSlider(this.value)"></div>
+          ${rowBands}
+          ${todayLine}
+          ${bars}
+          ${depArrowsSvg}
+        </div>
+      </div>
+    </div>
+  `;
+}
+function wireTimelineControls(){
+  const area = document.getElementById('tl-scrollarea');
+  const slider = document.getElementById('tl-scroll-input');
+  if(!area || !slider) return;
+  const maxScroll = () => Math.max(1, area.scrollWidth - area.clientWidth);
+  slider.max = maxScroll();
+  slider.style.width = area.clientWidth + 'px'; // sticky row would otherwise stretch to the full scrollable width
+  area.addEventListener('scroll', ()=>{ slider.value = area.scrollLeft; });
+  // restore previous relative scroll position after re-render
+  if(state.timelineScrollFrac!=null){
+    area.scrollLeft = state.timelineScrollFrac * maxScroll();
+  }
+  area.addEventListener('scroll', ()=>{ state.timelineScrollFrac = area.scrollLeft / maxScroll(); });
+}
+let ganttDragMoved = false;
+function handleBarClick(e, taskId){
+  if(ganttDragMoved){ ganttDragMoved = false; return; }
+  openDrawer(taskId);
+}
+function wireTimelineResize(){
+  const handle = document.getElementById('tl-resize-handle');
+  const labels = document.getElementById('tl-labels');
+  if(!handle || !labels) return;
+  handle.addEventListener('mousedown', (e)=>{
+    if(e.button!==0) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const initialWidth = labels.getBoundingClientRect().width;
+    let currentWidth = initialWidth;
+    handle.classList.add('dragging');
+    function onMove(ev){
+      // 200 = the Task column's fixed width; below that there'd be no room left for it at all
+      currentWidth = Math.max(200, Math.min(820, initialWidth + (ev.clientX - startX)));
+      labels.style.flex = `0 0 ${currentWidth}px`;
+    }
+    async function onUp(){
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      handle.classList.remove('dragging');
+      state.timelineLabelsWidth = Math.round(currentWidth);
+      await saveTimelineLabelsWidth();
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+function wireOtherColsSync(){
+  const scrollers = document.querySelectorAll('.other-cols-scroll');
+  const slider = document.getElementById('tl-cols-slider');
+  if(!scrollers.length) return;
+  const maxScroll = () => Math.max(1, scrollers[0].scrollWidth - scrollers[0].clientWidth);
+  if(slider) slider.max = maxScroll();
+  scrollers.forEach(el=>{
+    el.addEventListener('scroll', ()=>{
+      scrollers.forEach(other=>{ if(other!==el) other.scrollLeft = el.scrollLeft; });
+      if(slider) slider.value = el.scrollLeft;
+    });
+  });
+}
+function scrollOtherColsFromSlider(v){
+  const scrollers = document.querySelectorAll('.other-cols-scroll');
+  if(!scrollers.length) return;
+  scrollers.forEach(el=> el.scrollLeft = v);
+}
+function wireTimelineDrag(){
+  document.querySelectorAll('.tl-bar').forEach(bar=>{
+    bar.addEventListener('mousedown', (e)=>{
+      if(e.button!==0) return;
+      const taskId = bar.dataset.taskId;
+      const task = state.tasks.find(x=>x.id===taskId);
+      if(!task || !task.start) return;
+      const zoom = state.timelineZoom || 26;
+      const startX = e.clientX;
+      const initialLeft = parseFloat(bar.style.left) || 0;
+      let moved = false;
+      e.preventDefault();
+      function onMove(ev){
+        const dx = ev.clientX - startX;
+        if(Math.abs(dx) > 3) moved = true;
+        if(moved){
+          bar.style.left = (initialLeft + dx) + 'px';
+          bar.style.cursor = 'grabbing';
+          bar.style.zIndex = 5;
+        }
+      }
+      async function onUp(ev){
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        bar.style.cursor = '';
+        if(!moved) return;
+        ganttDragMoved = true;
+        const dx = ev.clientX - startX;
+        const deltaDays = Math.round(dx / zoom);
+        if(deltaDays!==0) await moveTaskDates(taskId, deltaDays);
+        else render(); // snap back visually
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+}
+async function moveTaskDates(taskId, deltaDays){
+  const t = state.tasks.find(x=>x.id===taskId); if(!t || !t.start) return;
+  const newStart = isoOf(addDays(t.start, deltaDays));
+  if(t.duration>0){
+    // preserve the same number of WORKING days — recompute due, skipping weekends
+    t.start = newStart;
+    t.due = addWorkdays(newStart, t.duration);
+  } else if(t.due){
+    // no estimation set — just shift both dates by the same number of calendar days
+    const span = daysBetween(t.start, t.due);
+    t.start = newStart;
+    t.due = isoOf(addDays(newStart, span));
+  } else {
+    t.start = newStart;
+  }
+  await saveTasks();
+  render();
+}
+function scrollFromSlider(v){
+  const area = document.getElementById('tl-scrollarea'); if(!area) return;
+  area.scrollLeft = v;
+}
+function panTimeline(days){
+  const area = document.getElementById('tl-scrollarea'); if(!area) return;
+  const zoom = state.timelineZoom || 26;
+  area.scrollLeft += days*zoom;
+}
+function setZoom(z){
+  const area = document.getElementById('tl-scrollarea');
+  if(area){ const maxScroll = Math.max(1, area.scrollWidth-area.clientWidth); state.timelineScrollFrac = area.scrollLeft/maxScroll; }
+  state.timelineZoom = z;
+  document.getElementById('view').innerHTML = renderTimelineView();
+  wireTimelineControls();
+  wireTimelineDrag();
+  wireTimelineResize();
+  wireOtherColsSync();
+}
+function scrollToToday(){
+  const area = document.getElementById('tl-scrollarea'); if(!area) return;
+  const zoom = state.timelineZoom || 26;
+  const tasks = filteredTasksForTimeline().filter(t=>t.start && t.due);
+  if(tasks.length===0) return;
+  const starts = tasks.map(t=>new Date(t.start));
+  let min = addDays(new Date(Math.min(...starts)), -4);
+  const offset = daysBetween(min, todayISO())*zoom;
+  area.scrollLeft = Math.max(0, offset - area.clientWidth/2);
+}
+
+/* ============================= DASHBOARD VIEW ============================= */
+function warningReason(t){
+  const reasons = [];
+  if(isOverdue(t)) reasons.push('Overdue');
+  const d = dependencyStatus(t);
+  if(d.state==='warn' || d.state==='unknown') reasons.push(d.text || 'Dependency issue');
+  return reasons.join(' · ');
+}
+function warningRowMini(t){
+  return `<div class="dash-task-row" onclick="openDrawer('${t.id}')">
+    <div class="dash-task-main">
+      <span class="task-id mono">${t.id}</span>
+      <span>${esc(t.name)}</span>
+    </div>
+    <div class="dash-task-side">
+      <span class="row" style="gap:5px">${avatarsForNames(t.assignees,16)}${esc(assigneeNamesLabel(t.assignees))}</span>
+      <span class="dep-warn">${esc(warningReason(t))}</span>
+    </div>
+  </div>`;
+}
+function ownerTaskBreakdown(){
+  const owners = {};
+  function bucket(name){
+    if(!owners[name]){ owners[name] = {}; STATUSES.forEach(s=>owners[name][s]=0); }
+    return owners[name];
+  }
+  state.tasks.forEach(t=>{
+    const names = (t.assignees && t.assignees.length) ? t.assignees : ['Unassigned'];
+    names.forEach(name=>{
+      const b = bucket(name);
+      if(STATUSES.includes(t.status)) b[t.status]++;
+    });
+  });
+  return Object.keys(owners).map(name=>{
+    const counts = owners[name];
+    const total = STATUSES.reduce((s,st)=>s+counts[st],0);
+    return {name, counts, total};
+  }).sort((a,b)=>b.total-a.total);
+}
+function renderDashboardView(){
+  const tasks = state.tasks;
+  const byStatus = STATUSES.map(s=>({s, n: tasks.filter(t=>t.status===s).length}));
+  const warningTasks = tasks.filter(t=>{
+    const d = dependencyStatus(t);
+    return d.state==='warn' || d.state==='unknown';
+  });
+
+  const byDue = (a,b)=> (a.due||'9999-99-99').localeCompare(b.due||'9999-99-99');
+  const myCurrentTasks = tasks.filter(t=>(t.assignees||[]).includes(state.currentUser) && t.status!=='Completed').sort(byDue);
+  const teamCurrentTasks = tasks.filter(t=>t.status!=='Completed').sort(byDue);
+  const teamCurrentShown = teamCurrentTasks.slice(0,8);
+  const lateTasks = tasks.filter(isOverdue).sort(byDue);
+
+  const p = state.project;
+  const typeColor = PROJECT_TYPE_COLOR[p.type] || '#6B7280';
+  const projectHeader = `<div class="project-header">
+    ${projectIconHTML(64)}
+    <div style="flex:1;min-width:0">
+      <div class="project-header-title">${esc(p.title||'Untitled Project')}</div>
+      <div class="project-header-meta">
+        <span class="tagpill" style="background:${typeColor}29;color:${typeColor};border:1px solid ${typeColor}66">${esc(p.type||'—')}</span>
+        ${p.period?`<span class="faint">${esc(p.period)}</span>`:''}
+      </div>
+      ${p.notes?`<div class="project-header-notes">${esc(p.notes)}</div>`:''}
+    </div>
+  </div>`;
+
+  const myTasksCard = `<div class="card dash-list-card">
+    <h3>My current tasks${state.currentUser?' — '+esc(state.currentUser):''}</h3>
+    ${myCurrentTasks.length ? myCurrentTasks.map(t=>taskRowMini(t,true)).join('')
+      : `<div class="faint" style="padding:4px 0">No open tasks assigned to you right now.</div>`}
+  </div>`;
+
+  const teamCurrentCard = `<div class="card dash-list-card">
+    <h3>Team current tasks</h3>
+    ${teamCurrentShown.length ? teamCurrentShown.map(t=>taskRowMini(t,true)).join('')
+      : `<div class="faint" style="padding:4px 0">No open tasks.</div>`}
+    ${teamCurrentTasks.length>8 ? `<div class="dash-more" onclick="setView('tasks')">+${teamCurrentTasks.length-8} more — view all in Tasks</div>` : ''}
+  </div>`;
+
+  const lateCard = `<div class="card dash-list-card" style="${lateTasks.length?'border-color:rgba(229,100,106,.5)':''}">
+    <h3 style="${lateTasks.length?'color:var(--red)':''}">Overdue: ${lateTasks.length}</h3>
+    ${lateTasks.length ? lateTasks.map(t=>taskRowMini(t,true)).join('')
+      : `<div class="faint" style="padding:4px 0">Nothing overdue — nice work.</div>`}
+  </div>`;
+
+  const warningsCard = `<div class="card dash-list-card" style="${warningTasks.length?'border-color:rgba(229,100,106,.5)':''}">
+    <h3 style="${warningTasks.length?'color:var(--red)':''}">Warnings: ${warningTasks.length}</h3>
+    ${warningTasks.length ? warningTasks.map(warningRowMini).join('')
+      : `<div class="faint" style="padding:4px 0">No warnings right now.</div>`}
+  </div>`;
+
+  // ---- Status: pie + legend below, Zoho-report style but in our own palette ----
+  const statusPieData = byStatus.map(x=>({label:x.s, value:x.n, color:STATUS_HEX[x.s], onclick:`filterTasksByStatus('${x.s}')`}));
+  const statusCard = `<div class="card dash-list-card">
+    <h3>Status</h3>
+    <div class="faint" style="margin:-6px 0 14px">Total: ${tasks.length} tasks</div>
+    <div style="display:flex;justify-content:center">${pieChartSVG(statusPieData, 190)}</div>
+    <div class="chart-legend" style="justify-content:center">${byStatus.map(x=>`
+      <span class="chart-legend-item" style="cursor:pointer" onclick="filterTasksByStatus('${x.s}')"><span class="chart-legend-dot" style="background:${STATUS_HEX[x.s]}"></span>${x.s} - ${x.n}</span>`).join('')}</div>
+  </div>`;
+
+  // ---- Task assignees: stacked horizontal bars per owner, Zoho "Task Owner Report" style ----
+  const ownerRows = ownerTaskBreakdown();
+  let assigneesCard;
+  if(ownerRows.length===0){
+    assigneesCard = `<div class="card dash-list-card"><h3>Task assignees</h3><div class="faint" style="padding:4px 0">No tasks yet.</div></div>`;
+  } else {
+    const maxTotal = Math.max(...ownerRows.map(r=>r.total), 1);
+    const axisMax = Math.max(5, Math.ceil(maxTotal/5)*5);
+    const tickStep = Math.ceil(axisMax/5);
+    const ticks = [];
+    for(let v=0; v<=axisMax; v+=tickStep) ticks.push(v);
+    if(ticks[ticks.length-1]!==axisMax) ticks.push(axisMax);
+
+    const barsHTML = ownerRows.map(r=>{
+      const segs = STATUSES.filter(s=>r.counts[s]>0).map(s=>{
+        const c = r.counts[s];
+        const widthPct = c/axisMax*100;
+        return `<div class="assignee-seg" style="width:${widthPct}%;background:${STATUS_HEX[s]}" title="${s}: ${c}">${widthPct>7?c:''}</div>`;
+      }).join('');
+      const avatarName = r.name==='Unassigned' ? '' : r.name;
+      return `<div class="assignee-row">
+        <div class="assignee-label row" style="gap:6px">${avatarForName(avatarName,18)}<span>${esc(r.name)}</span></div>
+        <div class="assignee-barwrap">
+          <div class="assignee-bar">${segs}</div>
+          <span class="assignee-total">${r.total}</span>
+        </div>
+      </div>`;
+    }).join('');
+
+    const axisHTML = `<div class="assignee-axis">
+      <div class="assignee-axis-spacer"></div>
+      <div class="assignee-axis-ticks">${ticks.map(t=>`<span style="left:${t/axisMax*100}%">${t}</span>`).join('')}</div>
+    </div>`;
+
+    const legend = `<div class="chart-legend">${STATUSES.map(s=>{
+      const total = ownerRows.reduce((sum,r)=>sum+r.counts[s],0);
+      return `<span class="chart-legend-item"><span class="chart-legend-dot" style="background:${STATUS_HEX[s]}"></span>${s} - ${total}</span>`;
+    }).join('')}</div>`;
+
+    const grandTotal = ownerRows.reduce((s,r)=>s+r.total,0);
+
+    assigneesCard = `<div class="card dash-list-card">
+      <h3>Task assignees</h3>
+      <div class="faint" style="margin:-6px 0 14px">Total: ${grandTotal} tasks</div>
+      <div class="assignee-chart">${barsHTML}</div>
+      ${axisHTML}
+      ${legend}
+    </div>`;
+  }
+
+  const headerRow = `<div class="dash-2col"><div>${projectHeader}</div><div>${myTasksCard}</div></div>`;
+  const chartsRow = `<div class="dash-2col"><div>${statusCard}</div><div>${assigneesCard}</div></div>`;
+  const currentAndOverdueRow = `<div class="dash-2col"><div>${teamCurrentCard}</div><div>${lateCard}</div></div>`;
+  return headerRow + chartsRow + currentAndOverdueRow + warningsCard;
+}
+
+/* ============================= REPORTS VIEW (Supervisors only) ============================= */
+function memberReportStats(memberName){
+  const mine = state.tasks.filter(t=>(t.assignees||[]).includes(memberName));
+  const total = mine.length;
+  const completed = mine.filter(t=>t.status==='Completed');
+  const completedLate = completed.filter(t=> t.completedAt && t.due && t.completedAt > t.due).length;
+  const revisions = mine.reduce((s,t)=> s + (t.revisionCount||0), 0);
+  const revisionRate = total>0 ? revisions/total : 0;
+  return {total, completedCount: completed.length, completedLate, revisions, revisionRate};
+}
+function renderReportsView(){
+  if(state.team.length===0){
+    return `<div class="empty-state"><div class="display">No team members yet</div>Add people on the Team tab first.</div>`;
+  }
+  const rows = state.team.map((m,i)=>({m, s: memberReportStats(m.name), color: TAG_PALETTE[i % TAG_PALETTE.length]}));
+  const table = `<table class="ttable"><thead><tr>
+    <th>Member</th><th>Role</th><th>Tasks</th><th>Completed</th><th>Completed late</th><th>Needs revision (all-time)</th><th>Revision rate</th>
+  </tr></thead><tbody>
+    ${rows.map(({m,s})=>`
+      <tr>
+        <td><span class="row" style="gap:8px">${avatarForMember(m,26)}<span>${esc(m.name)}</span></span></td>
+        <td class="faint">${esc(m.role||'—')}</td>
+        <td>${s.total}</td>
+        <td>${s.completedCount}</td>
+        <td class="${s.completedLate?'dep-warn':''}">${s.completedLate}</td>
+        <td class="${s.revisions?'dep-warn':''}">${s.revisions}</td>
+        <td class="${s.revisionRate>0.5?'dep-warn':''}">${formatNum(s.revisionRate)}</td>
+      </tr>`).join('')}
+  </tbody></table>`;
+
+  const names = rows.map(r=>r.m.name);
+  const rateChart = `<div class="card dash-list-card">
+    <h3>Revision rate by member</h3>
+    <div class="faint" style="margin:-6px 0 10px">Revisions ÷ tasks assigned. A value above 1 means, on average, tasks needed more than one revision.</div>
+    ${verticalBarChart(names, [{name:'Revision rate', colors: rows.map(r=>r.color), values: rows.map(r=>r.s.revisionRate)}])}
+  </div>`;
+
+  const completedChart = `<div class="card dash-list-card">
+    <h3>Completed tasks by member</h3>
+    <div class="faint" style="margin:-6px 0 10px">On-time vs. completed after the deadline, stacked into one bar per person.</div>
+    ${verticalBarChart(names, [
+      {name:'Completed on time', color:'#6FCF97', values: rows.map(r=>r.s.completedCount - r.s.completedLate)},
+      {name:'Completed late', color:'#E5646A', values: rows.map(r=>r.s.completedLate)}
+    ], {stacked:true})}
+    <div class="chart-legend">
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#6FCF97"></span>Completed on time</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#E5646A"></span>Completed late</span>
+    </div>
+  </div>`;
+
+  return `<div class="faint" style="margin-bottom:14px">Visible to Supervisors only. "Needs Revision" is a running count of how many times a task assigned to this person has been sent back for revision — it doesn't reset if the task is later completed, so it reflects quality over time rather than current status.</div>
+  ${table}
+  <div class="dash-2col" style="margin-top:14px"><div>${rateChart}</div><div>${completedChart}</div></div>`;
+}
+
+/* ============================= PMS SUPPORT (forum: bugs + feature requests) ============================= */
+function renderSupportView(){
+  let posts = state.forumPosts.filter(p=>
+    (!state.supportFilters.type || p.type===state.supportFilters.type) &&
+    (!state.supportFilters.status || p.status===state.supportFilters.status)
+  );
+  posts = posts.slice().sort((a,b)=> (b.votes||[]).length - (a.votes||[]).length || b.ts - a.ts);
+
+  const filterBar = `<div class="filterbar">
+    <select onchange="state.supportFilters.type=this.value;render()">
+      <option value="">All types</option>
+      ${FORUM_TYPES.map(t=>`<option value="${t}" ${state.supportFilters.type===t?'selected':''}>${t}</option>`).join('')}
+    </select>
+    <select onchange="state.supportFilters.status=this.value;render()">
+      <option value="">All statuses</option>
+      ${FORUM_STATUSES.map(s=>`<option value="${s}" ${state.supportFilters.status===s?'selected':''}>${s}</option>`).join('')}
+    </select>
+    <span class="faint" style="font-size:11.5px">Sorted by votes, then newest</span>
+  </div>`;
+
+  if(posts.length===0){
+    return filterBar + `<div class="empty-state"><div class="display">No posts yet</div>Be the first to report a bug or request a feature.</div>`;
+  }
+
+  const cards = posts.map(p=>{
+    const votes = p.votes||[];
+    const voted = votes.includes(state.currentUser);
+    const comments = p.comments||[];
+    const tColor = FORUM_TYPE_COLOR[p.type]||'#6B7280';
+    const sColor = FORUM_STATUS_COLOR[p.status]||'#6B7280';
+    return `<div class="forum-post-card" onclick="openPostDrawer('${p.id}')">
+      <div class="forum-post-head">
+        <span class="tagpill" style="background:${tColor}29;color:${tColor};border:1px solid ${tColor}66">${p.type}</span>
+        <span class="forum-post-title">${esc(p.title)}</span>
+        <span class="tagpill" style="background:${sColor}29;color:${sColor};border:1px solid ${sColor}66">${p.status}</span>
+      </div>
+      ${p.description?`<div class="forum-post-desc">${esc(p.description)}</div>`:''}
+      <div class="forum-post-meta">
+        <button class="forum-vote-btn ${voted?'voted':''}" onclick="event.stopPropagation();toggleVote('${p.id}')">▲ ${votes.length}</button>
+        <span>💬 ${comments.length}</span>
+        <span>by ${esc(p.author||'Someone')} · ${fmtWhen(p.ts)}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  return filterBar + cards;
+}
+
+async function toggleVote(postId){
+  if(!state.currentUser){ toast('Pick who you are, top of the sidebar'); return; }
+  const p = state.forumPosts.find(x=>x.id===postId); if(!p) return;
+  if(!p.votes) p.votes = [];
+  if(p.votes.includes(state.currentUser)) p.votes = p.votes.filter(v=>v!==state.currentUser);
+  else p.votes.push(state.currentUser);
+  await saveForumPosts();
+  render();
+  if(state.drawerTaskId==='post:'+postId) document.getElementById('drawer').innerHTML = renderPostDrawerContent(postId);
+}
+
+function openNewPostDrawer(){
+  if(!state.currentUser){ toast('Pick who you are, top of the sidebar'); return; }
+  state.drawerTaskId = null;
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = `
+    <div class="drawer-head">
+      <div><h2 style="margin:0;font-size:17px">New post</h2></div>
+      <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="field"><label>Type</label>
+        <select id="new-post-type">
+          ${FORUM_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Title</label><input id="new-post-title" placeholder="Short summary"></div>
+      <div class="field"><label>Description</label><textarea id="new-post-desc" rows="5" placeholder="What's happening? What would you like to see?"></textarea></div>
+      <button class="btn btn-gold" onclick="createPost()">Post</button>
+    </div>`;
+}
+async function createPost(){
+  const title = document.getElementById('new-post-title').value.trim();
+  if(!title){ toast('Title is required'); return; }
+  const type = document.getElementById('new-post-type').value;
+  const description = document.getElementById('new-post-desc').value.trim();
+  const post = {
+    id: uid('p'), type, title, description, author: state.currentUser, ts: Date.now(),
+    status: 'Open', votes: [], comments: []
+  };
+  state.forumPosts.push(post);
+  await saveForumPosts();
+  closeDrawer();
+  render();
+}
+
+function openPostDrawer(postId){
+  state.drawerTaskId = 'post:'+postId;
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = renderPostDrawerContent(postId);
+}
+function renderPostDrawerContent(postId){
+  const p = state.forumPosts.find(x=>x.id===postId); if(!p) return '';
+  const votes = p.votes||[];
+  const voted = votes.includes(state.currentUser);
+  const comments = p.comments||[];
+  const canManage = isSupervisor();
+  const canDelete = canManage || p.author===state.currentUser;
+  return `
+    <div class="drawer-head">
+      <div>
+        <span class="tagpill" style="background:${FORUM_TYPE_COLOR[p.type]}29;color:${FORUM_TYPE_COLOR[p.type]};border:1px solid ${FORUM_TYPE_COLOR[p.type]}66">${p.type}</span>
+        <h2 style="margin:8px 0 0;font-size:17px">${esc(p.title)}</h2>
+        <div class="faint" style="margin-top:3px">by ${esc(p.author||'Someone')} · ${fmtWhen(p.ts)}</div>
+      </div>
+      <div class="row" style="gap:6px">
+        ${canDelete?`<button class="btn btn-sm btn-danger" onclick="deletePost('${p.id}')">Delete</button>`:''}
+        <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
+      </div>
+    </div>
+    <div class="drawer-body">
+      ${p.description?`<div class="chat-text" style="margin-bottom:14px">${esc(p.description)}</div>`:''}
+      <div class="row" style="gap:10px;margin-bottom:16px">
+        <button class="forum-vote-btn ${voted?'voted':''}" onclick="toggleVote('${p.id}')">▲ ${votes.length} vote${votes.length===1?'':'s'}</button>
+      </div>
+      <div class="field"><label>Status ${canManage?'':'<span class="faint" style="text-transform:none;font-weight:400">— Supervisors only</span>'}</label>
+        <select ${canManage?'':'disabled'} onchange="setPostStatus('${p.id}',this.value)">
+          ${FORUM_STATUSES.map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div class="chat-divider">
+        <h3>Comments</h3>
+        <div class="chat-thread">
+          ${comments.length ? comments.map(c=>`
+            <div class="chat-msg">
+              <div class="chat-avatar">${esc((c.author||'?').slice(0,1).toUpperCase())}</div>
+              <div style="flex:1;min-width:0">
+                <div class="chat-bubble">
+                  <div class="chat-meta"><b>${esc(c.author||'Someone')}</b> · ${fmtWhen(c.ts)}
+                    ${(c.author===state.currentUser)?`<span class="chat-actions"><span class="chat-action-link" onclick="deleteForumComment('${p.id}','${c.id}')">Delete</span></span>`:''}
+                  </div>
+                  <div class="chat-text">${esc(c.text)}</div>
+                </div>
+              </div>
+            </div>`).join('') : '<div class="chat-empty">No comments yet.</div>'}
+        </div>
+        <div class="chat-compose">
+          <textarea id="post-comment-input" placeholder="Add a comment…"></textarea>
+          <div class="chat-compose-foot">
+            <span></span>
+            <button class="btn btn-gold btn-sm" onclick="postForumComment('${p.id}')">Post</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+async function setPostStatus(postId, status){
+  if(!isSupervisor()){ toast('Only Supervisors can change status'); return; }
+  const p = state.forumPosts.find(x=>x.id===postId); if(!p) return;
+  p.status = status;
+  await saveForumPosts();
+  render();
+}
+async function postForumComment(postId){
+  if(!state.currentUser){ toast('Pick who you are, top of the sidebar'); return; }
+  const input = document.getElementById('post-comment-input');
+  const text = input.value.trim();
+  if(!text) return;
+  const p = state.forumPosts.find(x=>x.id===postId); if(!p) return;
+  if(!p.comments) p.comments = [];
+  p.comments.push({id:uid('c'), author: state.currentUser, text, ts: Date.now()});
+  await saveForumPosts();
+  document.getElementById('drawer').innerHTML = renderPostDrawerContent(postId);
+  render();
+}
+async function deleteForumComment(postId, commentId){
+  if(!confirm('Delete this comment?')) return;
+  const p = state.forumPosts.find(x=>x.id===postId); if(!p) return;
+  p.comments = (p.comments||[]).filter(c=>c.id!==commentId);
+  await saveForumPosts();
+  document.getElementById('drawer').innerHTML = renderPostDrawerContent(postId);
+  render();
+}
+async function deletePost(postId){
+  if(!confirm('Delete this post? This cannot be undone.')) return;
+  state.forumPosts = state.forumPosts.filter(x=>x.id!==postId);
+  await saveForumPosts();
+  closeDrawer();
+  render();
+}
+
+/* ============================= DOCUMENTS (index of files kept in OneDrive/Drive/etc.) ============================= */
+function driveFolderId(url){
+  if(!url) return '';
+  const m = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : '';
+}
+async function loadDriveFolder(folderId){
+  state.driveLoading = true;
+  if(state.view==='documents') render();
+  try{
+    state.driveFiles = await driveApiList(folderId);
+  }catch(e){
+    console.error(e);
+    toast('Could not load that folder — try signing in again');
+    state.driveFiles = [];
+  }
+  state.driveLoading = false;
+  if(state.view==='documents') render();
+}
+function driveNavigateTo(folderId, name){
+  state.driveBreadcrumb.push({id: folderId, name});
+  state.driveCurrentFolderId = folderId;
+  state.driveFiles = null;
+  loadDriveFolder(folderId);
+}
+function driveNavigateBreadcrumb(index){
+  state.driveBreadcrumb = state.driveBreadcrumb.slice(0, index+1);
+  state.driveCurrentFolderId = state.driveBreadcrumb[index].id;
+  state.driveFiles = null;
+  loadDriveFolder(state.driveCurrentFolderId);
+}
+function driveCardClick(el){
+  const isFolder = el.dataset.isFolder === 'true';
+  if(isFolder){ driveNavigateTo(el.dataset.fileId, el.dataset.fileName); return; }
+  const f = (state.driveFiles||[]).find(x=>x.id===el.dataset.fileId);
+  if(!f) return;
+  const isImage = f.mimeType && f.mimeType.startsWith('image/');
+  const isVideo = f.mimeType && f.mimeType.startsWith('video/');
+  if(isImage || isVideo){ openDriveMedia(f, isVideo); return; }
+  if(f.webViewLink) window.open(f.webViewLink, '_blank');
+}
+let currentDriveMediaUrl = null;
+async function openDriveMedia(f, isVideo){
+  const content = document.getElementById('drive-lightbox-content');
+  const link = document.getElementById('drive-lightbox-link');
+  link.href = f.webViewLink || '#';
+  content.innerHTML = `<div class="faint" style="padding:40px">Loading…</div>`;
+  document.getElementById('drive-lightbox-hint').textContent = '';
+  document.getElementById('drive-lightbox').classList.add('open');
+  try{
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, { headers: driveHeaders() });
+    if(!res.ok) throw new Error('fetch failed: '+res.status);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    currentDriveMediaUrl = url;
+    content.innerHTML = isVideo
+      ? `<video src="${url}" controls autoplay></video>`
+      : `<img id="drive-lightbox-img" src="${url}">`;
+    document.getElementById('drive-lightbox-hint').textContent = isVideo ? '' : 'Scroll to zoom · drag to pan · double-click to reset';
+    if(!isVideo) wireImageZoom(document.getElementById('drive-lightbox-img'));
+  }catch(e){
+    console.error(e);
+    content.innerHTML = `<div class="faint" style="padding:40px;text-align:center">Couldn't load a preview — try "Open in Google Drive" below.</div>`;
+  }
+}
+function closeDriveMedia(){
+  document.getElementById('drive-lightbox').classList.remove('open');
+  document.getElementById('drive-lightbox-content').innerHTML = ''; // also stops any playing video
+  document.getElementById('drive-lightbox-hint').textContent = '';
+  if(currentDriveMediaUrl){ URL.revokeObjectURL(currentDriveMediaUrl); currentDriveMediaUrl = null; }
+}
+async function driveUploadFiles(fileList){
+  const files = Array.from(fileList || []);
+  if(files.length===0) return;
+  toast(`Uploading ${files.length} file${files.length>1?'s':''}…`);
+  try{
+    for(const f of files){ await driveApiUpload(f, state.driveCurrentFolderId); }
+    toast('Upload complete');
+    await loadDriveFolder(state.driveCurrentFolderId);
+  }catch(err){ console.error(err); toast('Upload failed'); }
+}
+async function driveHandleUpload(e){
+  await driveUploadFiles(e.target.files);
+  e.target.value = '';
+}
+function driveHandleDragOver(e){
+  e.preventDefault();
+  e.currentTarget.classList.add('drive-drag-over');
+}
+function driveHandleDragLeave(e){
+  e.currentTarget.classList.remove('drive-drag-over');
+}
+function driveHandleDrop(e){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drive-drag-over');
+  driveUploadFiles(e.dataTransfer.files);
+}
+async function driveCreateFolderPrompt(){
+  const name = prompt('New folder name:');
+  if(!name) return;
+  try{
+    await driveApiCreateFolder(name, state.driveCurrentFolderId);
+    await loadDriveFolder(state.driveCurrentFolderId);
+  }catch(err){ console.error(err); toast('Could not create folder'); }
+}
+async function driveRenamePrompt(cardEl){
+  const id = cardEl.dataset.fileId, oldName = cardEl.dataset.fileName;
+  const name = prompt('Rename to:', oldName);
+  if(!name || name===oldName) return;
+  try{
+    await driveApiRename(id, name);
+    await loadDriveFolder(state.driveCurrentFolderId);
+  }catch(err){ console.error(err); toast('Could not rename'); }
+}
+function driveStartMove(cardEl){
+  state.driveMovePending = { fileId: cardEl.dataset.fileId, name: cardEl.dataset.fileName, fromFolderId: state.driveCurrentFolderId };
+  render();
+}
+async function driveDeletePrompt(cardEl){
+  const id = cardEl.dataset.fileId, name = cardEl.dataset.fileName;
+  const isFolder = cardEl.dataset.isFolder === 'true';
+  const msg = isFolder
+    ? `Move the folder "${name}" and everything inside it to Google Drive's trash? You can restore it from Drive's Trash for 30 days.`
+    : `Move "${name}" to Google Drive's trash? You can restore it from Drive's Trash for 30 days.`;
+  if(!confirm(msg)) return;
+  try{
+    await driveApiTrash(id);
+    toast('Moved to trash');
+    await loadDriveFolder(state.driveCurrentFolderId);
+  }catch(err){ console.error(err); toast('Could not delete'); }
+}
+function driveCancelMove(){ state.driveMovePending = null; render(); }
+async function driveCompleteMove(){
+  const mv = state.driveMovePending;
+  if(!mv) return;
+  if(mv.fromFolderId === state.driveCurrentFolderId){ toast("That's already this file's folder"); return; }
+  try{
+    await driveApiMove(mv.fileId, state.driveCurrentFolderId, mv.fromFolderId);
+    toast('Moved');
+    state.driveMovePending = null;
+    await loadDriveFolder(state.driveCurrentFolderId);
+  }catch(err){ console.error(err); toast('Could not move that file'); }
+}
+function driveSignOut(){
+  driveAccessToken = null;
+  state.driveSignedIn = false;
+  state.driveFiles = null;
+  state.driveMovePending = null;
+  render();
+}
+function renderDriveBrowser(){
+  const breadcrumbHtml = state.driveBreadcrumb.map((b,i)=>
+    `<span class="chat-action-link" onclick="driveNavigateBreadcrumb(${i})">${esc(b.name)}</span>`
+  ).join(' <span class="faint">/</span> ');
+
+  const moveBanner = state.driveMovePending
+    ? `<div class="chat-reply-banner" style="margin-bottom:10px">
+        Moving "${esc(state.driveMovePending.name)}" — open the destination folder, then
+        <span class="chat-action-link" onclick="driveCompleteMove()">Move here</span>
+        <span class="close" onclick="driveCancelMove()">✕</span>
+      </div>` : '';
+
+  const toolbar = `<div class="row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+    <label class="btn btn-sm">📤 Upload files<input type="file" multiple style="display:none" onchange="driveHandleUpload(event)"></label>
+    <button class="btn btn-sm btn-ghost" onclick="driveCreateFolderPrompt()">📁 New folder</button>
+    <span class="faint" style="font-size:11px">or drag files anywhere in this box</span>
+  </div>`;
+
+  let listHtml;
+  if(state.driveLoading || state.driveFiles===null){
+    listHtml = `<div class="faint" style="padding:20px 0;text-align:center">Loading…</div>`;
+  } else if(state.driveFiles.length===0){
+    listHtml = `<div class="faint" style="padding:20px 0;text-align:center">This folder is empty.</div>`;
+  } else {
+    listHtml = `<div class="doc-grid">${state.driveFiles.map(f=>{
+      const isFolder = f.mimeType==='application/vnd.google-apps.folder';
+      const icon = isFolder ? '📁' : (f.mimeType && f.mimeType.startsWith('image/')) ? '🖼' : (f.mimeType && f.mimeType.startsWith('video/')) ? '🎬' : '📄';
+      const thumb = f.thumbnailLink
+        ? `<img src="${esc(f.thumbnailLink)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${icon}'}))">`
+        : icon;
+      return `<div class="doc-card" data-file-id="${esc(f.id)}" data-file-name="${esc(f.name)}" data-is-folder="${isFolder}" onclick="driveCardClick(this)">
+        <div class="doc-thumb">${thumb}</div>
+        <div class="doc-card-body">
+          <div class="doc-card-name" title="${esc(f.name)}">${esc(f.name)}</div>
+          <div class="doc-card-meta">
+            <span class="chat-action-link" onclick="event.stopPropagation();driveRenamePrompt(this.closest('.doc-card'))">Rename</span>
+            <span class="chat-action-link" onclick="event.stopPropagation();driveStartMove(this.closest('.doc-card'))">Move</span>
+            <span class="chat-action-link" onclick="event.stopPropagation();driveDeletePrompt(this.closest('.doc-card'))">Delete</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+
+  return `<div class="card dash-list-card" id="drive-dropzone" ondragover="driveHandleDragOver(event)" ondragleave="driveHandleDragLeave(event)" ondrop="driveHandleDrop(event)">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0">Team drive</h3>
+      <div class="row" style="gap:8px">
+        <a href="${esc(state.project.driveUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ghost" style="text-decoration:none">Open in Google Drive ↗</a>
+        <button class="btn btn-sm btn-ghost" onclick="driveSignOut()">Sign out</button>
+      </div>
+    </div>
+    <div class="faint" style="margin-bottom:10px">${breadcrumbHtml}</div>
+    ${moveBanner}
+    ${toolbar}
+    ${listHtml}
+  </div>`;
+}
+function renderDocumentsView(){
+  const folderId = driveFolderId(state.project.driveUrl);
+  const driveSection = !folderId
+    ? `<div class="card dash-list-card">
+        <h3>Team drive</h3>
+        <div class="faint" style="padding:4px 0">${isSupervisor()
+          ? `No shared drive folder is set yet. <span class="chat-action-link" onclick="openProjectDrawer()">Set one in Project Settings</span>.`
+          : `No shared drive folder is set yet — ask a Supervisor to add one in Project Settings.`}</div>
+      </div>`
+    : state.driveSignedIn
+      ? renderDriveBrowser()
+      : `<div class="card dash-list-card">
+          <div class="row" style="justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+            <h3 style="margin:0">Team drive</h3>
+            <div class="row" style="gap:8px">
+              <button class="btn btn-sm btn-gold" onclick="signInGoogleDrive()">Sign in with Google</button>
+              <a href="${esc(state.project.driveUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ghost" style="text-decoration:none">Open in Google Drive ↗</a>
+            </div>
+          </div>
+          <iframe src="https://drive.google.com/embeddedfolderview?id=${esc(folderId)}#grid"
+            style="width:100%;height:480px;border:1px solid var(--line);border-radius:8px"></iframe>
+          <div class="faint" style="margin-top:8px;font-size:11px">Read-only preview. Sign in with Google to upload, create folders, rename, or move files directly here.</div>
+        </div>`;
+
+  let docs = state.documents.filter(d=>
+    (!state.docFilters.type || d.type===state.docFilters.type) &&
+    (!state.docFilters.search || (d.name+' '+(d.description||'')).toLowerCase().includes(state.docFilters.search.toLowerCase()))
+  );
+  docs = docs.slice().sort((a,b)=> b.ts-a.ts);
+
+  const filterBar = `<div class="filterbar">
+    <select onchange="state.docFilters.type=this.value;render()">
+      <option value="">All types</option>
+      ${DOC_TYPES.map(t=>`<option value="${t}" ${state.docFilters.type===t?'selected':''}>${t}</option>`).join('')}
+    </select>
+    <input type="text" id="docs-search-input" placeholder="Search name or description…" value="${esc(state.docFilters.search)}"
+      oninput="state.docFilters.search=this.value;render()" style="min-width:200px">
+  </div>`;
+
+  const listSection = `<div class="row" style="justify-content:space-between;margin:20px 0 12px;align-items:center">
+    <h3 style="margin:0;font-size:13px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.4px">Linked to specific tasks</h3>
+    <button class="btn btn-sm btn-gold" onclick="openNewDocDrawer()">+ Link a file to a task</button>
+  </div>
+    ${filterBar}
+    ${docs.length===0
+      ? `<div class="empty-state"><div class="display">Nothing linked yet</div>Optional: add a specific file here if it's worth cross-referencing to a task — everything else just lives in the drive above.</div>`
+      : `<div class="doc-grid">${docs.map(d=>{
+          const task = d.taskId ? state.tasks.find(t=>t.id===d.taskId) : null;
+          const tColor = DOC_TYPE_COLOR[d.type]||'#6B7280';
+          const canDelete = isSupervisor() || d.uploadedBy===state.currentUser;
+          return `<div class="doc-card" onclick="openDocDrawer('${d.id}')">
+            <div class="doc-thumb">${d.thumbnail?`<img src="${d.thumbnail}">`:DOC_TYPE_ICON[d.type]||'🔗'}</div>
+            <div class="doc-card-body">
+              <div class="doc-card-name" title="${esc(d.name)}">${esc(d.name)}</div>
+              <div class="doc-card-meta">
+                <span class="tagpill" style="background:${tColor}29;color:${tColor};border:1px solid ${tColor}66">${d.type}</span>
+                ${task?`<span title="Linked to ${esc(task.name)}">🔗 ${esc(task.id)}</span>`:''}
+                ${canDelete?`<span class="chat-action-link" onclick="event.stopPropagation();deleteDocument('${d.id}')">Delete</span>`:''}
+              </div>
+            </div>
+          </div>`;
+        }).join('')}</div>`}`;
+
+  return driveSection + listSection;
+}
+
+let pendingDocThumbnail = null;
+function openNewDocDrawer(){
+  if(!state.currentUser){ toast('Pick who you are, top of the sidebar'); return; }
+  pendingDocThumbnail = null;
+  state.drawerTaskId = null;
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = renderDocFormContent();
+}
+function renderDocFormContent(){
+  return `
+    <div class="drawer-head">
+      <div><h2 style="margin:0;font-size:17px">Link a file to a task</h2></div>
+      <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="field"><label>Name</label><input id="new-doc-name" placeholder="e.g. Reference photos"></div>
+      <div class="field"><label>Link <span class="faint" style="text-transform:none;font-weight:400">— the file's share link (from the team drive, or anywhere else)</span></label>
+        <input id="new-doc-url" placeholder="https://…" type="url"></div>
+      <div class="field-row">
+        <div class="field"><label>Type</label>
+          <select id="new-doc-type">${DOC_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Linked task <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label>
+          <select id="new-doc-task">
+            <option value="">—</option>
+            ${state.tasks.map(t=>`<option value="${t.id}">${esc(t.id)} — ${esc(t.name)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="field"><label>Description <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label>
+        <textarea id="new-doc-desc" rows="3"></textarea></div>
+      <div class="field" style="display:flex;align-items:center;gap:14px">
+        <div id="doc-thumb-preview">${pendingDocThumbnail?`<div class="avatar-circle" style="width:56px;height:56px;border-radius:8px"><img src="${pendingDocThumbnail}"></div>`:'<span class="faint" style="font-size:12px">No thumbnail</span>'}</div>
+        <label class="btn btn-sm">Upload thumbnail <span class="faint">(optional)</span><input type="file" accept="image/*" style="display:none" onchange="handleDocThumbnailPick(event)"></label>
+      </div>
+      <button class="btn btn-gold" onclick="createDocument()">Add</button>
+    </div>`;
+}
+function handleDocThumbnailPick(e){
+  const file = e.target.files[0]; if(!file) return;
+  resizeImage(file, 320, 0.8).then(dataUrl=>{
+    pendingDocThumbnail = dataUrl;
+    document.getElementById('doc-thumb-preview').innerHTML = `<div class="avatar-circle" style="width:56px;height:56px;border-radius:8px"><img src="${dataUrl}"></div>`;
+  });
+}
+async function createDocument(){
+  const name = document.getElementById('new-doc-name').value.trim();
+  const url = document.getElementById('new-doc-url').value.trim();
+  if(!name || !url){ toast('Name and link are required'); return; }
+  const doc = {
+    id: uid('d'), name, url, type: document.getElementById('new-doc-type').value,
+    taskId: document.getElementById('new-doc-task').value || null,
+    description: document.getElementById('new-doc-desc').value.trim(),
+    thumbnail: pendingDocThumbnail || '', uploadedBy: state.currentUser, ts: Date.now()
+  };
+  state.documents.push(doc);
+  pendingDocThumbnail = null;
+  await saveDocuments();
+  closeDrawer();
+  render();
+}
+function autoEmbedUrl(url){
+  if(!url) return '';
+  const gdriveFile = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+  if(gdriveFile) return `https://drive.google.com/file/d/${gdriveFile[1]}/preview`;
+  const gdriveFolder = url.match(/drive\.google\.com\/drive\/folders\/([^/?]+)/);
+  if(gdriveFolder) return `https://drive.google.com/embeddedfolderview?id=${gdriveFolder[1]}#list`;
+  const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+  if(yt) return `https://www.youtube.com/embed/${yt[1]}`;
+  if(/\.(png|jpe?g|gif|webp|svg|mp4|webm|ogg)(\?.*)?$/i.test(url)) return url;
+  return '';
+}
+function suggestEmbedUrl(url){
+  const embedField = document.getElementById('new-doc-embed-url');
+  if(!embedField || embedField.value.trim()) return; // don't overwrite a manual entry
+  const guess = autoEmbedUrl(url);
+  if(guess) embedField.value = guess;
+}
+function openDocDrawer(docId){
+  state.drawerTaskId = 'doc:'+docId;
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = renderDocDrawerContent(docId);
+}
+function docEmbedHTML(d){
+  if(!d.embedUrl) return '';
+  if(d.type==='Image' || /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(d.embedUrl)){
+    return `<img src="${esc(d.embedUrl)}" style="width:100%;border-radius:8px;margin-bottom:14px;display:block">`;
+  }
+  if(/\.(mp4|webm|ogg)(\?.*)?$/i.test(d.embedUrl)){
+    return `<video controls style="width:100%;border-radius:8px;margin-bottom:14px;display:block" src="${esc(d.embedUrl)}"></video>`;
+  }
+  return `<iframe src="${esc(d.embedUrl)}" style="width:100%;height:360px;border:1px solid var(--line);border-radius:8px;margin-bottom:14px" allow="autoplay; fullscreen"></iframe>
+    <div class="faint" style="margin:-8px 0 14px;font-size:11px">If nothing shows above, this link can't be embedded (permissions or the service blocks it) — use "Open file" below instead.</div>`;
+}
+function renderDocDrawerContent(docId){
+  const d = state.documents.find(x=>x.id===docId); if(!d) return '';
+  const task = d.taskId ? state.tasks.find(t=>t.id===d.taskId) : null;
+  const canDelete = isSupervisor() || d.uploadedBy===state.currentUser;
+  const tColor = DOC_TYPE_COLOR[d.type]||'#6B7280';
+  return `
+    <div class="drawer-head">
+      <div>
+        <span class="tagpill" style="background:${tColor}29;color:${tColor};border:1px solid ${tColor}66">${d.type}</span>
+        <h2 style="margin:8px 0 0;font-size:17px">${esc(d.name)}</h2>
+        <div class="faint" style="margin-top:3px">added by ${esc(d.uploadedBy||'Someone')} · ${fmtWhen(d.ts)}</div>
+      </div>
+      <div class="row" style="gap:6px">
+        ${canDelete?`<button class="btn btn-sm btn-danger" onclick="deleteDocument('${d.id}')">Delete</button>`:''}
+        <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
+      </div>
+    </div>
+    <div class="drawer-body">
+      ${docEmbedHTML(d) || (d.thumbnail?`<img src="${d.thumbnail}" style="width:100%;border-radius:8px;margin-bottom:14px;display:block">`:'')}
+      <a href="${esc(d.url)}" target="_blank" rel="noopener noreferrer" class="btn btn-gold" style="width:100%;justify-content:center;text-decoration:none;margin-bottom:14px">Open file ↗</a>
+      ${d.description?`<div class="chat-text" style="margin-bottom:14px">${esc(d.description)}</div>`:''}
+      ${task?`<div class="field"><label>Linked task</label><div class="dash-task-row" style="cursor:pointer" onclick="closeDrawer();openDrawer('${task.id}')"><div class="dash-task-main"><span class="task-id mono">${task.id}</span><span>${esc(task.name)}</span></div></div></div>`:''}
+    </div>`;
+}
+async function deleteDocument(docId){
+  if(!confirm('Remove this document from the index? (This only removes the link here — it does not delete the real file from your cloud storage.)')) return;
+  state.documents = state.documents.filter(x=>x.id!==docId);
+  await saveDocuments();
+  closeDrawer();
+  render();
+}
+
+/* ============================= DRAWER (task detail + chat) ============================= */
+async function openDrawer(taskId, focusName){
+  state.drawerTaskId = taskId;
+  replyingTo = null; editingMsgId = null; mentionPickerOpen = false; pendingImageFile = null;
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = renderDrawerContent(taskId);
+  if(focusName){ const el = document.getElementById('f-name'); if(el){ el.focus(); el.select(); } }
+  await renderChat(taskId);
+}
+function closeDrawer(){
+  document.getElementById('overlay').classList.remove('open');
+  document.getElementById('drawer').classList.remove('open');
+  state.drawerTaskId = null;
+}
+function renderDrawerContent(taskId){
+  const t = state.tasks.find(x=>x.id===taskId);
+  if(!t) return '';
+  const dep = dependencyStatus(t);
+  const otherTasks = state.tasks.filter(x=>x.id!==t.id);
+  return `
+    <div class="drawer-head">
+      <div>
+        <div class="task-id mono">${t.id}</div>
+        <h2 style="margin:4px 0 0;font-size:17px">${esc(t.name)}</h2>
+      </div>
+      <div class="row" style="gap:6px">
+        <button class="btn btn-sm btn-danger" onclick="deleteTask('${t.id}')">Delete</button>
+        <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
+      </div>
+    </div>
+    <div class="drawer-body">
+      ${dep.state==='warn'||dep.state==='unknown' ? `<div class="warn-box">⚠ ${esc(dep.text)}</div>` : ''}
+
+      <div class="field"><label>Name</label><input id="f-name" value="${esc(t.name)}" onchange="updateField('${t.id}','name',this.value)"></div>
+
+      <div class="field-row">
+        <div class="field"><label>Category</label>
+          <select onchange="updateField('${t.id}','category',this.value)">
+            <option value="">—</option>
+            ${state.categories.map(c=>`<option value="${esc(c.name)}" ${t.category===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Task list</label>
+          <select onchange="updateField('${t.id}','taskList',this.value)">
+            <option value="">—</option>
+            ${state.taskLists.map(l=>`<option value="${esc(l)}" ${t.taskList===l?'selected':''}>${esc(l)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <div class="field"><label>Assignees</label>
+        <div class="dep-checks">
+          ${state.team.length===0?'<span class="faint">No team members yet</span>':state.team.map(m=>`
+            <span class="dep-chip ${(t.assignees||[]).includes(m.name)?'on':''}" onclick="toggleAssignee('${t.id}','${esc(m.name)}')">${esc(m.name)}</span>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field"><label>Estimation (days)</label><input type="number" min="1" step="1" value="${t.duration||''}" placeholder="e.g. 5" onchange="updateField('${t.id}','duration',parseInt(this.value)||0)"></div>
+        <div class="field"><label>Start date</label><input type="date" value="${t.start||''}" onchange="updateField('${t.id}','start',this.value)"></div>
+      </div>
+      <div class="field"><label>Due date <span class="faint" style="text-transform:none;font-weight:400">— auto-set from start + estimation (weekends skipped); edit anytime to override</span></label>
+        <input type="date" value="${t.due||''}" onchange="updateField('${t.id}','due',this.value)">
+      </div>
+
+      <div class="field-row">
+        <div class="field"><label>Status</label>
+          <select onchange="updateField('${t.id}','status',this.value)">
+            ${STATUSES.map(s=>`<option value="${s}" ${t.status===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Priority</label>
+          <select onchange="updateField('${t.id}','priority',this.value)">
+            ${PRIORITIES.map(p=>`<option value="${p}" ${t.priority===p?'selected':''}>${p}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <div class="field"><label>% complete — <span id="pct-live">${t.pct||0}</span>%</label>
+        <input type="range" min="0" max="100" step="5" value="${t.pct||0}"
+          oninput="document.getElementById('pct-live').textContent=this.value"
+          onchange="updateField('${t.id}','pct',parseInt(this.value))">
+      </div>
+
+      <div class="field"><label>Depends on</label>
+        <div class="dep-checks">
+          ${otherTasks.length===0?'<span class="faint">No other tasks yet</span>':otherTasks.map(o=>`
+            <span class="dep-chip ${t.dependsOn.includes(o.id)?'on':''}" onclick="toggleDep('${t.id}','${o.id}')">${o.id}</span>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="field"><label>Notes</label><textarea rows="3" onchange="updateField('${t.id}','notes',this.value)">${esc(t.notes)}</textarea></div>
+
+      <div class="chat-divider">
+        <h3>Conversation</h3>
+        <div id="chat-thread" class="chat-thread"><div class="chat-empty">Loading…</div></div>
+        <div class="chat-compose">
+          <div id="chat-reply-banner"></div>
+          <textarea id="chat-input" placeholder="Post an update, or type @ to tag someone…"></textarea>
+          <div id="chat-preview-wrap"></div>
+          <div class="chat-compose-foot" style="position:relative">
+            <div class="row" style="gap:6px">
+              <button type="button" class="btn btn-sm btn-ghost" style="margin:0" onclick="handleImageButtonClick()">📎 Image</button>
+              <input type="file" id="chat-image-input" accept="image/*" style="display:none" onchange="handleImagePick(event)">
+              <button class="btn btn-sm btn-ghost" onclick="toggleMentionPicker('${t.id}')">@ Tag</button>
+              <div id="mention-picker"></div>
+            </div>
+            <button class="btn btn-gold btn-sm" onclick="postMessage('${t.id}')">Post</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+async function updateField(id, field, value){
+  const t = state.tasks.find(x=>x.id===id); if(!t) return;
+  const oldStatus = t.status;
+  t[field] = value;
+  if(field==='status'){
+    if(value==='Needs Revision' && oldStatus!=='Needs Revision'){
+      t.revisionCount = (t.revisionCount||0)+1;
+    }
+    if(value==='Completed'){
+      if(!t.completedAt) t.completedAt = todayISO();
+    } else {
+      t.completedAt = null;
+    }
+  }
+  if((field==='start' || field==='duration') && t.start && t.duration>0){
+    t.due = addWorkdays(t.start, t.duration);
+  }
+  await saveTasks();
+  render();
+  if(state.drawerTaskId===id){
+    const scrollY = document.querySelector('.drawer-body')?.scrollTop || 0;
+    document.getElementById('drawer').innerHTML = renderDrawerContent(id);
+    renderChat(id);
+    const db = document.querySelector('.drawer-body'); if(db) db.scrollTop = scrollY;
+  }
+}
+async function toggleDep(id, otherId){
+  const t = state.tasks.find(x=>x.id===id); if(!t) return;
+  if(t.dependsOn.includes(otherId)) t.dependsOn = t.dependsOn.filter(d=>d!==otherId);
+  else t.dependsOn.push(otherId);
+  await saveTasks();
+  document.getElementById('drawer').innerHTML = renderDrawerContent(id);
+  renderChat(id);
+  render();
+}
+async function toggleAssignee(id, name){
+  const t = state.tasks.find(x=>x.id===id); if(!t) return;
+  if(!Array.isArray(t.assignees)) t.assignees = [];
+  if(t.assignees.includes(name)) t.assignees = t.assignees.filter(a=>a!==name);
+  else t.assignees.push(name);
+  await saveTasks();
+  document.getElementById('drawer').innerHTML = renderDrawerContent(id);
+  renderChat(id);
+  render();
+}
+function renderAssigneePickerItems(t){
+  if(state.team.length===0) return `<div class="faint" style="padding:8px;font-size:12px">No team members yet</div>`;
+  const assignees = t.assignees || [];
+  return state.team.map(m=>{
+    const checked = assignees.includes(m.name);
+    return `<div class="mention-picker-item" data-member-name="${esc(m.name)}" onclick="event.stopPropagation();toggleInlineAssignee(this)" style="justify-content:space-between">
+      <span class="row" style="gap:7px">${avatarForMember(m,18)}<span>${esc(m.name)}</span></span>
+      <span style="color:var(--gold)">${checked?'✓':''}</span>
+    </div>`;
+  }).join('');
+}
+function openAssigneePicker(taskId, anchorEl){
+  const t = state.tasks.find(x=>x.id===taskId); if(!t) return;
+  const picker = document.getElementById('assignee-picker');
+  const rect = anchorEl.getBoundingClientRect();
+  picker.dataset.taskId = taskId;
+  picker.innerHTML = `<div class="assignee-picker-pop" style="top:${rect.bottom+4}px;left:${rect.left}px" onclick="event.stopPropagation()">${renderAssigneePickerItems(t)}</div>`;
+  // reposition if it would overflow the right/bottom edge of the viewport
+  const pop = picker.firstElementChild;
+  const popRect = pop.getBoundingClientRect();
+  if(popRect.right > window.innerWidth-8) pop.style.left = Math.max(8, window.innerWidth - popRect.width - 8) + 'px';
+  if(popRect.bottom > window.innerHeight-8) pop.style.top = (rect.top - popRect.height - 4) + 'px';
+  setTimeout(()=> document.addEventListener('click', closeAssigneePickerOnOutsideClick), 0);
+}
+function closeAssigneePicker(){
+  const picker = document.getElementById('assignee-picker');
+  picker.innerHTML = '';
+  picker.removeAttribute('data-task-id');
+  document.removeEventListener('click', closeAssigneePickerOnOutsideClick);
+}
+function closeAssigneePickerOnOutsideClick(e){
+  const picker = document.getElementById('assignee-picker');
+  if(picker && !picker.contains(e.target)) closeAssigneePicker();
+}
+async function toggleInlineAssignee(itemEl){
+  const picker = document.getElementById('assignee-picker');
+  const taskId = picker.dataset.taskId;
+  const name = itemEl.dataset.memberName;
+  const t = state.tasks.find(x=>x.id===taskId); if(!t) return;
+  if(!Array.isArray(t.assignees)) t.assignees = [];
+  if(t.assignees.includes(name)) t.assignees = t.assignees.filter(a=>a!==name);
+  else t.assignees.push(name);
+  await saveTasks();
+  const pop = picker.firstElementChild;
+  if(pop) pop.innerHTML = renderAssigneePickerItems(t);
+  render();
+}
+async function deleteTask(id){
+  if(!confirm("Delete this task? This can't be undone.")) return;
+  state.tasks = state.tasks.filter(t=>t.id!==id);
+  state.tasks.forEach(t=>{ t.dependsOn = t.dependsOn.filter(d=>d!==id); });
+  await saveTasks();
+  closeDrawer(); render();
+}
+
+/* ---- chat ---- */
+let pendingImageFile = null;
+function handleImageButtonClick(){
+  if(!driveFolderId(state.project.driveUrl)){
+    toast('No team drive folder is set for this project yet — ask a Supervisor to add one in Project Settings');
+    return;
+  }
+  if(!state.driveSignedIn){
+    signInGoogleDrive();
+    toast('Signing in… once that finishes, click 📎 Image again to pick a photo');
+    return;
+  }
+  document.getElementById('chat-image-input').click();
+}
+function handleImagePick(e){
+  const file = e.target.files[0]; if(!file) return;
+  pendingImageFile = file;
+  resizeImage(file, 300, 0.7).then(dataUrl=>{
+    document.getElementById('chat-preview-wrap').innerHTML =
+      `<div class="chat-preview"><img src="${dataUrl}"><button onclick="pendingImageFile=null;document.getElementById('chat-preview-wrap').innerHTML=''">✕</button></div>`;
+  });
+}
+function resizeImage(file, maxDim, quality){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      const img = new Image();
+      img.onload = ()=>{
+        let w=img.width, h=img.height;
+        if(w>h && w>maxDim){ h=h*maxDim/w; w=maxDim; } else if(h>maxDim){ w=w*maxDim/h; h=maxDim; }
+        const canvas = document.createElement('canvas');
+        canvas.width=w; canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+let replyingTo = null;   // {id, author, snippet}
+let editingMsgId = null; // id of message currently being edited
+let mentionPickerOpen = false;
+
+function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function renderMentionText(text){
+  let html = esc(text);
+  const names = state.team.map(m=>m.name).filter(Boolean).sort((a,b)=>b.length-a.length);
+  names.forEach(name=>{
+    const re = new RegExp('@'+escapeRegExp(esc(name))+'(?![\\w])', 'g');
+    html = html.replace(re, `<span class="mention">@${esc(name)}</span>`);
+  });
+  return html;
+}
+function extractMentions(text){
+  const names = state.team.map(m=>m.name).filter(Boolean).sort((a,b)=>b.length-a.length);
+  const found = new Set();
+  names.forEach(name=>{
+    const re = new RegExp('@'+escapeRegExp(name)+'(?![\\w])');
+    if(re.test(text)) found.add(name);
+  });
+  return [...found];
+}
+
+async function renderChat(taskId){
+  const wrap = document.getElementById('chat-thread');
+  if(!wrap) return;
+  const msgs = await loadChat(taskId);
+  if(!document.getElementById('chat-thread')) return; // drawer may have closed while awaiting
+
+  const banner = document.getElementById('chat-reply-banner');
+  if(banner){
+    banner.innerHTML = replyingTo
+      ? `<div class="chat-reply-banner">Replying to <b>${esc(replyingTo.author)}</b>: ${esc(replyingTo.snippet)}<span class="close" onclick="cancelReply('${taskId}')">✕</span></div>`
+      : '';
+  }
+
+  if(msgs.length===0){
+    document.getElementById('chat-thread').innerHTML = '<div class="chat-empty">No messages yet — start the conversation.</div>';
+    return;
+  }
+  const lastIdxByAuthor = {};
+  msgs.forEach((m,i)=>{ lastIdxByAuthor[m.author] = i; });
+
+  document.getElementById('chat-thread').innerHTML = msgs.map((m,i)=>{
+    const isMine = m.author===state.currentUser;
+    const isMyLast = isMine && lastIdxByAuthor[m.author]===i;
+    if(editingMsgId===m.id){
+      return `<div class="chat-msg">
+        <div class="chat-avatar">${esc((m.author||'?').slice(0,1).toUpperCase())}</div>
+        <div style="flex:1;min-width:0">
+          <div class="chat-bubble chat-edit-row">
+            <div class="chat-meta"><b>${esc(m.author)}</b> · editing</div>
+            <textarea id="edit-input-${m.id}">${esc(m.text)}</textarea>
+            <div class="row">
+              <button class="btn btn-sm btn-gold" onclick="saveEditedMessage('${taskId}','${m.id}')">Save</button>
+              <button class="btn btn-sm btn-ghost" onclick="cancelEditMessage('${taskId}')">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }
+    return `<div class="chat-msg">
+      <div class="chat-avatar">${esc((m.author||'?').slice(0,1).toUpperCase())}</div>
+      <div style="flex:1;min-width:0">
+        <div class="chat-bubble">
+          <div class="chat-meta">
+            <b>${esc(m.author||'Someone')}</b> · ${fmtWhen(m.ts)}${m.edited?' · edited':''}
+            <span class="chat-actions">
+              <span class="chat-action-link" onclick="replyToMessage('${taskId}','${m.id}')">Reply</span>
+              ${isMyLast?`<span class="chat-action-link" onclick="startEditMessage('${taskId}','${m.id}')">Edit</span>
+              <span class="chat-action-link" onclick="deleteMessage('${taskId}','${m.id}')">Delete</span>`:''}
+            </span>
+          </div>
+          ${m.replyTo?`<div class="chat-reply-quote">↩ ${esc(m.replyTo.author)}: ${esc(m.replyTo.snippet)}</div>`:''}
+          ${m.text?`<div class="chat-text">${renderMentionText(m.text)}</div>`:''}
+          ${m.driveFile && m.driveFile.thumbnailLink
+            ? `<img class="chat-img" src="${esc(m.driveFile.thumbnailLink)}" onclick="openLightbox('${esc(driveThumbLarge(m.driveFile.thumbnailLink,1600))}')">`
+            : (m.image?`<img class="chat-img" src="${m.image}" onclick="openLightbox('${m.image}')">`:'')}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  wrap.parentElement.querySelector('.chat-thread')?.scrollIntoView({block:'nearest'});
+}
+function fmtWhen(ts){
+  if(!ts) return '';
+  const d = new Date(ts);
+  return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) + ' ' + d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+}
+function replyToMessage(taskId, msgId){
+  loadChat(taskId).then(msgs=>{
+    const m = msgs.find(x=>x.id===msgId); if(!m) return;
+    const snippet = (m.text||'(image)').slice(0,60) + ((m.text||'').length>60?'…':'');
+    replyingTo = {id:m.id, author:m.author, snippet};
+    renderChat(taskId);
+    const input = document.getElementById('chat-input'); if(input) input.focus();
+  });
+}
+function cancelReply(taskId){ replyingTo = null; renderChat(taskId); }
+function startEditMessage(taskId, msgId){ editingMsgId = msgId; renderChat(taskId); }
+function cancelEditMessage(taskId){ editingMsgId = null; renderChat(taskId); }
+async function saveEditedMessage(taskId, msgId){
+  const ta = document.getElementById('edit-input-'+msgId);
+  const newText = ta ? ta.value.trim() : '';
+  if(!newText){ toast('Message cannot be empty'); return; }
+  const msgs = await loadChat(taskId);
+  const m = msgs.find(x=>x.id===msgId); if(!m) return;
+  m.text = newText; m.edited = true;
+  await saveChat(taskId, msgs);
+  editingMsgId = null;
+  await renderChat(taskId);
+}
+async function deleteMessage(taskId, msgId){
+  if(!confirm('Delete this message?')) return;
+  let msgs = await loadChat(taskId);
+  msgs = msgs.filter(x=>x.id!==msgId);
+  await saveChat(taskId, msgs);
+  await renderChat(taskId);
+}
+function toggleMentionPicker(taskId){
+  mentionPickerOpen = !mentionPickerOpen;
+  const el = document.getElementById('mention-picker');
+  if(!el) return;
+  if(!mentionPickerOpen){ el.innerHTML=''; return; }
+  el.innerHTML = `<div class="mention-picker">${
+    state.team.length ? state.team.map(m=>`
+      <div class="mention-picker-item" onclick="insertMention('${esc(m.name)}')">${avatarForMember(m,18)}<span>${esc(m.name)}</span></div>
+    `).join('') : '<div class="faint" style="padding:6px 9px">No team members yet</div>'
+  }</div>`;
+}
+function insertMention(name){
+  const input = document.getElementById('chat-input');
+  if(input){
+    const sep = input.value && !input.value.endsWith(' ') && !input.value.endsWith('\n') ? ' ' : '';
+    input.value += sep + '@' + name + ' ';
+    input.focus();
+  }
+  mentionPickerOpen = false;
+  const el = document.getElementById('mention-picker'); if(el) el.innerHTML = '';
+}
+async function postMessage(taskId){
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if(!text && !pendingImageFile) return;
+  if(!state.currentUser){ toast("Pick who you are, top of the sidebar"); return; }
+  const msg = {id:uid('m'), author: state.currentUser, text, ts: Date.now()};
+  if(pendingImageFile){
+    if(!state.driveSignedIn){
+      toast('Sign in with Google (Documents page) to attach a photo');
+      return;
+    }
+    if(!driveFolderId(state.project.driveUrl)){
+      toast('No team drive folder is set for this project yet — ask a Supervisor to add one in Project Settings');
+      return;
+    }
+    const task = state.tasks.find(x=>x.id===taskId);
+    try{
+      const folderId = await ensureTaskDriveFolder(task);
+      const uploaded = await driveApiUpload(pendingImageFile, folderId);
+      msg.driveFile = { id: uploaded.id, name: uploaded.name, thumbnailLink: uploaded.thumbnailLink||'', webViewLink: uploaded.webViewLink||'' };
+    }catch(err){
+      console.error(err);
+      toast('Could not upload the photo — message not sent');
+      return;
+    }
+  }
+  const msgs = await loadChat(taskId);
+  if(replyingTo) msg.replyTo = {id:replyingTo.id, author:replyingTo.author, snippet:replyingTo.snippet};
+  msgs.push(msg);
+  await saveChat(taskId, msgs);
+
+  const task = state.tasks.find(x=>x.id===taskId);
+  const taskName = task ? task.name : taskId;
+  const snippet = (text||'(photo)').slice(0,60) + (text.length>60?'…':'');
+
+  if(replyingTo && replyingTo.author && replyingTo.author!==state.currentUser){
+    await addNotification(replyingTo.author, 'reply', taskId, taskName, state.currentUser, snippet);
+  }
+  const mentioned = extractMentions(text).filter(n=>n!==state.currentUser);
+  for(const name of mentioned){
+    await addNotification(name, 'tag', taskId, taskName, state.currentUser, snippet);
+  }
+
+  input.value = ''; pendingImageFile = null; replyingTo = null;
+  document.getElementById('chat-preview-wrap').innerHTML = '';
+  await renderChat(taskId);
+}
+function wireImageZoom(img){
+  let scale=1, tx=0, ty=0, dragging=false, startX=0, startY=0, startTx=0, startTy=0;
+  const MIN=1, MAX=4;
+  img.draggable = false;
+  img.addEventListener('dragstart', (e)=> e.preventDefault());
+  function apply(){
+    img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+    img.style.cursor = scale>1 ? 'grab' : 'zoom-in';
+  }
+  img.style.transform = ''; // reset from any previous instance
+  img.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    scale = Math.max(MIN, Math.min(MAX, scale + (e.deltaY<0 ? 0.3 : -0.3)));
+    if(scale<=1){ scale=1; tx=0; ty=0; }
+    apply();
+  }, {passive:false});
+  img.addEventListener('pointerdown', (e)=>{
+    if(scale<=1) return;
+    dragging=true; startX=e.clientX; startY=e.clientY; startTx=tx; startTy=ty;
+    img.style.cursor='grabbing';
+    img.setPointerCapture(e.pointerId);
+  });
+  img.addEventListener('pointermove', (e)=>{
+    if(!dragging) return;
+    tx = startTx + (e.clientX-startX);
+    ty = startTy + (e.clientY-startY);
+    apply();
+  });
+  img.addEventListener('pointerup', ()=>{ dragging=false; img.style.cursor = scale>1?'grab':'zoom-in'; });
+  img.addEventListener('dblclick', ()=>{
+    scale = scale>1 ? 1 : 2.5;
+    tx=0; ty=0;
+    apply();
+  });
+  apply();
+}
+function openLightbox(src){
+  const img = document.getElementById('lightbox-img');
+  img.src = src;
+  document.getElementById('lightbox').classList.add('open');
+  wireImageZoom(img);
+}
+function closeLightbox(){ document.getElementById('lightbox').classList.remove('open'); }
+
+/* ============================= project switcher ============================= */
+async function listProjects(){
+  if(!db) return [];
+  try{
+    const snap = await db.collection('projects').orderBy('createdAt','desc').get();
+    const out = [];
+    snap.forEach(d=> out.push(Object.assign({id:d.id}, d.data())));
+    return out;
+  }catch(e){ console.error(e); return []; }
+}
+async function createProject(name, seedExample){
+  const ref = db.collection('projects').doc();
+  await ref.set({name, createdAt: Date.now()});
+  state.projectId = ref.id;
+  lsSet('activeProjectId', ref.id);
+  if(seedExample){
+    seedData();
+    await Promise.all([saveTeam(), saveCategories(), saveTaskListGroups(), saveTasks()]);
+  }
+  return ref.id;
+}
+async function openProject(id){
+  state.projectId = id;
+  lsSet('activeProjectId', id);
+  await enterApp();
+}
+function switchProject(){
+  state.projectId = null;
+  localStorage.removeItem('activeProjectId');
+  document.getElementById('app').style.display = 'none';
+  showPicker();
+}
+async function enterApp(){
+  document.getElementById('picker').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  // clear any Drive folder state left over from a previously-open project
+  state.driveCurrentFolderId = null;
+  state.driveBreadcrumb = [];
+  state.driveFiles = null;
+  state.driveMovePending = null;
+  await loadAll();
+  if(state.driveSignedIn){
+    // already signed in this session — just re-point at this project's own folder
+    const rootId = driveFolderId(state.project.driveUrl);
+    state.driveCurrentFolderId = rootId;
+    state.driveBreadcrumb = [{id: rootId, name: 'Team drive'}];
+  }
+  render();
+  if(state.driveSignedIn && state.driveCurrentFolderId){
+    loadDriveFolder(state.driveCurrentFolderId);
+  }
+}
+async function showPicker(){
+  const picker = document.getElementById('picker');
+  document.getElementById('app').style.display = 'none';
+  picker.style.display = 'flex';
+  picker.innerHTML = `<div class="picker-card"><div class="faint" style="text-align:center">Loading projects…</div></div>`;
+  const projects = db ? await listProjects() : [];
+  const dbWarning = db ? '' : `<div class="warn-box">Not connected to the database — check your internet connection and reload.</div>`;
+  picker.innerHTML = `
+    <div class="picker-card">
+      <div class="brand" style="padding:0 0 18px;justify-content:center">
+        <div class="brand-mark"></div>
+        <div><div class="brand-name">Fluxus</div><div class="brand-sub">Project Tracker</div></div>
+      </div>
+      ${dbWarning}
+      <h2 style="margin:0 0 4px;font-size:16px;text-align:center">Choose a project</h2>
+      <div class="faint" style="text-align:center;margin-bottom:16px">One shared tool, separate data per project</div>
+      ${projects.length ? `<div class="picker-list">${projects.map(p=>`
+        <div class="picker-item" onclick="openProject('${p.id}')">
+          <span>${esc(p.name)}</span><span class="faint" style="font-size:11px">${p.createdAt?fmtWhen(p.createdAt):''}</span>
+        </div>`).join('')}</div>` : `<div class="faint" style="text-align:center;margin-bottom:16px">No projects yet — create the first one below.</div>`}
+      <div class="field" style="margin-top:16px"><label>New project name</label><input id="picker-new-name" placeholder="e.g. 141 Neil Road"></div>
+      <label class="row" style="gap:7px;font-size:12.5px;color:var(--ink-dim);margin-bottom:12px">
+        <input type="checkbox" id="picker-seed-example"> Start with example data (categories, sample tasks)
+      </label>
+      <button class="btn btn-gold" style="width:100%;justify-content:center" onclick="createProjectFromPicker()">+ Create project</button>
+    </div>`;
+}
+async function createProjectFromPicker(){
+  const name = document.getElementById('picker-new-name').value.trim();
+  if(!name){ toast('Name is required'); return; }
+  const seed = document.getElementById('picker-seed-example').checked;
+  await createProject(name, seed);
+  await enterApp();
+}
+
+/* ============================= init ============================= */
+(async function init(){
+  const saved = lsGet('activeProjectId', null);
+  if(saved && db){
+    try{
+      const snap = await db.collection('projects').doc(saved).get();
+      if(snap.exists){
+        state.projectId = saved;
+        await enterApp();
+        return;
+      }
+    }catch(e){ console.error(e); }
+  }
+  await showPicker();
+})();
+</script>
+</body>
+</html>
