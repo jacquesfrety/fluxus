@@ -821,7 +821,17 @@ async function loadAll(){
     toast("Could not load data — check your connection.");
   }
 }
-async function saveTeam(){ await fsSet('team', state.team); }
+async function saveTeam(){
+  await syncMemberEmails(); // must happen first — the security rules for 'store'/'chats' check this
+  await fsSet('team', state.team);
+}
+async function syncMemberEmails(){
+  if(!db || !state.projectId) return;
+  const emails = [...new Set(state.team.map(m=>(m.email||'').trim().toLowerCase()).filter(Boolean))];
+  try{
+    await db.collection('projects').doc(state.projectId).set({memberEmails: emails}, {merge:true});
+  }catch(e){ console.error('member email sync failed', e); }
+}
 async function saveCategories(){ await fsSet('categories', state.categories); }
 async function saveTaskListGroups(){ await fsSet('taskLists', state.taskLists); }
 async function saveTasks(){ await fsSet('tasks', state.tasks); }
@@ -3525,7 +3535,7 @@ async function listProjects(){
 }
 async function createProject(name, seedExample){
   const ref = db.collection('projects').doc();
-  await ref.set({name, createdAt: Date.now()});
+  await ref.set({name, createdAt: Date.now(), memberEmails: []});
   state.projectId = ref.id;
   lsSet('activeProjectId', ref.id);
   if(seedExample){
