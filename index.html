@@ -274,6 +274,8 @@
   .doc-thumb-play{position:absolute;bottom:6px;right:6px;width:44px;height:44px;border-radius:50%;
     background:rgba(0,0,0,.62);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;
     padding-left:4px;pointer-events:none;}
+  .drive-model-thumb-slot{width:100%;height:100%;display:flex;align-items:center;justify-content:center;}
+  model-viewer.drive-model-thumb{width:100%;height:100%;pointer-events:none;background:transparent;}
   .doc-card-body{padding:10px 12px;}
   .doc-card-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .doc-card-meta{font-size:11px;color:var(--ink-faint);margin-top:6px;display:flex;align-items:center;
@@ -1375,6 +1377,7 @@ function render(){
 
   if(state.view==='kanban') wireKanbanDnD();
   if(state.view==='timeline'){ wireTimelineControls(); wireTimelineDrag(); wireTimelineResize(); wireOtherColsSync(); }
+  if(state.view==='documents') wireDriveModelThumbs();
 
   if(focusInfo){
     const el = document.getElementById(focusInfo.id);
@@ -2847,6 +2850,41 @@ function driveMediaKind(f){
 function driveMediaSiblings(){
   return (state.driveFiles||[]).filter(x => driveMediaKind(x));
 }
+/* ---- 3D model thumbnails: Drive doesn't render a preview image for .glb/.gltf, so we render one
+   ourselves — lazily, only once a model's card actually scrolls into view — by loading the file
+   into a small, non-interactive <model-viewer> that just spins in place. Fetched blobs are cached
+   for the rest of this session so scrolling back and forth doesn't re-download them. ---- */
+const driveModelThumbCache = {};
+async function loadDriveModelThumbBlobUrl(fileId){
+  if(driveModelThumbCache[fileId]) return driveModelThumbCache[fileId];
+  try{
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: driveHeaders() });
+    if(!res.ok) throw new Error('fetch failed: '+res.status);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    driveModelThumbCache[fileId] = url;
+    return url;
+  }catch(e){ console.error('model thumbnail load failed', e); return null; }
+}
+async function fillDriveModelThumb(slotEl){
+  const fileId = slotEl.dataset.modelThumbId;
+  const url = await loadDriveModelThumbBlobUrl(fileId);
+  if(!url || !document.body.contains(slotEl)) return; // no preview available, or the card is gone by now (filter/folder changed)
+  slotEl.innerHTML = `<model-viewer class="drive-model-thumb" src="${url}" camera-controls="false" disable-zoom disable-pan disable-tap interaction-prompt="none" auto-rotate rotation-per-second="20deg" shadow-intensity="0"></model-viewer>`;
+}
+function wireDriveModelThumbs(){
+  const slots = document.querySelectorAll('.drive-model-thumb-slot');
+  if(!slots.length) return;
+  if(typeof IntersectionObserver === 'undefined'){ slots.forEach(fillDriveModelThumb); return; }
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach(entry=>{
+      if(!entry.isIntersecting) return;
+      io.unobserve(entry.target);
+      fillDriveModelThumb(entry.target);
+    });
+  }, { rootMargin: '200px' });
+  slots.forEach(el=> io.observe(el));
+}
 async function openDriveMedia(f, kind){
   // accept either the new string kind ('image'/'video'/'pdf') or, from older call sites, a boolean isVideo
   if(kind === true) kind = 'video';
@@ -3032,7 +3070,9 @@ function renderDriveBrowser(){
       const fileKind = driveMediaKind(f);
       const isVideo = fileKind === 'video';
       const icon = isFolder ? '📁' : fileKind==='image' ? '🖼' : isVideo ? '🎬' : fileKind==='model' ? '🧊' : '📄';
-      const thumb = f.thumbnailLink
+      const thumb = fileKind==='model'
+        ? `<div class="drive-model-thumb-slot" data-model-thumb-id="${esc(f.id)}">${icon}</div>`
+        : f.thumbnailLink
         ? `<img src="${esc(f.thumbnailLink)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${icon}'}))">`
         : icon;
       const playBadge = isVideo ? `<span class="doc-thumb-play">▶</span>` : '';
