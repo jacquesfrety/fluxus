@@ -3174,10 +3174,12 @@ function renderDocumentsView(){
 
 let pendingDocThumbnail = null;
 let editingDocId = null; // set while the "Link a file" form is editing an existing entry, rather than creating a new one
+let docFormReturnTaskId = null; // set when the form was opened from a task's drawer, so saving returns there instead of just closing
 function openNewDocDrawer(){
   if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); return; }
   pendingDocThumbnail = null;
   editingDocId = null;
+  docFormReturnTaskId = null;
   state.drawerTaskId = null;
   document.getElementById('overlay').classList.add('open');
   const drawer = document.getElementById('drawer');
@@ -3188,14 +3190,15 @@ function editDocument(docId){
   const d = state.documents.find(x=>x.id===docId); if(!d) return;
   pendingDocThumbnail = d.thumbnail || null;
   editingDocId = docId;
+  docFormReturnTaskId = null;
   state.drawerTaskId = null;
   document.getElementById('overlay').classList.add('open');
   const drawer = document.getElementById('drawer');
   drawer.classList.add('open');
   drawer.innerHTML = renderDocFormContent(d);
 }
-function renderDocFormContent(existing){
-  const d = existing || {};
+function renderDocFormContent(existing, presetTaskId){
+  const d = existing || (presetTaskId ? {taskId: presetTaskId} : {});
   return `
     <div class="drawer-head">
       <div><h2 style="margin:0;font-size:17px">${existing?'Edit link':'Link a file to a task'}</h2></div>
@@ -3251,7 +3254,13 @@ async function saveDocumentForm(){
   pendingDocThumbnail = null;
   editingDocId = null;
   await saveDocuments();
-  closeDrawer();
+  if(docFormReturnTaskId){
+    const backTo = docFormReturnTaskId;
+    docFormReturnTaskId = null;
+    await openDrawer(backTo);
+  } else {
+    closeDrawer();
+  }
   render();
 }
 function autoEmbedUrl(url){
@@ -3419,6 +3428,8 @@ function renderDrawerContent(taskId){
 
       <div class="field"><label>Notes</label><textarea rows="3" onchange="updateField('${t.id}','notes',this.value)">${esc(t.notes)}</textarea></div>
 
+      ${renderTaskLinkedFiles(t)}
+
       <div class="chat-divider">
         <h3>Conversation</h3>
         <div id="chat-thread" class="chat-thread"><div class="chat-empty">Loading…</div></div>
@@ -3439,6 +3450,55 @@ function renderDrawerContent(taskId){
       </div>
     </div>
   `;
+}
+function renderTaskLinkedFiles(t){
+  const linked = state.documents.filter(d=>d.taskId===t.id);
+  const pickable = state.documents.filter(d=>d.taskId!==t.id);
+  return `<div class="field"><label>Linked files <span class="faint" style="text-transform:none;font-weight:400">— from Documents</span></label>
+    ${linked.length ? linked.map(d=>{
+      const tColor = DOC_TYPE_COLOR[d.type]||'#6B7280';
+      return `<div class="dash-task-row">
+        <div class="dash-task-main" style="cursor:pointer" onclick="closeDrawer();openDocDrawer('${d.id}')">
+          <span class="tagpill" style="background:${tColor}29;color:${tColor};border:1px solid ${tColor}66">${d.type}</span>
+          <span>${esc(d.name)}</span>
+        </div>
+        <span class="chat-action-link" onclick="unlinkDocumentFromTask('${d.id}','${t.id}')">Unlink</span>
+      </div>`;
+    }).join('') : '<div class="faint" style="font-size:12px;margin-bottom:8px">No files linked yet</div>'}
+    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+      <select id="link-existing-doc-select" style="flex:1;min-width:140px">
+        <option value="">Link an existing file…</option>
+        ${pickable.map(d=>`<option value="${d.id}">${esc(d.name)}${d.taskId?' (currently on '+esc(d.taskId)+')':''}</option>`).join('')}
+      </select>
+      <button class="btn btn-sm" onclick="linkDocumentToTask(document.getElementById('link-existing-doc-select').value,'${t.id}')">Link</button>
+      <button class="btn btn-sm btn-ghost" onclick="openNewDocDrawerForTask('${t.id}')">+ New link</button>
+    </div>
+  </div>`;
+}
+async function linkDocumentToTask(docId, taskId){
+  if(!docId) return;
+  const d = state.documents.find(x=>x.id===docId); if(!d) return;
+  d.taskId = taskId;
+  await saveDocuments();
+  document.getElementById('drawer').innerHTML = renderDrawerContent(taskId);
+  renderChat(taskId);
+}
+async function unlinkDocumentFromTask(docId, taskId){
+  const d = state.documents.find(x=>x.id===docId); if(!d) return;
+  d.taskId = null;
+  await saveDocuments();
+  document.getElementById('drawer').innerHTML = renderDrawerContent(taskId);
+  renderChat(taskId);
+}
+function openNewDocDrawerForTask(taskId){
+  if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); return; }
+  pendingDocThumbnail = null;
+  editingDocId = null;
+  docFormReturnTaskId = taskId;
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = renderDocFormContent(null, taskId);
 }
 async function updateField(id, field, value){
   const t = state.tasks.find(x=>x.id===id); if(!t) return;
