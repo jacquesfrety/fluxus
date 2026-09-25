@@ -619,11 +619,11 @@ function initDriveAuth(){
       saveDriveTokenToSession(resp.access_token, resp.expires_in);
       state.driveSignedIn = true;
       const rootId = driveFolderId(state.project.driveUrl);
-      state.driveCurrentFolderId = rootId;
-      state.driveBreadcrumb = [{id: rootId, name: 'Team drive'}];
+      state.driveBreadcrumb = restoredDriveBreadcrumb(rootId);
+      state.driveCurrentFolderId = state.driveBreadcrumb[state.driveBreadcrumb.length-1].id;
       state.driveFiles = null;
       render();
-      loadDriveFolder(rootId);
+      loadDriveFolder(state.driveCurrentFolderId);
     }
   });
 }
@@ -2756,13 +2756,25 @@ function driveNavigateTo(folderId, name){
   state.driveBreadcrumb.push({id: folderId, name});
   state.driveCurrentFolderId = folderId;
   state.driveFiles = null;
+  saveDriveBreadcrumb();
   loadDriveFolder(folderId);
 }
 function driveNavigateBreadcrumb(index){
   state.driveBreadcrumb = state.driveBreadcrumb.slice(0, index+1);
   state.driveCurrentFolderId = state.driveBreadcrumb[index].id;
   state.driveFiles = null;
+  saveDriveBreadcrumb();
   loadDriveFolder(state.driveCurrentFolderId);
+}
+function saveDriveBreadcrumb(){
+  if(!state.projectId) return;
+  lsSet('driveBreadcrumb_'+state.projectId, state.driveBreadcrumb);
+}
+// returns a saved folder path for this project if we have one, otherwise the plain root
+function restoredDriveBreadcrumb(rootId){
+  const saved = lsGet('driveBreadcrumb_'+state.projectId, null);
+  if(Array.isArray(saved) && saved.length && saved[0].id===rootId) return saved;
+  return [{id: rootId, name: 'Team drive'}];
 }
 function driveCardClick(el){
   const isFolder = el.dataset.isFolder === 'true';
@@ -3742,10 +3754,11 @@ async function enterApp(){
   if(lastView && NAV.some(n=>n.id===lastView)) state.view = lastView;
   if(!state.driveSignedIn) tryRestoreDriveSession(); // silently resume a still-valid Drive session, if any
   if(state.driveSignedIn){
-    // already signed in this session — just re-point at this project's own folder
+    // already signed in this session — re-point at this project's own folder, resuming
+    // whichever subfolder was last open there, if any
     const rootId = driveFolderId(state.project.driveUrl);
-    state.driveCurrentFolderId = rootId;
-    state.driveBreadcrumb = [{id: rootId, name: 'Team drive'}];
+    state.driveBreadcrumb = restoredDriveBreadcrumb(rootId);
+    state.driveCurrentFolderId = state.driveBreadcrumb[state.driveBreadcrumb.length-1].id;
   }
   render();
   if(state.driveSignedIn && state.driveCurrentFolderId){
