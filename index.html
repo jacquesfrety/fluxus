@@ -543,7 +543,8 @@ function syncCurrentUserFromAuth(){
   if(!authUser){ state.currentUser = ''; return; }
   const email = (authUser.email||'').toLowerCase();
   const match = state.team.find(m => m.email && m.email.toLowerCase()===email);
-  state.currentUser = match ? match.name : '';
+  // Admin always has a valid acting identity, even without a team profile in this project
+  state.currentUser = match ? match.name : (isAdmin() ? 'Administrator' : '');
 }
 async function signInApp(){
   if(!auth || !googleAuthProvider){ toast('Sign-in is still loading — try again in a moment'); return; }
