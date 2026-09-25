@@ -3111,7 +3111,8 @@ function renderDocumentsView(){
               <div class="doc-card-meta">
                 <span class="tagpill" style="background:${tColor}29;color:${tColor};border:1px solid ${tColor}66">${d.type}</span>
                 ${task?`<span title="Linked to ${esc(task.name)}">🔗 ${esc(task.id)}</span>`:''}
-                ${canDelete?`<span class="chat-action-link" onclick="event.stopPropagation();deleteDocument('${d.id}')">Delete</span>`:''}
+                ${canDelete?`<span class="chat-action-link" onclick="event.stopPropagation();editDocument('${d.id}')">Edit</span>
+                <span class="chat-action-link" onclick="event.stopPropagation();deleteDocument('${d.id}')">Delete</span>`:''}
               </div>
             </div>
           </div>`;
@@ -3121,43 +3122,56 @@ function renderDocumentsView(){
 }
 
 let pendingDocThumbnail = null;
+let editingDocId = null; // set while the "Link a file" form is editing an existing entry, rather than creating a new one
 function openNewDocDrawer(){
   if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); return; }
   pendingDocThumbnail = null;
+  editingDocId = null;
   state.drawerTaskId = null;
   document.getElementById('overlay').classList.add('open');
   const drawer = document.getElementById('drawer');
   drawer.classList.add('open');
   drawer.innerHTML = renderDocFormContent();
 }
-function renderDocFormContent(){
+function editDocument(docId){
+  const d = state.documents.find(x=>x.id===docId); if(!d) return;
+  pendingDocThumbnail = d.thumbnail || null;
+  editingDocId = docId;
+  state.drawerTaskId = null;
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = renderDocFormContent(d);
+}
+function renderDocFormContent(existing){
+  const d = existing || {};
   return `
     <div class="drawer-head">
-      <div><h2 style="margin:0;font-size:17px">Link a file to a task</h2></div>
+      <div><h2 style="margin:0;font-size:17px">${existing?'Edit link':'Link a file to a task'}</h2></div>
       <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
     </div>
     <div class="drawer-body">
-      <div class="field"><label>Name</label><input id="new-doc-name" placeholder="e.g. Reference photos"></div>
+      <div class="field"><label>Name</label><input id="new-doc-name" placeholder="e.g. Reference photos" value="${esc(d.name||'')}"></div>
       <div class="field"><label>Link <span class="faint" style="text-transform:none;font-weight:400">— the file's share link (from the team drive, or anywhere else)</span></label>
-        <input id="new-doc-url" placeholder="https://…" type="url"></div>
+        <input id="new-doc-url" placeholder="https://…" type="url" value="${esc(d.url||'')}"></div>
       <div class="field-row">
         <div class="field"><label>Type</label>
-          <select id="new-doc-type">${DOC_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+          <select id="new-doc-type">${DOC_TYPES.map(t=>`<option value="${t}" ${d.type===t?'selected':''}>${t}</option>`).join('')}</select>
         </div>
         <div class="field"><label>Linked task <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label>
           <select id="new-doc-task">
             <option value="">—</option>
-            ${state.tasks.map(t=>`<option value="${t.id}">${esc(t.id)} — ${esc(t.name)}</option>`).join('')}
+            ${state.tasks.map(t=>`<option value="${t.id}" ${d.taskId===t.id?'selected':''}>${esc(t.id)} — ${esc(t.name)}</option>`).join('')}
           </select>
         </div>
       </div>
       <div class="field"><label>Description <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label>
-        <textarea id="new-doc-desc" rows="3"></textarea></div>
+        <textarea id="new-doc-desc" rows="3">${esc(d.description||'')}</textarea></div>
       <div class="field" style="display:flex;align-items:center;gap:14px">
         <div id="doc-thumb-preview">${pendingDocThumbnail?`<div class="avatar-circle" style="width:56px;height:56px;border-radius:8px"><img src="${pendingDocThumbnail}"></div>`:'<span class="faint" style="font-size:12px">No thumbnail</span>'}</div>
         <label class="btn btn-sm">Upload thumbnail <span class="faint">(optional)</span><input type="file" accept="image/*" style="display:none" onchange="handleDocThumbnailPick(event)"></label>
       </div>
-      <button class="btn btn-gold" onclick="createDocument()">Add</button>
+      <button class="btn btn-gold" onclick="saveDocumentForm()">${existing?'Save changes':'Add'}</button>
     </div>`;
 }
 function handleDocThumbnailPick(e){
@@ -3167,18 +3181,24 @@ function handleDocThumbnailPick(e){
     document.getElementById('doc-thumb-preview').innerHTML = `<div class="avatar-circle" style="width:56px;height:56px;border-radius:8px"><img src="${dataUrl}"></div>`;
   });
 }
-async function createDocument(){
+async function saveDocumentForm(){
   const name = document.getElementById('new-doc-name').value.trim();
   const url = document.getElementById('new-doc-url').value.trim();
   if(!name || !url){ toast('Name and link are required'); return; }
-  const doc = {
-    id: uid('d'), name, url, type: document.getElementById('new-doc-type').value,
+  const fields = {
+    name, url, type: document.getElementById('new-doc-type').value,
     taskId: document.getElementById('new-doc-task').value || null,
     description: document.getElementById('new-doc-desc').value.trim(),
-    thumbnail: pendingDocThumbnail || '', uploadedBy: state.currentUser, ts: Date.now()
+    thumbnail: pendingDocThumbnail || ''
   };
-  state.documents.push(doc);
+  if(editingDocId){
+    const d = state.documents.find(x=>x.id===editingDocId);
+    if(d) Object.assign(d, fields);
+  } else {
+    state.documents.push(Object.assign({id: uid('d'), uploadedBy: state.currentUser, ts: Date.now()}, fields));
+  }
   pendingDocThumbnail = null;
+  editingDocId = null;
   await saveDocuments();
   closeDrawer();
   render();
@@ -3231,7 +3251,8 @@ function renderDocDrawerContent(docId){
         <div class="faint" style="margin-top:3px">added by ${esc(d.uploadedBy||'Someone')} · ${fmtWhen(d.ts)}</div>
       </div>
       <div class="row" style="gap:6px">
-        ${canDelete?`<button class="btn btn-sm btn-danger" onclick="deleteDocument('${d.id}')">Delete</button>`:''}
+        ${canDelete?`<button class="btn btn-sm" onclick="editDocument('${d.id}')">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteDocument('${d.id}')">Delete</button>`:''}
         <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
       </div>
     </div>
