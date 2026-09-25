@@ -1010,7 +1010,9 @@ function renderWhoAmI(){
         <span class="faint" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(authUser.email)}</span>
       </div>
       <div class="faint" style="font-size:11px;margin-bottom:8px">No profile in this project yet.</div>
-      <button class="btn btn-sm btn-gold" style="width:100%;justify-content:center;margin-bottom:6px" onclick="openClaimProfileDrawer()">+ Add yourself</button>
+      ${isAdmin()
+        ? `<button class="btn btn-sm btn-gold" style="width:100%;justify-content:center;margin-bottom:6px" onclick="openClaimProfileDrawer()">+ Add yourself</button>`
+        : `<div class="faint" style="font-size:11px;margin-bottom:8px">Ask the Administrator to add you to this project's team.</div>`}
       <div style="text-align:center"><span class="chat-action-link" style="font-size:11px" onclick="signOutApp()">Sign out</span></div>
     </div>`;
   }
@@ -1253,9 +1255,9 @@ function render(){
   document.getElementById('view-sub').textContent = TITLES[state.view][1];
   const actions = document.getElementById('topbar-actions');
   actions.innerHTML = '';
-  if(state.view==='team') actions.innerHTML = (isSupervisor() || state.team.length===0)
+  if(state.view==='team') actions.innerHTML = isAdmin()
     ? `<button class="btn btn-gold" onclick="openTeamDrawer(null)">+ Add person</button>`
-    : `<span class="faint" style="font-size:12px">Only Supervisors can edit the team</span>`;
+    : `<span class="faint" style="font-size:12px">Only the Administrator can edit the team</span>`;
   if(state.view==='tasks') actions.innerHTML = `<button class="btn btn-ghost" onclick="openManageTaskLists()">+ New task list</button><button class="btn btn-gold" onclick="createTask()">+ New task</button>`;
   if(state.view==='support') actions.innerHTML = `<button class="btn btn-gold" onclick="openNewPostDrawer()">+ New post</button>`;
   if(state.view==='documents') actions.innerHTML = '';
@@ -1445,7 +1447,7 @@ function renderTeamView(){
   if(state.team.length===0){
     return `<div class="empty-state"><div class="display">No one here yet</div>Add your first team member to get started.</div>`;
   }
-  const canEdit = isSupervisor();
+  const canEdit = isAdmin();
   const roleOrder = {"Administrator":0,"Supervisor":1,"Lecturer":2,"Student Lead":3,"Student":4};
   const displayRole = m => isOwnerEmail(m.email) ? 'Administrator' : (m.role||DEFAULT_ROLE);
   const sortedTeam = [...state.team].sort((a,b)=>{
@@ -1472,7 +1474,7 @@ function renderTeamView(){
     </div>`).join('')}</div>`;
 }
 async function deleteTeamMember(id){
-  if(!isSupervisor()){ toast('Only Supervisors can edit team profiles'); return; }
+  if(!isAdmin()){ toast('Only the Administrator can edit team profiles'); return; }
   const target = state.team.find(x=>x.id===id);
   if(target && target.role==='Supervisor' && state.team.filter(x=>x.role==='Supervisor').length<=1){
     toast('Cannot remove the last Supervisor — promote someone else first'); return;
@@ -1487,7 +1489,7 @@ async function deleteTeamMember(id){
 /* ---- team drawer (edit + photo upload) ---- */
 let pendingAvatar = null;
 function openTeamDrawer(id){
-  if(!isSupervisor() && state.team.length>0){ toast('Only Supervisors can edit team profiles'); return; }
+  if(!isAdmin()){ toast('Only the Administrator can edit team profiles'); return; }
   pendingAvatar = null;
   document.getElementById('overlay').classList.add('open');
   const drawer = document.getElementById('drawer');
@@ -1534,7 +1536,7 @@ function handleAvatarPick(e){
   });
 }
 async function saveTeamMember(id){
-  if(!isSupervisor() && state.team.length>0){ toast('Only Supervisors can edit team profiles'); return; }
+  if(!isAdmin()){ toast('Only the Administrator can edit team profiles'); return; }
   const name = document.getElementById('tm-name').value.trim();
   if(!name){ toast('Name is required'); return; }
   const role = document.getElementById('tm-role').value || DEFAULT_ROLE;
@@ -1593,6 +1595,7 @@ function renderClaimProfileContent(){
 }
 async function saveMyProfile(){
   if(!authUser) return;
+  if(!isAdmin()){ toast('Only the Administrator can add team members'); return; }
   const name = document.getElementById('tm-name').value.trim();
   if(!name){ toast('Name is required'); return; }
   const role = state.team.length===0 ? 'Supervisor' : (document.getElementById('tm-role').value || DEFAULT_ROLE);
