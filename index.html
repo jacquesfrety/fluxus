@@ -527,6 +527,7 @@ try{
 /* ---- app sign-in (real Google identity, via Firebase Auth) ---- */
 let authUser = null; // Firebase Auth user object; independent of which project is open
 const googleAuthProvider = auth ? new firebase.auth.GoogleAuthProvider() : null;
+if(googleAuthProvider) googleAuthProvider.setCustomParameters({ prompt: 'select_account' });
 function syncCurrentUserFromAuth(){
   if(!authUser){ state.currentUser = ''; return; }
   const email = (authUser.email||'').toLowerCase();
