@@ -1294,7 +1294,7 @@ document.addEventListener('click', (e)=>{
     mentionPickerOpen = false; mp.innerHTML = '';
   }
 });
-function setView(v){ state.view = v; state.drawerTaskId=null; render(); }
+function setView(v){ state.view = v; state.drawerTaskId=null; lsSet('lastView', v); render(); }
 function filterTasksByStatus(status){
   state.filters = { category: "", taskList: "", assignee: "", status: status, search: "" };
   setView('tasks');
@@ -3737,6 +3737,9 @@ async function enterApp(){
     showNotAMember();
     return;
   }
+  // restore whichever page the person was last on, so a reload doesn't dump them back to Dashboard
+  const lastView = lsGet('lastView', null);
+  if(lastView && NAV.some(n=>n.id===lastView)) state.view = lastView;
   if(!state.driveSignedIn) tryRestoreDriveSession(); // silently resume a still-valid Drive session, if any
   if(state.driveSignedIn){
     // already signed in this session — just re-point at this project's own folder
