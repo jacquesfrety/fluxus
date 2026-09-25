@@ -54,8 +54,10 @@
   .brand.editable:hover .brand-name{color:var(--gold);}
   .brand-mark{width:26px;height:26px;border-radius:6px;background:linear-gradient(135deg,var(--gold),var(--teal));
     flex:0 0 auto;}
-  .brand-name{font-size:15px;font-weight:600;letter-spacing:.2px;}
+  .brand-name{font-size:20px;font-weight:800;letter-spacing:.2px;color:var(--ink);}
   .brand-sub{font-size:10.5px;color:var(--ink-faint);margin-top:1px;}
+  .fluxus-tag{font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.6px;
+    padding-left:2px;margin-bottom:8px;}
   .project-header{display:flex;gap:16px;align-items:flex-start;background:var(--surface);
     border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;margin-bottom:18px;}
   .project-header-title{font-size:20px;font-weight:700;font-family:'Space Grotesk',sans-serif;}
@@ -434,11 +436,11 @@
       <div id="brand-icon"><div class="brand-mark"></div></div>
       <div>
         <div class="brand-name" id="brand-title">Fluxus</div>
-        <div class="brand-sub" id="brand-sub">Project Tracker</div>
       </div>
     </div>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
+      <div class="fluxus-tag">Fluxus</div>
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
       <div class="theme-toggle" id="theme-toggle">
@@ -1010,8 +1012,8 @@ function projectIconHTML(size){
 function renderBrand(){
   const iconWrap = document.getElementById('brand-icon');
   if(iconWrap) iconWrap.innerHTML = projectIconHTML(26);
-  const subEl = document.getElementById('brand-sub');
-  if(subEl) subEl.textContent = state.project.title || 'Untitled Project';
+  const titleEl = document.getElementById('brand-title');
+  if(titleEl) titleEl.textContent = state.project.title || 'Untitled Project';
   const brandEl = document.getElementById('brand-block');
   if(!brandEl) return;
   if(isSupervisor() || state.team.length===0){
