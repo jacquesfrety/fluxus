@@ -594,7 +594,11 @@ function initDriveAuth(){
 function signInGoogleDrive(){
   initDriveAuth();
   if(!driveTokenClient){ toast('Google sign-in is still loading — try again in a moment'); return; }
-  driveTokenClient.requestAccessToken({ prompt: 'select_account' });
+  // hint Google to default to the same account already signed into Fluxus, rather than
+  // whichever Google account the browser treats as "primary"
+  const opts = { prompt: 'select_account' };
+  if(authUser && authUser.email) opts.hint = authUser.email;
+  driveTokenClient.requestAccessToken(opts);
 }
 function driveHeaders(extra){
   return Object.assign({ Authorization: 'Bearer ' + driveAccessToken }, extra||{});
