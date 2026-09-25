@@ -564,7 +564,10 @@ function syncCurrentUserFromAuth(){
 }
 async function signInApp(){
   if(!auth || !googleAuthProvider){ toast('Sign-in is still loading — try again in a moment'); return; }
-  try{ await auth.signInWithPopup(googleAuthProvider); }
+  try{
+    await auth.signInWithPopup(googleAuthProvider);
+    attemptAutoDriveConnect(); // also connect Google Drive right away, so Documents doesn't need a separate click
+  }
   catch(e){ console.error(e); toast('Sign-in failed'); }
 }
 async function signOutApp(){
@@ -609,13 +612,21 @@ function loadDriveTokenFromSession(){
 function clearDriveTokenSession(){
   try{ sessionStorage.removeItem(DRIVE_TOKEN_SESSION_KEY); }catch(e){}
 }
+let driveAutoAttemptInProgress = false;
 function initDriveAuth(){
   if(driveTokenClient || typeof google === 'undefined' || !google.accounts) return;
   driveTokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
     scope: DRIVE_SCOPE,
     callback: (resp)=>{
-      if(resp.error){ toast('Google sign-in failed'); return; }
+      const wasAuto = driveAutoAttemptInProgress;
+      driveAutoAttemptInProgress = false;
+      if(resp.error){
+        // a background auto-connect attempt failing is normal (e.g. first-ever consent needs a
+        // click) — only complain when the person explicitly clicked "Sign in with Google" themselves
+        if(!wasAuto) toast('Google sign-in failed');
+        return;
+      }
       driveAccessToken = resp.access_token;
       saveDriveTokenToSession(resp.access_token, resp.expires_in);
       state.driveSignedIn = true;
@@ -631,11 +642,25 @@ function initDriveAuth(){
 function signInGoogleDrive(){
   initDriveAuth();
   if(!driveTokenClient){ toast('Google sign-in is still loading — try again in a moment'); return; }
+  driveAutoAttemptInProgress = false;
   // hint Google to default to the same account already signed into Fluxus, rather than
   // whichever Google account the browser treats as "primary"
   const opts = { prompt: 'select_account' };
   if(authUser && authUser.email) opts.hint = authUser.email;
   driveTokenClient.requestAccessToken(opts);
+}
+// try to silently connect Google Drive using the Google account already signed into Fluxus, without
+// asking for a click — this reuses consent the person granted in an earlier session, so it normally
+// completes with no visible prompt. If it can't go through silently (e.g. Drive access was never
+// granted before, or the browser blocks it), it fails quietly and the "Sign in with Google" button
+// on the Documents page still works as a fallback.
+function attemptAutoDriveConnect(){
+  if(!authUser || !authUser.email || state.driveSignedIn) return;
+  initDriveAuth();
+  if(!driveTokenClient) return;
+  driveAutoAttemptInProgress = true;
+  try{ driveTokenClient.requestAccessToken({ prompt: '', hint: authUser.email }); }
+  catch(e){ driveAutoAttemptInProgress = false; }
 }
 // on load, silently restore a still-valid Drive session from this browser tab (no re-click needed
 // until the token actually expires, roughly once an hour)
@@ -3767,6 +3792,7 @@ async function enterApp(){
   const lastView = lsGet('lastView', null);
   if(lastView && NAV.some(n=>n.id===lastView)) state.view = lastView;
   if(!state.driveSignedIn) tryRestoreDriveSession(); // silently resume a still-valid Drive session, if any
+  if(!state.driveSignedIn) attemptAutoDriveConnect(); // otherwise, try to reconnect Drive automatically using the signed-in Google account
   if(state.driveSignedIn){
     // already signed in this session — re-point at this project's own folder, resuming
     // whichever subfolder was last open there, if any
