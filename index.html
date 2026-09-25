@@ -496,6 +496,7 @@ const PRIORITIES = ["Low","Medium","High"];
 const PRIORITY_COLOR = {"Low":"var(--green)","Medium":"var(--gold)","High":"var(--red)"};
 const PRIORITY_HEX = {"Low":"#6FCF97","Medium":"#D9A441","High":"#E5646A"};
 const ROLES = ["Supervisor","Student Lead","Student","Lecturer"];
+const OWNER_EMAIL = "nyp@frety.name"; // only this Google account may create new projects
 const DEFAULT_ROLE = "Student";
 const PROJECT_TYPES = ["Client","Internal","Students"];
 const PROJECT_TYPE_COLOR = {"Client":"#D9A441","Internal":"#4FB6AC","Students":"#3B82F6"};
@@ -3652,7 +3653,17 @@ async function showPicker(){
   const allProjects = db ? await listProjects() : [];
   const myEmail = (authUser.email||'').toLowerCase();
   const projects = allProjects.filter(p => Array.isArray(p.memberEmails) && p.memberEmails.includes(myEmail));
+  const canCreate = myEmail === OWNER_EMAIL;
   const dbWarning = db ? '' : `<div class="warn-box">Not connected to the database — check your internet connection and reload.</div>`;
+  const createSection = canCreate ? `
+      <div class="field" style="margin-top:16px"><label>New project name</label><input id="picker-new-name" placeholder="e.g. 141 Neil Road"></div>
+      <label class="row" style="gap:7px;font-size:12.5px;color:var(--ink-dim);margin-bottom:12px">
+        <input type="checkbox" id="picker-seed-example"> Start with example data (categories, sample tasks)
+      </label>
+      <button class="btn btn-gold" style="width:100%;justify-content:center" onclick="createProjectFromPicker()">+ Create project</button>` : '';
+  const emptyMsg = projects.length ? '' : (canCreate
+    ? `<div class="faint" style="text-align:center;margin-bottom:16px">No projects yet — create the first one below.</div>`
+    : `<div class="faint" style="text-align:center;margin-bottom:16px">No projects yet — ask your supervisor to create one and add you as a member.</div>`);
   picker.innerHTML = `
     <div class="picker-card">
       <div class="brand" style="padding:0 0 18px;justify-content:center">
@@ -3665,12 +3676,9 @@ async function showPicker(){
       ${projects.length ? `<div class="picker-list">${projects.map(p=>`
         <div class="picker-item" onclick="openProject('${p.id}')">
           <span>${esc(p.name)}</span><span class="faint" style="font-size:11px">${p.createdAt?fmtWhen(p.createdAt):''}</span>
-        </div>`).join('')}</div>` : `<div class="faint" style="text-align:center;margin-bottom:16px">No projects yet — create the first one below.</div>`}
-      <div class="field" style="margin-top:16px"><label>New project name</label><input id="picker-new-name" placeholder="e.g. 141 Neil Road"></div>
-      <label class="row" style="gap:7px;font-size:12.5px;color:var(--ink-dim);margin-bottom:12px">
-        <input type="checkbox" id="picker-seed-example"> Start with example data (categories, sample tasks)
-      </label>
-      <button class="btn btn-gold" style="width:100%;justify-content:center" onclick="createProjectFromPicker()">+ Create project</button>
+        </div>`).join('')}</div>` : ''}
+      ${emptyMsg}
+      ${createSection}
       <div style="text-align:center;margin-top:14px">
         <span class="faint" style="font-size:11px">${esc(authUser.email)}</span> ·
         <span class="chat-action-link" style="font-size:11px" onclick="signOutApp()">Sign out</span>
@@ -3678,6 +3686,7 @@ async function showPicker(){
     </div>`;
 }
 async function createProjectFromPicker(){
+  if((authUser?.email||'').toLowerCase() !== OWNER_EMAIL){ toast('Only the owner account can create new projects'); return; }
   const name = document.getElementById('picker-new-name').value.trim();
   if(!name){ toast('Name is required'); return; }
   const seed = document.getElementById('picker-seed-example').checked;
