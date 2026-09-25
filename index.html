@@ -3454,7 +3454,7 @@ function renderDrawerContent(taskId){
 function renderTaskLinkedFiles(t){
   const linked = state.documents.filter(d=>d.taskId===t.id);
   const pickable = state.documents.filter(d=>d.taskId!==t.id);
-  return `<div class="field"><label>Linked files <span class="faint" style="text-transform:none;font-weight:400">— from Documents</span></label>
+  return `<div class="field"><label>Files</label>
     ${linked.length ? linked.map(d=>{
       const tColor = DOC_TYPE_COLOR[d.type]||'#6B7280';
       return `<div class="dash-task-row">
@@ -3464,16 +3464,62 @@ function renderTaskLinkedFiles(t){
         </div>
         <span class="chat-action-link" onclick="unlinkDocumentFromTask('${d.id}','${t.id}')">Unlink</span>
       </div>`;
-    }).join('') : '<div class="faint" style="font-size:12px;margin-bottom:8px">No files linked yet</div>'}
+    }).join('') : '<div class="faint" style="font-size:12px;margin-bottom:8px">No files yet</div>'}
+    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
+      <label class="btn btn-sm btn-gold">📤 Upload file<input type="file" style="display:none" onchange="uploadFileToTask('${t.id}', this)"></label>
+      <span class="faint" style="font-size:11px">Saved straight into this task's own folder in the team drive</span>
+    </div>
     <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
       <select id="link-existing-doc-select" style="flex:1;min-width:140px">
-        <option value="">Link an existing file…</option>
+        <option value="">…or link an existing Documents entry</option>
         ${pickable.map(d=>`<option value="${d.id}">${esc(d.name)}${d.taskId?' (currently on '+esc(d.taskId)+')':''}</option>`).join('')}
       </select>
       <button class="btn btn-sm" onclick="linkDocumentToTask(document.getElementById('link-existing-doc-select').value,'${t.id}')">Link</button>
       <button class="btn btn-sm btn-ghost" onclick="openNewDocDrawerForTask('${t.id}')">+ New link</button>
     </div>
   </div>`;
+}
+function driveFileToDocType(f){
+  const kind = driveMediaKind(f);
+  if(kind==='image') return 'Image';
+  if(kind==='video') return 'Video';
+  return 'Document';
+}
+async function uploadFileToTask(taskId, inputEl){
+  const file = inputEl.files[0]; if(!file) return;
+  const task = state.tasks.find(x=>x.id===taskId); if(!task){ inputEl.value=''; return; }
+  if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); inputEl.value=''; return; }
+  if(!driveFolderId(state.project.driveUrl)){
+    toast('No team drive folder is set for this project yet — ask a Supervisor to add one in Project Settings');
+    inputEl.value=''; return;
+  }
+  if(!state.driveSignedIn){
+    signInGoogleDrive();
+    toast('Signing in to Google Drive… once that finishes, click Upload file again');
+    inputEl.value=''; return;
+  }
+  toast('Uploading…');
+  try{
+    const folderId = await ensureTaskDriveFolder(task);
+    const uploaded = await driveApiUpload(file, folderId);
+    const doc = {
+      id: uid('d'), name: uploaded.name, url: uploaded.webViewLink || '',
+      type: driveFileToDocType({mimeType: uploaded.mimeType, name: uploaded.name}),
+      taskId: task.id, description: '', thumbnail: uploaded.thumbnailLink || '',
+      uploadedBy: state.currentUser, ts: Date.now()
+    };
+    state.documents.push(doc);
+    await saveDocuments();
+    toast('Uploaded');
+    if(state.drawerTaskId===taskId){
+      document.getElementById('drawer').innerHTML = renderDrawerContent(taskId);
+      renderChat(taskId);
+    }
+  }catch(err){
+    console.error(err);
+    toast('Upload failed');
+  }
+  inputEl.value = '';
 }
 async function linkDocumentToTask(docId, taskId){
   if(!docId) return;
