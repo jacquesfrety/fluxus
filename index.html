@@ -1462,7 +1462,7 @@ function renderTeamView(){
           <div class="tcard-role">${esc(displayRole(m))}</div>
         </div>
       </div>
-      ${m.email?`<div class="tcard-field">✉ ${esc(m.email)}</div>`:''}
+      ${(m.email && isAdmin())?`<div class="tcard-field">✉ ${esc(m.email)}</div>`:''}
       ${m.phone?`<div class="tcard-field">☎ ${esc(m.phone)}</div>`:''}
       ${m.notes?`<div class="tcard-field faint">${esc(m.notes)}</div>`:''}
       ${canEdit ? `<div class="tcard-actions">
@@ -1519,7 +1519,7 @@ function renderTeamDrawerContent(id){
         </select>
       </div>
       <div class="field-row">
-        <div class="field"><label>Email</label><input id="tm-email" value="${esc(m.email)}"></div>
+        <div class="field"><label>Email</label><input id="tm-email" type="${isAdmin()?'text':'password'}" value="${esc(m.email)}" autocomplete="off"></div>
         <div class="field"><label>Phone</label><input id="tm-phone" value="${esc(m.phone)}"></div>
       </div>
       <div class="field"><label>Notes</label><textarea id="tm-notes" rows="2">${esc(m.notes)}</textarea></div>
