@@ -1455,6 +1455,10 @@ function renderTeamView(){
 }
 async function deleteTeamMember(id){
   if(!isSupervisor()){ toast('Only Supervisors can edit team profiles'); return; }
+  const target = state.team.find(x=>x.id===id);
+  if(target && target.role==='Supervisor' && state.team.filter(x=>x.role==='Supervisor').length<=1){
+    toast('Cannot remove the last Supervisor — promote someone else first'); return;
+  }
   if(!confirm("Remove this person?")) return;
   state.team = state.team.filter(x=>x.id!==id);
   await saveTeam();
@@ -1521,6 +1525,9 @@ async function saveTeamMember(id){
   const notes = document.getElementById('tm-notes').value;
   if(id){
     const m = state.team.find(x=>x.id===id);
+    if(m.role==='Supervisor' && role!=='Supervisor' && state.team.filter(x=>x.role==='Supervisor').length<=1){
+      toast('Cannot change the last Supervisor\'s role — promote someone else first'); return;
+    }
     Object.assign(m, {name, role, email, phone, notes});
     if(pendingAvatar) m.avatar = pendingAvatar;
   } else {
