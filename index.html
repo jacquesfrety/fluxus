@@ -420,6 +420,7 @@
   #drive-lightbox img, #drive-lightbox video{max-width:100%;max-height:100%;border-radius:6px;}
   #drive-lightbox img{max-width:calc(100vw - 60px);max-height:calc(100vh - 130px);touch-action:none;user-select:none;-webkit-user-drag:none;}
   #drive-lightbox iframe.drive-pdf-frame{width:min(92vw,900px);height:calc(100vh - 130px);border:none;border-radius:6px;background:#fff;}
+  #drive-lightbox model-viewer.drive-model-viewer{width:min(92vw,900px);height:calc(100vh - 130px);border-radius:6px;background:#20242B;--poster-color:transparent;}
   .drive-lightbox-inner{display:flex;flex-direction:column;align-items:center;gap:10px;max-width:100%;max-height:100%;}
   .drive-lightbox-nav{position:fixed;top:50%;transform:translateY(-50%);z-index:61;
     width:48px;height:48px;border-radius:50%;border:1px solid rgba(255,255,255,.25);
@@ -509,6 +510,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script type="module" src="https://unpkg.com/@google/model-viewer@3/dist/model-viewer.min.js"></script>
 <script>
 /* ============================= constants ============================= */
 const STATUSES = ["Not Started","In Progress","In Review","Completed","Needs Revision","On Hold"];
@@ -2824,23 +2826,26 @@ function driveCardClick(el){
   if(isFolder){ driveNavigateTo(el.dataset.fileId, el.dataset.fileName); return; }
   const f = (state.driveFiles||[]).find(x=>x.id===el.dataset.fileId);
   if(!f) return;
-  const isImage = f.mimeType && f.mimeType.startsWith('image/');
-  const isVideo = f.mimeType && f.mimeType.startsWith('video/');
-  const isPdf = f.mimeType === 'application/pdf';
-  if(isImage || isVideo || isPdf){ openDriveMedia(f, isVideo ? 'video' : isPdf ? 'pdf' : 'image'); return; }
+  const kind = driveMediaKind(f);
+  if(kind){ openDriveMedia(f, kind); return; }
   if(f.webViewLink) window.open(f.webViewLink, '_blank');
 }
 let currentDriveMediaUrl = null;
 let currentDriveMediaFileId = null;
-function driveMediaKind(mimeType){
-  if(!mimeType) return null;
-  if(mimeType.startsWith('image/')) return 'image';
-  if(mimeType.startsWith('video/')) return 'video';
-  if(mimeType === 'application/pdf') return 'pdf';
+function driveMediaKind(f){
+  if(!f) return null;
+  const mt = f.mimeType || '';
+  const name = (f.name || '').toLowerCase();
+  if(mt.startsWith('image/')) return 'image';
+  if(mt.startsWith('video/')) return 'video';
+  if(mt === 'application/pdf') return 'pdf';
+  // Drive often reports a generic mimeType (e.g. application/octet-stream) for .glb/.gltf uploads,
+  // so fall back to the file extension to catch 3D models reliably
+  if(mt === 'model/gltf-binary' || mt === 'model/gltf+json' || /\.(glb|gltf)$/.test(name)) return 'model';
   return null;
 }
 function driveMediaSiblings(){
-  return (state.driveFiles||[]).filter(x => driveMediaKind(x.mimeType));
+  return (state.driveFiles||[]).filter(x => driveMediaKind(x));
 }
 async function openDriveMedia(f, kind){
   // accept either the new string kind ('image'/'video'/'pdf') or, from older call sites, a boolean isVideo
@@ -2871,8 +2876,12 @@ async function openDriveMedia(f, kind){
       ? `<video src="${url}" controls autoplay></video>`
       : kind === 'pdf'
       ? `<iframe class="drive-pdf-frame" src="${url}" title="${esc(f.name||'PDF')}"></iframe>`
+      : kind === 'model'
+      ? `<model-viewer class="drive-model-viewer" src="${url}" camera-controls auto-rotate shadow-intensity="1" exposure="1" alt="${esc(f.name||'3D model')}"></model-viewer>`
       : `<img id="drive-lightbox-img" src="${url}">`;
-    document.getElementById('drive-lightbox-hint').textContent = kind === 'image' ? 'Scroll to zoom · drag to pan · double-click to reset' : '';
+    document.getElementById('drive-lightbox-hint').textContent = kind === 'image' ? 'Scroll to zoom · drag to pan · double-click to reset'
+      : kind === 'model' ? 'Drag to rotate · scroll to zoom'
+      : '';
     if(kind === 'image') wireImageZoom(document.getElementById('drive-lightbox-img'));
   }catch(e){
     console.error(e);
@@ -2888,7 +2897,7 @@ function driveMediaStep(dir){
   if(!next) return;
   if(currentDriveMediaUrl){ URL.revokeObjectURL(currentDriveMediaUrl); currentDriveMediaUrl = null; }
   currentDriveMediaFileId = next.id;
-  openDriveMedia(next, driveMediaKind(next.mimeType));
+  openDriveMedia(next, driveMediaKind(next));
 }
 function closeDriveMedia(){
   document.getElementById('drive-lightbox').classList.remove('open');
@@ -3000,12 +3009,13 @@ function renderDriveBrowser(){
   </div>`;
 
   const driveFileTypeOf = f => f.mimeType==='application/vnd.google-apps.folder' ? 'folder'
-    : (f.mimeType && f.mimeType.startsWith('image/')) ? 'images'
-    : (f.mimeType && f.mimeType.startsWith('video/')) ? 'videos'
+    : driveMediaKind(f)==='image' ? 'images'
+    : driveMediaKind(f)==='video' ? 'videos'
+    : driveMediaKind(f)==='model' ? 'models'
     : 'others';
   const filterBtn = (key, label) => `<button class="btn btn-sm ${state.driveFileFilter===key?'btn-gold':'btn-ghost'}" onclick="setDriveFileFilter('${key}')">${label}</button>`;
   const filterBar = (state.driveFiles && state.driveFiles.length>0) ? `<div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap">
-    ${filterBtn('all','All')}${filterBtn('images','🖼 Images')}${filterBtn('videos','🎬 Videos')}${filterBtn('others','📄 Others')}
+    ${filterBtn('all','All')}${filterBtn('images','🖼 Images')}${filterBtn('videos','🎬 Videos')}${filterBtn('models','🧊 3D Models')}${filterBtn('others','📄 Others')}
   </div>` : '';
 
   let listHtml;
@@ -3019,8 +3029,9 @@ function renderDriveBrowser(){
       ? `<div class="faint" style="padding:20px 0;text-align:center">No files match this filter.</div>`
       : `<div class="doc-grid">${visibleFiles.map(f=>{
       const isFolder = f.mimeType==='application/vnd.google-apps.folder';
-      const isVideo = f.mimeType && f.mimeType.startsWith('video/');
-      const icon = isFolder ? '📁' : (f.mimeType && f.mimeType.startsWith('image/')) ? '🖼' : isVideo ? '🎬' : '📄';
+      const fileKind = driveMediaKind(f);
+      const isVideo = fileKind === 'video';
+      const icon = isFolder ? '📁' : fileKind==='image' ? '🖼' : isVideo ? '🎬' : fileKind==='model' ? '🧊' : '📄';
       const thumb = f.thumbnailLink
         ? `<img src="${esc(f.thumbnailLink)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${icon}'}))">`
         : icon;
