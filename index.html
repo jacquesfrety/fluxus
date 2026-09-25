@@ -3001,8 +3001,14 @@ async function driveDeletePrompt(cardEl){
   try{
     await driveApiTrash(id);
     toast('Moved to trash');
+    await removeDocumentLinksForDriveFile(id); // so a deleted file's link doesn't keep showing up under a task
     await loadDriveFolder(state.driveCurrentFolderId);
   }catch(err){ console.error(err); toast('Could not delete'); }
+}
+async function removeDocumentLinksForDriveFile(driveFileId){
+  const before = state.documents.length;
+  state.documents = state.documents.filter(d => d.driveFileId !== driveFileId);
+  if(state.documents.length !== before) await saveDocuments();
 }
 function driveCancelMove(){ state.driveMovePending = null; render(); }
 async function driveCompleteMove(){
@@ -3506,7 +3512,8 @@ async function uploadFileToTask(taskId, inputEl){
       id: uid('d'), name: uploaded.name, url: uploaded.webViewLink || '',
       type: driveFileToDocType({mimeType: uploaded.mimeType, name: uploaded.name}),
       taskId: task.id, description: '', thumbnail: uploaded.thumbnailLink || '',
-      uploadedBy: state.currentUser, ts: Date.now()
+      uploadedBy: state.currentUser, ts: Date.now(),
+      driveFileId: uploaded.id // lets us clean up this link automatically if the Drive file itself gets deleted
     };
     state.documents.push(doc);
     await saveDocuments();
