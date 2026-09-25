@@ -268,8 +268,11 @@
   .doc-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;cursor:pointer;}
   .doc-card:hover{border-color:var(--ink-faint);}
   .doc-thumb{width:100%;height:110px;background:var(--surface2);display:flex;align-items:center;
-    justify-content:center;font-size:34px;overflow:hidden;}
+    justify-content:center;font-size:34px;overflow:hidden;position:relative;}
   .doc-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .doc-thumb-play{position:absolute;bottom:6px;right:6px;width:22px;height:22px;border-radius:50%;
+    background:rgba(0,0,0,.62);color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;
+    padding-left:2px;pointer-events:none;}
   .doc-card-body{padding:10px 12px;}
   .doc-card-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .doc-card-meta{font-size:11px;color:var(--ink-faint);margin-top:6px;display:flex;align-items:center;
@@ -771,6 +774,7 @@ let state = {
   driveFiles: null,
   driveLoading: false,
   driveMovePending: null,
+  driveFileFilter: 'all', // 'all' | 'images' | 'videos' | 'others'
   categories: [],      // work-type categories, e.g. Modelling, Audio, Web App
   taskLists: [],        // actual task-list containers, e.g. "Environment 1"
   tasks: [],
@@ -2905,6 +2909,10 @@ function driveSignOut(){
   clearDriveTokenSession();
   render();
 }
+function setDriveFileFilter(key){
+  state.driveFileFilter = key;
+  render();
+}
 function renderDriveBrowser(){
   const breadcrumbHtml = state.driveBreadcrumb.map((b,i)=>
     `<span class="chat-action-link" onclick="driveNavigateBreadcrumb(${i})">${esc(b.name)}</span>`
@@ -2923,20 +2931,34 @@ function renderDriveBrowser(){
     <span class="faint" style="font-size:11px">or drag files anywhere in this box</span>
   </div>`;
 
+  const driveFileTypeOf = f => f.mimeType==='application/vnd.google-apps.folder' ? 'folder'
+    : (f.mimeType && f.mimeType.startsWith('image/')) ? 'images'
+    : (f.mimeType && f.mimeType.startsWith('video/')) ? 'videos'
+    : 'others';
+  const filterBtn = (key, label) => `<button class="btn btn-sm ${state.driveFileFilter===key?'btn-gold':'btn-ghost'}" onclick="setDriveFileFilter('${key}')">${label}</button>`;
+  const filterBar = (state.driveFiles && state.driveFiles.length>0) ? `<div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap">
+    ${filterBtn('all','All')}${filterBtn('images','🖼 Images')}${filterBtn('videos','🎬 Videos')}${filterBtn('others','📄 Others')}
+  </div>` : '';
+
   let listHtml;
   if(state.driveLoading || state.driveFiles===null){
     listHtml = `<div class="faint" style="padding:20px 0;text-align:center">Loading…</div>`;
   } else if(state.driveFiles.length===0){
     listHtml = `<div class="faint" style="padding:20px 0;text-align:center">This folder is empty.</div>`;
   } else {
-    listHtml = `<div class="doc-grid">${state.driveFiles.map(f=>{
+    const visibleFiles = state.driveFiles.filter(f => state.driveFileFilter==='all' || driveFileTypeOf(f)==='folder' || driveFileTypeOf(f)===state.driveFileFilter);
+    listHtml = visibleFiles.length===0
+      ? `<div class="faint" style="padding:20px 0;text-align:center">No files match this filter.</div>`
+      : `<div class="doc-grid">${visibleFiles.map(f=>{
       const isFolder = f.mimeType==='application/vnd.google-apps.folder';
-      const icon = isFolder ? '📁' : (f.mimeType && f.mimeType.startsWith('image/')) ? '🖼' : (f.mimeType && f.mimeType.startsWith('video/')) ? '🎬' : '📄';
+      const isVideo = f.mimeType && f.mimeType.startsWith('video/');
+      const icon = isFolder ? '📁' : (f.mimeType && f.mimeType.startsWith('image/')) ? '🖼' : isVideo ? '🎬' : '📄';
       const thumb = f.thumbnailLink
         ? `<img src="${esc(f.thumbnailLink)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${icon}'}))">`
         : icon;
+      const playBadge = isVideo ? `<span class="doc-thumb-play">▶</span>` : '';
       return `<div class="doc-card" data-file-id="${esc(f.id)}" data-file-name="${esc(f.name)}" data-is-folder="${isFolder}" onclick="driveCardClick(this)">
-        <div class="doc-thumb">${thumb}</div>
+        <div class="doc-thumb">${thumb}${playBadge}</div>
         <div class="doc-card-body">
           <div class="doc-card-name" title="${esc(f.name)}">${esc(f.name)}</div>
           <div class="doc-card-meta">
@@ -2960,6 +2982,7 @@ function renderDriveBrowser(){
     <div class="faint" style="margin-bottom:10px">${breadcrumbHtml}</div>
     ${moveBanner}
     ${toolbar}
+    ${filterBar}
     ${listHtml}
   </div>`;
 }
