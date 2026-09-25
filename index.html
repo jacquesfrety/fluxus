@@ -500,8 +500,12 @@ const PRIORITIES = ["Low","Medium","High"];
 const PRIORITY_COLOR = {"Low":"var(--green)","Medium":"var(--gold)","High":"var(--red)"};
 const PRIORITY_HEX = {"Low":"#6FCF97","Medium":"#D9A441","High":"#E5646A"};
 const ROLES = ["Supervisor","Student Lead","Student","Lecturer"];
-const OWNER_EMAIL = "nyp@frety.name"; // only this Google account may create new projects, and it is always Administrator everywhere
-function isAdmin(){ return !!authUser && (authUser.email||'').toLowerCase() === OWNER_EMAIL; }
+// Owner/Administrator account. Listed as possibly-multiple addresses because a "nice" address
+// (e.g. a custom domain) can be an alias that Google still authenticates as its underlying
+// Gmail account — so we accept either, whichever one Firebase Auth actually reports back.
+const OWNER_EMAILS = ["nyp@frety.name", "nyp.frety@gmail.com"];
+function isOwnerEmail(email){ return OWNER_EMAILS.includes((email||'').toLowerCase()); }
+function isAdmin(){ return !!authUser && isOwnerEmail(authUser.email); }
 const DEFAULT_ROLE = "Student";
 const PROJECT_TYPES = ["Client","Internal","Students"];
 const PROJECT_TYPE_COLOR = {"Client":"#D9A441","Internal":"#4FB6AC","Students":"#3B82F6"};
@@ -1442,7 +1446,7 @@ function renderTeamView(){
   }
   const canEdit = isSupervisor();
   const roleOrder = {"Administrator":0,"Supervisor":1,"Lecturer":2,"Student Lead":3,"Student":4};
-  const displayRole = m => ((m.email||'').toLowerCase()===OWNER_EMAIL) ? 'Administrator' : (m.role||DEFAULT_ROLE);
+  const displayRole = m => isOwnerEmail(m.email) ? 'Administrator' : (m.role||DEFAULT_ROLE);
   const sortedTeam = [...state.team].sort((a,b)=>{
     const ra = roleOrder[displayRole(a)] ?? 99, rb = roleOrder[displayRole(b)] ?? 99;
     if(ra!==rb) return ra-rb;
@@ -3659,7 +3663,7 @@ async function showPicker(){
   picker.innerHTML = `<div class="picker-card"><div class="faint" style="text-align:center">Loading projects…</div></div>`;
   const allProjects = db ? await listProjects() : [];
   const myEmail = (authUser.email||'').toLowerCase();
-  const canCreate = myEmail === OWNER_EMAIL;
+  const canCreate = isOwnerEmail(myEmail);
   const projects = canCreate ? allProjects : allProjects.filter(p => Array.isArray(p.memberEmails) && p.memberEmails.includes(myEmail));
   const dbWarning = db ? '' : `<div class="warn-box">Not connected to the database — check your internet connection and reload.</div>`;
   const createSection = canCreate ? `
@@ -3693,7 +3697,7 @@ async function showPicker(){
     </div>`;
 }
 async function createProjectFromPicker(){
-  if((authUser?.email||'').toLowerCase() !== OWNER_EMAIL){ toast('Only the owner account can create new projects'); return; }
+  if(!isOwnerEmail(authUser?.email)){ toast('Only the owner account can create new projects'); return; }
   const name = document.getElementById('picker-new-name').value.trim();
   if(!name){ toast('Name is required'); return; }
   const seed = document.getElementById('picker-seed-example').checked;
@@ -3711,7 +3715,7 @@ async function createProjectFromPicker(){
       if(snap.exists){
         const data = snap.data();
         const myEmail = (authUser.email||'').toLowerCase();
-        if(myEmail === OWNER_EMAIL || (Array.isArray(data.memberEmails) && data.memberEmails.includes(myEmail))){
+        if(isOwnerEmail(myEmail) || (Array.isArray(data.memberEmails) && data.memberEmails.includes(myEmail))){
           state.projectId = saved;
           await enterApp();
           return;
