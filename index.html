@@ -1429,7 +1429,13 @@ function renderTeamView(){
     return `<div class="empty-state"><div class="display">No one here yet</div>Add your first team member to get started.</div>`;
   }
   const canEdit = isSupervisor();
-  return `<div class="team-grid">${state.team.map(m=>`
+  const roleOrder = {"Supervisor":0,"Lecturer":1,"Student Lead":2,"Student":3};
+  const sortedTeam = [...state.team].sort((a,b)=>{
+    const ra = roleOrder[a.role] ?? 99, rb = roleOrder[b.role] ?? 99;
+    if(ra!==rb) return ra-rb;
+    return (a.name||'').localeCompare(b.name||'');
+  });
+  return `<div class="team-grid">${sortedTeam.map(m=>`
     <div class="tcard" data-role="${esc(m.role||'')}">
       <div class="tcard-top">
         ${avatarForMember(m, 88)}
