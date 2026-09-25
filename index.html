@@ -571,8 +571,28 @@ if(auth){
 /* ---- google drive (real read/write, via OAuth) ---- */
 const GOOGLE_CLIENT_ID = '335855484636-f30688quamr1366ejqnqeo1fgev0o3vu.apps.googleusercontent.com';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
+const DRIVE_TOKEN_SESSION_KEY = 'fluxus_drive_token';
 let driveAccessToken = null;
 let driveTokenClient = null;
+function saveDriveTokenToSession(token, expiresInSeconds){
+  try{
+    sessionStorage.setItem(DRIVE_TOKEN_SESSION_KEY, JSON.stringify({
+      token, expiresAt: Date.now() + (expiresInSeconds||3500)*1000
+    }));
+  }catch(e){ /* sessionStorage unavailable — just skip persistence */ }
+}
+function loadDriveTokenFromSession(){
+  try{
+    const raw = sessionStorage.getItem(DRIVE_TOKEN_SESSION_KEY);
+    if(!raw) return null;
+    const data = JSON.parse(raw);
+    if(!data.token || !data.expiresAt || data.expiresAt <= Date.now() + 30000) return null; // expired (or about to)
+    return data.token;
+  }catch(e){ return null; }
+}
+function clearDriveTokenSession(){
+  try{ sessionStorage.removeItem(DRIVE_TOKEN_SESSION_KEY); }catch(e){}
+}
 function initDriveAuth(){
   if(driveTokenClient || typeof google === 'undefined' || !google.accounts) return;
   driveTokenClient = google.accounts.oauth2.initTokenClient({
@@ -581,6 +601,7 @@ function initDriveAuth(){
     callback: (resp)=>{
       if(resp.error){ toast('Google sign-in failed'); return; }
       driveAccessToken = resp.access_token;
+      saveDriveTokenToSession(resp.access_token, resp.expires_in);
       state.driveSignedIn = true;
       const rootId = driveFolderId(state.project.driveUrl);
       state.driveCurrentFolderId = rootId;
@@ -599,6 +620,15 @@ function signInGoogleDrive(){
   const opts = { prompt: 'select_account' };
   if(authUser && authUser.email) opts.hint = authUser.email;
   driveTokenClient.requestAccessToken(opts);
+}
+// on load, silently restore a still-valid Drive session from this browser tab (no re-click needed
+// until the token actually expires, roughly once an hour)
+function tryRestoreDriveSession(){
+  const token = loadDriveTokenFromSession();
+  if(!token) return false;
+  driveAccessToken = token;
+  state.driveSignedIn = true;
+  return true;
 }
 function driveHeaders(extra){
   return Object.assign({ Authorization: 'Bearer ' + driveAccessToken }, extra||{});
@@ -2828,6 +2858,7 @@ function driveSignOut(){
   state.driveSignedIn = false;
   state.driveFiles = null;
   state.driveMovePending = null;
+  clearDriveTokenSession();
   render();
 }
 function renderDriveBrowser(){
@@ -3639,6 +3670,7 @@ async function enterApp(){
     showNotAMember();
     return;
   }
+  if(!state.driveSignedIn) tryRestoreDriveSession(); // silently resume a still-valid Drive session, if any
   if(state.driveSignedIn){
     // already signed in this session — just re-point at this project's own folder
     const rootId = driveFolderId(state.project.driveUrl);
