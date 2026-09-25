@@ -804,6 +804,7 @@ let state = {
   categories: [],      // work-type categories, e.g. Modelling, Audio, Web App
   taskLists: [],        // actual task-list containers, e.g. "Environment 1"
   tasks: [],
+  taskIdSeq: 0,        // ever-increasing counter for new task IDs — never reused, even after a task is deleted
   currentUser: "",
   view: "dashboard",
   drawerTaskId: null,
@@ -819,10 +820,10 @@ let state = {
 
 function uid(prefix){ return prefix + Math.random().toString(36).slice(2,7); }
 function nextTaskId(){
-  let n = 1;
-  const ids = new Set(state.tasks.map(t=>t.id));
-  while(ids.has("T"+String(n).padStart(2,"0"))) n++;
-  return "T"+String(n).padStart(2,"0");
+  // always mint a brand-new number — never reuse one from a deleted task, so a recycled ID can
+  // never inherit another task's old chat history, images, or links
+  state.taskIdSeq++;
+  return "T"+String(state.taskIdSeq).padStart(2,"0");
 }
 function toast(msg){
   const t = document.getElementById('toast');
@@ -858,13 +859,19 @@ async function fsSet(key, value){
 }
 async function loadAll(){
   try{
-    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents] = await Promise.all([
+    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq] = await Promise.all([
       fsGet('categories'), fsGet('taskLists'), fsGet('tasks'),
       fsGet('team'), fsGet('project'),
-      fsGet('notifications'), fsGet('forumPosts'), fsGet('documents')
+      fsGet('notifications'), fsGet('forumPosts'), fsGet('documents'), fsGet('taskIdSeq')
     ]);
     state.team = team || [];
     state.tasks = tasks || [];
+    // never let the counter fall behind the highest task number already in use (covers projects
+    // saved before this counter existed, and any stray gap) — it only ever moves forward
+    const maxExistingTaskNum = state.tasks.reduce((max,t)=>{
+      const m = /^T(\d+)$/.exec(t.id||''); return m ? Math.max(max, parseInt(m[1],10)) : max;
+    }, 0);
+    state.taskIdSeq = Math.max(taskIdSeq||0, maxExistingTaskNum);
     state.project = Object.assign({title:"Untitled Project", icon:"", type:"Students", period:"", notes:"", nonWorkingDays:[], driveUrl:""}, project||{});
     state.notifications = notifications || [];
     state.forumPosts = forumPosts || [];
@@ -930,7 +937,7 @@ async function syncMemberEmails(){
 }
 async function saveCategories(){ await fsSet('categories', state.categories); }
 async function saveTaskListGroups(){ await fsSet('taskLists', state.taskLists); }
-async function saveTasks(){ await fsSet('tasks', state.tasks); }
+async function saveTasks(){ await fsSet('tasks', state.tasks); await fsSet('taskIdSeq', state.taskIdSeq); }
 async function saveTimelineLabelsWidth(){ lsSet('timelineLabelsWidth', state.timelineLabelsWidth); }
 async function saveTheme(){ lsSet('theme', state.theme); }
 async function saveForumPosts(){ await fsSet('forumPosts', state.forumPosts); }
@@ -3448,7 +3455,14 @@ async function deleteTask(id){
   state.tasks = state.tasks.filter(t=>t.id!==id);
   state.tasks.forEach(t=>{ t.dependsOn = t.dependsOn.filter(d=>d!==id); });
   await saveTasks();
+  await deleteChatFor(id); // also remove this task's chat history/images so they can never resurface under a later task
   closeDrawer(); render();
+}
+async function deleteChatFor(taskId){
+  delete state.chatCache[taskId];
+  if(!db || !state.projectId) return;
+  try{ await db.collection('projects').doc(state.projectId).collection('chats').doc(taskId).delete(); }
+  catch(e){ console.error('chat cleanup failed', e); }
 }
 
 /* ---- chat ---- */
