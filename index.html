@@ -3151,12 +3151,12 @@ function renderDocumentsView(){
   </div>`;
 
   const listSection = `<div class="row" style="justify-content:space-between;margin:20px 0 12px;align-items:center">
-    <h3 style="margin:0;font-size:13px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.4px">Linked to specific tasks</h3>
-    <button class="btn btn-sm btn-gold" onclick="openNewDocDrawer()">+ Link a file to a task</button>
+    <h3 style="margin:0;font-size:13px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.4px">Links</h3>
+    <button class="btn btn-sm btn-gold" onclick="openNewDocDrawer()">+ Add a link</button>
   </div>
     ${filterBar}
     ${docs.length===0
-      ? `<div class="empty-state"><div class="display">Nothing linked yet</div>Optional: add a specific file here if it's worth cross-referencing to a task — everything else just lives in the drive above.</div>`
+      ? `<div class="empty-state"><div class="display">Nothing here yet</div>Optional: add a link worth keeping alongside the project — a reference site, a doc elsewhere, anything not already in the drive above. Files uploaded from a task show up here automatically.</div>`
       : `<div class="doc-grid">${docs.map(d=>{
           const task = d.taskId ? state.tasks.find(t=>t.id===d.taskId) : null;
           const tColor = DOC_TYPE_COLOR[d.type]||'#6B7280';
@@ -3180,12 +3180,10 @@ function renderDocumentsView(){
 
 let pendingDocThumbnail = null;
 let editingDocId = null; // set while the "Link a file" form is editing an existing entry, rather than creating a new one
-let docFormReturnTaskId = null; // set when the form was opened from a task's drawer, so saving returns there instead of just closing
 function openNewDocDrawer(){
   if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); return; }
   pendingDocThumbnail = null;
   editingDocId = null;
-  docFormReturnTaskId = null;
   state.drawerTaskId = null;
   document.getElementById('overlay').classList.add('open');
   const drawer = document.getElementById('drawer');
@@ -3196,34 +3194,25 @@ function editDocument(docId){
   const d = state.documents.find(x=>x.id===docId); if(!d) return;
   pendingDocThumbnail = d.thumbnail || null;
   editingDocId = docId;
-  docFormReturnTaskId = null;
   state.drawerTaskId = null;
   document.getElementById('overlay').classList.add('open');
   const drawer = document.getElementById('drawer');
   drawer.classList.add('open');
   drawer.innerHTML = renderDocFormContent(d);
 }
-function renderDocFormContent(existing, presetTaskId){
-  const d = existing || (presetTaskId ? {taskId: presetTaskId} : {});
+function renderDocFormContent(existing){
+  const d = existing || {};
   return `
     <div class="drawer-head">
-      <div><h2 style="margin:0;font-size:17px">${existing?'Edit link':'Link a file to a task'}</h2></div>
+      <div><h2 style="margin:0;font-size:17px">${existing?'Edit link':'Add a link'}</h2></div>
       <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
     </div>
     <div class="drawer-body">
       <div class="field"><label>Name</label><input id="new-doc-name" placeholder="e.g. Reference photos" value="${esc(d.name||'')}"></div>
       <div class="field"><label>Link <span class="faint" style="text-transform:none;font-weight:400">— the file's share link (from the team drive, or anywhere else)</span></label>
         <input id="new-doc-url" placeholder="https://…" type="url" value="${esc(d.url||'')}"></div>
-      <div class="field-row">
-        <div class="field"><label>Type</label>
-          <select id="new-doc-type">${DOC_TYPES.map(t=>`<option value="${t}" ${d.type===t?'selected':''}>${t}</option>`).join('')}</select>
-        </div>
-        <div class="field"><label>Linked task <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label>
-          <select id="new-doc-task">
-            <option value="">—</option>
-            ${state.tasks.map(t=>`<option value="${t.id}" ${d.taskId===t.id?'selected':''}>${esc(t.id)} — ${esc(t.name)}</option>`).join('')}
-          </select>
-        </div>
+      <div class="field"><label>Type</label>
+        <select id="new-doc-type">${DOC_TYPES.map(t=>`<option value="${t}" ${d.type===t?'selected':''}>${t}</option>`).join('')}</select>
       </div>
       <div class="field"><label>Description <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label>
         <textarea id="new-doc-desc" rows="3">${esc(d.description||'')}</textarea></div>
@@ -3247,26 +3236,19 @@ async function saveDocumentForm(){
   if(!name || !url){ toast('Name and link are required'); return; }
   const fields = {
     name, url, type: document.getElementById('new-doc-type').value,
-    taskId: document.getElementById('new-doc-task').value || null,
     description: document.getElementById('new-doc-desc').value.trim(),
     thumbnail: pendingDocThumbnail || ''
   };
   if(editingDocId){
     const d = state.documents.find(x=>x.id===editingDocId);
-    if(d) Object.assign(d, fields);
+    if(d) Object.assign(d, fields); // taskId (if any) is untouched — only a task's own "Upload file" sets that
   } else {
-    state.documents.push(Object.assign({id: uid('d'), uploadedBy: state.currentUser, ts: Date.now()}, fields));
+    state.documents.push(Object.assign({id: uid('d'), taskId: null, uploadedBy: state.currentUser, ts: Date.now()}, fields));
   }
   pendingDocThumbnail = null;
   editingDocId = null;
   await saveDocuments();
-  if(docFormReturnTaskId){
-    const backTo = docFormReturnTaskId;
-    docFormReturnTaskId = null;
-    await openDrawer(backTo);
-  } else {
-    closeDrawer();
-  }
+  closeDrawer();
   render();
 }
 function autoEmbedUrl(url){
@@ -3472,9 +3454,8 @@ function renderTaskLinkedFiles(t){
     }).join('') : '<div class="faint" style="font-size:12px;margin-bottom:8px">No files yet</div>'}
     <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
       <label class="btn btn-sm btn-gold">📤 Upload file<input type="file" style="display:none" onchange="uploadFileToTask('${t.id}', this)"></label>
-      <button class="btn btn-sm btn-ghost" onclick="openNewDocDrawerForTask('${t.id}')">🔗 Add an external link</button>
     </div>
-    <div class="faint" style="font-size:11px;margin-top:4px">Uploads are saved straight into this task's own folder in the team drive</div>
+    <div class="faint" style="font-size:11px;margin-top:4px">Saved straight into this task's own folder in the team drive</div>
   </div>`;
 }
 function driveFileToDocType(f){
@@ -3526,16 +3507,6 @@ async function unlinkDocumentFromTask(docId, taskId){
   await saveDocuments();
   document.getElementById('drawer').innerHTML = renderDrawerContent(taskId);
   renderChat(taskId);
-}
-function openNewDocDrawerForTask(taskId){
-  if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); return; }
-  pendingDocThumbnail = null;
-  editingDocId = null;
-  docFormReturnTaskId = taskId;
-  document.getElementById('overlay').classList.add('open');
-  const drawer = document.getElementById('drawer');
-  drawer.classList.add('open');
-  drawer.innerHTML = renderDocFormContent(null, taskId);
 }
 async function updateField(id, field, value){
   const t = state.tasks.find(x=>x.id===id); if(!t) return;
