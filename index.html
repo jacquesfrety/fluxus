@@ -306,6 +306,10 @@
   .tcard[data-role="Student Lead"]{background:color-mix(in srgb, var(--surface) 78%, var(--grey) 22%);border-color:color-mix(in srgb, var(--line) 40%, var(--grey) 60%);}
   .tcard[data-role="Supervisor"]{background:color-mix(in srgb, var(--surface) 90%, var(--red) 10%);border-color:color-mix(in srgb, var(--line) 35%, var(--red) 65%);}
   .tcard[data-role="Lecturer"]{background:color-mix(in srgb, var(--surface) 88%, #F2C94C 12%);border-color:color-mix(in srgb, var(--line) 30%, #F2C94C 70%);}
+  .tcard[data-role="Administrator"]{background:#0B0C0E;border-color:#000;}
+  .tcard[data-role="Administrator"] .tcard-name{color:#F5F5F5;}
+  .tcard[data-role="Administrator"] .tcard-role{color:var(--gold);}
+  .tcard[data-role="Administrator"] .tcard-field{color:#B7BCC4;}
 
   /* ---- drawer ---- */
   #overlay{position:fixed;inset:0;background:rgba(8,9,11,.55);display:none;z-index:40;}
@@ -496,7 +500,8 @@ const PRIORITIES = ["Low","Medium","High"];
 const PRIORITY_COLOR = {"Low":"var(--green)","Medium":"var(--gold)","High":"var(--red)"};
 const PRIORITY_HEX = {"Low":"#6FCF97","Medium":"#D9A441","High":"#E5646A"};
 const ROLES = ["Supervisor","Student Lead","Student","Lecturer"];
-const OWNER_EMAIL = "nyp@frety.name"; // only this Google account may create new projects
+const OWNER_EMAIL = "nyp@frety.name"; // only this Google account may create new projects, and it is always Administrator everywhere
+function isAdmin(){ return !!authUser && (authUser.email||'').toLowerCase() === OWNER_EMAIL; }
 const DEFAULT_ROLE = "Student";
 const PROJECT_TYPES = ["Client","Internal","Students"];
 const PROJECT_TYPE_COLOR = {"Client":"#D9A441","Internal":"#4FB6AC","Students":"#3B82F6"};
@@ -988,7 +993,7 @@ function renderWhoAmI(){
         ${photo}
         <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
           <div style="font-weight:600;font-size:12.5px">${esc(member.name)}</div>
-          <div class="faint" style="font-size:10.5px">${esc(member.role||DEFAULT_ROLE)}</div>
+          <div class="faint" style="font-size:10.5px">${esc(isAdmin() ? 'Administrator' : (member.role||DEFAULT_ROLE))}</div>
         </span>
       </span>
       <span class="chat-action-link" style="font-size:11px;flex:0 0 auto" onclick="signOutApp()">Sign out</span>
@@ -1413,6 +1418,7 @@ function assigneeNamesLabel(names){
   return (names && names.length) ? names.join(', ') : '—';
 }
 function isSupervisor(){
+  if(isAdmin()) return true;
   const m = state.team.find(x=>x.name===state.currentUser);
   return !!(m && m.role === 'Supervisor');
 }
@@ -1435,19 +1441,20 @@ function renderTeamView(){
     return `<div class="empty-state"><div class="display">No one here yet</div>Add your first team member to get started.</div>`;
   }
   const canEdit = isSupervisor();
-  const roleOrder = {"Supervisor":0,"Lecturer":1,"Student Lead":2,"Student":3};
+  const roleOrder = {"Administrator":0,"Supervisor":1,"Lecturer":2,"Student Lead":3,"Student":4};
+  const displayRole = m => ((m.email||'').toLowerCase()===OWNER_EMAIL) ? 'Administrator' : (m.role||DEFAULT_ROLE);
   const sortedTeam = [...state.team].sort((a,b)=>{
-    const ra = roleOrder[a.role] ?? 99, rb = roleOrder[b.role] ?? 99;
+    const ra = roleOrder[displayRole(a)] ?? 99, rb = roleOrder[displayRole(b)] ?? 99;
     if(ra!==rb) return ra-rb;
     return (a.name||'').localeCompare(b.name||'');
   });
   return `<div class="team-grid">${sortedTeam.map(m=>`
-    <div class="tcard" data-role="${esc(m.role||'')}">
+    <div class="tcard" data-role="${esc(displayRole(m))}">
       <div class="tcard-top">
         ${avatarForMember(m, 88)}
         <div>
           <div class="tcard-name">${esc(m.name)}</div>
-          <div class="tcard-role">${esc(m.role||'—')}</div>
+          <div class="tcard-role">${esc(displayRole(m))}</div>
         </div>
       </div>
       ${m.email?`<div class="tcard-field">✉ ${esc(m.email)}</div>`:''}
@@ -3614,7 +3621,7 @@ async function enterApp(){
   state.driveFiles = null;
   state.driveMovePending = null;
   await loadAll();
-  if(state.team.length > 0 && !state.currentUser){
+  if(state.team.length > 0 && !state.currentUser && !isAdmin()){
     // an existing team exists here, but this signed-in account isn't on it — block entry
     showNotAMember();
     return;
@@ -3652,8 +3659,8 @@ async function showPicker(){
   picker.innerHTML = `<div class="picker-card"><div class="faint" style="text-align:center">Loading projects…</div></div>`;
   const allProjects = db ? await listProjects() : [];
   const myEmail = (authUser.email||'').toLowerCase();
-  const projects = allProjects.filter(p => Array.isArray(p.memberEmails) && p.memberEmails.includes(myEmail));
   const canCreate = myEmail === OWNER_EMAIL;
+  const projects = canCreate ? allProjects : allProjects.filter(p => Array.isArray(p.memberEmails) && p.memberEmails.includes(myEmail));
   const dbWarning = db ? '' : `<div class="warn-box">Not connected to the database — check your internet connection and reload.</div>`;
   const createSection = canCreate ? `
       <div class="field" style="margin-top:16px"><label>New project name</label><input id="picker-new-name" placeholder="e.g. 141 Neil Road"></div>
@@ -3704,7 +3711,7 @@ async function createProjectFromPicker(){
       if(snap.exists){
         const data = snap.data();
         const myEmail = (authUser.email||'').toLowerCase();
-        if(Array.isArray(data.memberEmails) && data.memberEmails.includes(myEmail)){
+        if(myEmail === OWNER_EMAIL || (Array.isArray(data.memberEmails) && data.memberEmails.includes(myEmail))){
           state.projectId = saved;
           await enterApp();
           return;
