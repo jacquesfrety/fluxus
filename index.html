@@ -594,7 +594,7 @@ function initDriveAuth(){
 function signInGoogleDrive(){
   initDriveAuth();
   if(!driveTokenClient){ toast('Google sign-in is still loading — try again in a moment'); return; }
-  driveTokenClient.requestAccessToken();
+  driveTokenClient.requestAccessToken({ prompt: 'select_account' });
 }
 function driveHeaders(extra){
   return Object.assign({ Authorization: 'Bearer ' + driveAccessToken }, extra||{});
