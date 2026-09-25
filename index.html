@@ -418,6 +418,7 @@
   #drive-lightbox.open{display:flex;}
   #drive-lightbox img, #drive-lightbox video{max-width:100%;max-height:100%;border-radius:6px;}
   #drive-lightbox img{max-width:calc(100vw - 60px);max-height:calc(100vh - 130px);touch-action:none;user-select:none;-webkit-user-drag:none;}
+  #drive-lightbox iframe.drive-pdf-frame{width:min(92vw,900px);height:calc(100vh - 130px);border:none;border-radius:6px;background:#fff;}
   .drive-lightbox-inner{display:flex;flex-direction:column;align-items:center;gap:10px;max-width:100%;max-height:100%;}
   .drive-lightbox-nav{position:fixed;top:50%;transform:translateY(-50%);z-index:61;
     width:48px;height:48px;border-radius:50%;border:1px solid rgba(255,255,255,.25);
@@ -2783,15 +2784,26 @@ function driveCardClick(el){
   if(!f) return;
   const isImage = f.mimeType && f.mimeType.startsWith('image/');
   const isVideo = f.mimeType && f.mimeType.startsWith('video/');
-  if(isImage || isVideo){ openDriveMedia(f, isVideo); return; }
+  const isPdf = f.mimeType === 'application/pdf';
+  if(isImage || isVideo || isPdf){ openDriveMedia(f, isVideo ? 'video' : isPdf ? 'pdf' : 'image'); return; }
   if(f.webViewLink) window.open(f.webViewLink, '_blank');
 }
 let currentDriveMediaUrl = null;
 let currentDriveMediaFileId = null;
-function driveMediaSiblings(){
-  return (state.driveFiles||[]).filter(x => x.mimeType && (x.mimeType.startsWith('image/') || x.mimeType.startsWith('video/')));
+function driveMediaKind(mimeType){
+  if(!mimeType) return null;
+  if(mimeType.startsWith('image/')) return 'image';
+  if(mimeType.startsWith('video/')) return 'video';
+  if(mimeType === 'application/pdf') return 'pdf';
+  return null;
 }
-async function openDriveMedia(f, isVideo){
+function driveMediaSiblings(){
+  return (state.driveFiles||[]).filter(x => driveMediaKind(x.mimeType));
+}
+async function openDriveMedia(f, kind){
+  // accept either the new string kind ('image'/'video'/'pdf') or, from older call sites, a boolean isVideo
+  if(kind === true) kind = 'video';
+  else if(kind === false) kind = 'image';
   currentDriveMediaFileId = f.id;
   const content = document.getElementById('drive-lightbox-content');
   const link = document.getElementById('drive-lightbox-link');
@@ -2813,11 +2825,13 @@ async function openDriveMedia(f, isVideo){
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     currentDriveMediaUrl = url;
-    content.innerHTML = isVideo
+    content.innerHTML = kind === 'video'
       ? `<video src="${url}" controls autoplay></video>`
+      : kind === 'pdf'
+      ? `<iframe class="drive-pdf-frame" src="${url}" title="${esc(f.name||'PDF')}"></iframe>`
       : `<img id="drive-lightbox-img" src="${url}">`;
-    document.getElementById('drive-lightbox-hint').textContent = isVideo ? '' : 'Scroll to zoom · drag to pan · double-click to reset';
-    if(!isVideo) wireImageZoom(document.getElementById('drive-lightbox-img'));
+    document.getElementById('drive-lightbox-hint').textContent = kind === 'image' ? 'Scroll to zoom · drag to pan · double-click to reset' : '';
+    if(kind === 'image') wireImageZoom(document.getElementById('drive-lightbox-img'));
   }catch(e){
     console.error(e);
     content.innerHTML = `<div class="faint" style="padding:40px;text-align:center">Couldn't load a preview — try "Open in Google Drive" below.</div>`;
@@ -2832,7 +2846,7 @@ function driveMediaStep(dir){
   if(!next) return;
   if(currentDriveMediaUrl){ URL.revokeObjectURL(currentDriveMediaUrl); currentDriveMediaUrl = null; }
   currentDriveMediaFileId = next.id;
-  openDriveMedia(next, next.mimeType.startsWith('video/'));
+  openDriveMedia(next, driveMediaKind(next.mimeType));
 }
 function closeDriveMedia(){
   document.getElementById('drive-lightbox').classList.remove('open');
