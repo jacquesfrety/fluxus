@@ -924,6 +924,13 @@ async function loadAll(){
     toast("Could not load data — check your connection.");
   }
 }
+async function recordLastSeen(){
+  // stamps this person's team profile with "now", so Admin/Supervisors can see who last connected
+  const m = state.team.find(x=>x.name===state.currentUser);
+  if(!m) return; // e.g. Administrator with no team profile in this project — nothing to stamp
+  m.lastSeen = Date.now();
+  await fsSet('team', state.team); // save directly — avoid re-running syncMemberEmails() via saveTeam() just for this
+}
 async function saveTeam(){
   await syncMemberEmails(); // must happen first — the security rules for 'store'/'chats' check this
   await fsSet('team', state.team);
@@ -1539,6 +1546,7 @@ function renderTeamView(){
     return `<div class="empty-state"><div class="display">No one here yet</div>Add your first team member to get started.</div>`;
   }
   const canEdit = isAdmin();
+  const canSeeLastSeen = isAdmin() || isSupervisor();
   const roleOrder = {"Administrator":0,"Supervisor":1,"Lecturer":2,"Student Lead":3,"Student":4};
   const displayRole = m => isOwnerEmail(m.email) ? 'Administrator' : (m.role||DEFAULT_ROLE);
   const sortedTeam = [...state.team].sort((a,b)=>{
@@ -1558,6 +1566,7 @@ function renderTeamView(){
       ${(m.email && isAdmin())?`<div class="tcard-field">✉ ${esc(m.email)}</div>`:''}
       ${m.phone?`<div class="tcard-field">☎ ${esc(m.phone)}</div>`:''}
       ${m.notes?`<div class="tcard-field faint">${esc(m.notes)}</div>`:''}
+      ${canSeeLastSeen?`<div class="tcard-field faint">🕐 ${m.lastSeen?('Last seen '+fmtWhen(m.lastSeen)):'Never connected'}</div>`:''}
       ${canEdit ? `<div class="tcard-actions">
         <button class="btn btn-sm" onclick="openTeamDrawer('${m.id}')">Edit</button>
         <button class="btn btn-sm btn-danger" onclick="deleteTeamMember('${m.id}')">Remove</button>
@@ -3802,6 +3811,7 @@ async function enterApp(){
     showNotAMember();
     return;
   }
+  recordLastSeen(); // note that this person connected to this project, for Admin/Supervisors to see on the Team page
   // restore whichever page the person was last on, so a reload doesn't dump them back to Dashboard
   const lastView = lsGet('lastView', null);
   if(lastView && NAV.some(n=>n.id===lastView)) state.view = lastView;
