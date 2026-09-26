@@ -280,6 +280,8 @@
     background:rgba(0,0,0,.62);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;
     padding-left:4px;pointer-events:none;}
   .drive-model-thumb-slot{width:100%;height:100%;display:flex;align-items:center;justify-content:center;}
+  .doc-thumb-pins{position:absolute;top:6px;left:6px;background:var(--gold);color:#1A1608;font-weight:700;
+    font-size:11px;border-radius:99px;padding:2px 7px;pointer-events:none;}
   model-viewer.drive-model-thumb{width:100%;height:100%;pointer-events:none;background:transparent;}
   .doc-card-body{padding:10px 12px;}
   .doc-card-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -437,6 +439,25 @@
   .drive-lightbox-nav-prev{left:18px;}
   .drive-lightbox-nav-next{right:18px;}
   @media (max-width:640px){ .drive-lightbox-nav{width:38px;height:38px;font-size:20px;} .drive-lightbox-nav-prev{left:8px;} .drive-lightbox-nav-next{right:8px;} }
+  .dm-image-wrap{position:relative;display:inline-block;line-height:0;}
+  .dm-image-wrap img{display:block;}
+  .dm-pins-layer{position:absolute;inset:0;pointer-events:none;}
+  .dm-pin{position:absolute;transform:translate(-50%,-100%);pointer-events:auto;cursor:pointer;
+    width:26px;height:26px;border-radius:50% 50% 50% 0;background:var(--gold);border:2px solid #1A1608;
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#1A1608;
+    box-shadow:0 2px 6px rgba(0,0,0,.4);transform-origin:bottom left;}
+  .dm-pin.resolved{background:var(--surface3);color:#fff;border-color:rgba(255,255,255,.4);}
+  .dm-pin span{transform:rotate(45deg);display:block;}
+  .dm-pin-glyph{transform:rotate(45deg);}
+  .dm-pin-composer{position:absolute;pointer-events:auto;width:230px;background:var(--surface);
+    border:1px solid var(--line);border-radius:10px;padding:10px;box-shadow:0 8px 24px rgba(0,0,0,.5);
+    z-index:2;font-size:12.5px;color:var(--ink);}
+  .dm-pin-composer textarea{width:100%;min-height:56px;resize:vertical;margin-bottom:6px;font-size:12.5px;}
+  .dm-pin-thread{max-height:180px;overflow-y:auto;margin-bottom:6px;}
+  .dm-pin-comment{margin-bottom:7px;}
+  .dm-pin-comment .who{font-weight:700;color:var(--gold);font-size:11.5px;}
+  .dm-pin-comment .when{color:var(--ink-faint);font-size:10.5px;margin-left:5px;}
+  .dm-pin-toolbar{position:absolute;top:10px;left:10px;z-index:2;pointer-events:auto;}
 
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface3);
     border:1px solid var(--line);color:var(--ink);padding:9px 16px;border-radius:7px;font-size:12.5px;
@@ -837,6 +858,8 @@ let state = {
   sort: { key: null, dir: "asc" },
   groupTasksByList: lsGet('tasksGroupByList', false),
   collapsedTaskGroups: lsGet('tasksCollapsedGroups', []),
+  annotations: [],
+  pinAddMode: false,
 };
 
 function uid(prefix){ return prefix + Math.random().toString(36).slice(2,7); }
@@ -880,10 +903,10 @@ async function fsSet(key, value){
 }
 async function loadAll(){
   try{
-    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq] = await Promise.all([
+    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq, annotations] = await Promise.all([
       fsGet('categories'), fsGet('taskLists'), fsGet('tasks'),
       fsGet('team'), fsGet('project'),
-      fsGet('notifications'), fsGet('forumPosts'), fsGet('documents'), fsGet('taskIdSeq')
+      fsGet('notifications'), fsGet('forumPosts'), fsGet('documents'), fsGet('taskIdSeq'), fsGet('annotations')
     ]);
     state.team = team || [];
     state.tasks = tasks || [];
@@ -897,6 +920,7 @@ async function loadAll(){
     state.notifications = notifications || [];
     state.forumPosts = forumPosts || [];
     state.documents = documents || [];
+    state.annotations = annotations || [];
     state.timelineLabelsWidth = lsGet('timelineLabelsWidth', 520);
     state.theme = lsGet('theme', 'dark');
     document.documentElement.setAttribute('data-theme', state.theme);
@@ -970,6 +994,7 @@ async function saveTimelineLabelsWidth(){ lsSet('timelineLabelsWidth', state.tim
 async function saveTheme(){ lsSet('theme', state.theme); }
 async function saveForumPosts(){ await fsSet('forumPosts', state.forumPosts); }
 async function saveDocuments(){ await fsSet('documents', state.documents); }
+async function saveAnnotations(){ await fsSet('annotations', state.annotations); }
 async function setTheme(t){
   state.theme = t;
   document.documentElement.setAttribute('data-theme', t);
@@ -1311,9 +1336,9 @@ function renderNotifBell(){
     </div>
     ${mine.length ? mine.slice(0,40).map(n=>`
       <div class="notif-item ${n.read?'':'unread'}" onclick="openNotification('${n.id}')">
-        <div class="notif-icon">${n.type==='tag'?'@':n.type==='newpost'?'📣':'↩'}</div>
+        <div class="notif-icon">${n.type==='tag'?'@':n.type==='newpost'?'📣':n.type==='pin'?'📍':'↩'}</div>
         <div class="notif-text">
-          <b>${esc(n.fromUser)}</b> ${n.type==='tag'?'tagged you in':n.type==='newpost'?'posted a new topic:':'replied to you in'} <b>${esc(n.taskName)}</b>
+          <b>${esc(n.fromUser)}</b> ${n.type==='tag'?'tagged you in':n.type==='newpost'?'posted a new topic:':n.type==='pin'?'tagged you in a pin on:':'replied to you in'} <b>${esc(n.taskName)}</b>
           <div class="faint">${esc(n.snippet||'')}</div>
           <div class="notif-time">${fmtWhen(n.ts)}</div>
         </div>
@@ -1344,6 +1369,9 @@ async function openNotification(id){
   if(typeof n.taskId==='string' && n.taskId.startsWith('post:')){
     setView('support');
     openPostDrawer(n.taskId.slice(5));
+  } else if(typeof n.taskId==='string' && n.taskId.startsWith('pin:')){
+    setView('documents');
+    toast(`Open "${n.taskName}" in the team drive to see the comment`);
   } else {
     setView('tasks');
     openDrawer(n.taskId);
@@ -3108,11 +3136,18 @@ async function openDriveMedia(f, kind){
       ? `<iframe class="drive-pdf-frame" src="${url}" title="${esc(f.name||'PDF')}"></iframe>`
       : kind === 'model'
       ? `<model-viewer class="drive-model-viewer" src="${url}" camera-controls auto-rotate shadow-intensity="1" exposure="1" alt="${esc(f.name||'3D model')}"></model-viewer>`
-      : `<img id="drive-lightbox-img" src="${url}">`;
+      : `<div class="dm-image-wrap" id="drive-lightbox-imgwrap" onclick="driveImageWrapClick(event)">
+          <img id="drive-lightbox-img" src="${url}">
+          <div class="dm-pins-layer" id="drive-lightbox-pins"></div>
+          <div class="dm-pin-toolbar"><button class="btn btn-sm ${state.pinAddMode?'btn-gold':'btn-ghost'}" onclick="event.stopPropagation();toggleDrivePinMode()">📍 ${state.pinAddMode?'Click the image to pin…':'Add pin'}</button></div>
+        </div>`;
     document.getElementById('drive-lightbox-hint').textContent = kind === 'image' ? 'Scroll to zoom · drag to pan · double-click to reset'
       : kind === 'model' ? 'Drag to rotate · scroll to zoom'
       : '';
-    if(kind === 'image') wireImageZoom(document.getElementById('drive-lightbox-img'));
+    if(kind === 'image'){
+      wireDriveImageZoom(document.getElementById('drive-lightbox-imgwrap'), document.getElementById('drive-lightbox-img'));
+      refreshPinsLayer(f.id);
+    }
   }catch(e){
     console.error(e);
     content.innerHTML = `<div class="faint" style="padding:40px;text-align:center">Couldn't load a preview — try "Open in Google Drive" below.</div>`;
@@ -3135,6 +3170,177 @@ function closeDriveMedia(){
   document.getElementById('drive-lightbox-hint').textContent = '';
   currentDriveMediaFileId = null;
   if(currentDriveMediaUrl){ URL.revokeObjectURL(currentDriveMediaUrl); currentDriveMediaUrl = null; }
+  state.pinAddMode = false;
+  openPinId = null; pinDraft = null;
+}
+
+/* ---- pinned annotations on Drive images: click a spot on an image to drop a numbered pin and
+   leave a comment there, similar to Aquarium/creative-review tools — lets a supervisor point at
+   the exact problem area on a screenshot or render instead of describing it in words ---- */
+let openPinId = null;   // id of the pin whose comment thread is currently expanded
+let pinDraft = null;    // {fileId,x,y} for a new pin not yet saved, while its composer is open
+function annotationsForFile(fileId){
+  return state.annotations.filter(a=>a.driveFileId===fileId);
+}
+function wireDriveImageZoom(wrap, img){
+  // same pinch/pan/zoom behavior as wireImageZoom, but the transform is applied to the wrapping
+  // element (not the <img> itself) so the pins layer — a sibling inside that same wrapper — pans
+  // and zooms in lockstep with the image
+  let scale=1, tx=0, ty=0, dragging=false, startX=0, startY=0, startTx=0, startTy=0;
+  const MIN=1, MAX=4;
+  img.draggable = false;
+  img.addEventListener('dragstart', (e)=> e.preventDefault());
+  function apply(){
+    wrap.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+    wrap.style.cursor = state.pinAddMode ? 'crosshair' : (scale>1 ? 'grab' : 'zoom-in');
+  }
+  wrap.style.transform = '';
+  wrap.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    scale = Math.max(MIN, Math.min(MAX, scale + (e.deltaY<0 ? 0.3 : -0.3)));
+    if(scale<=1){ scale=1; tx=0; ty=0; }
+    apply();
+  }, {passive:false});
+  wrap.addEventListener('pointerdown', (e)=>{
+    if(scale<=1 || state.pinAddMode) return;
+    dragging=true; startX=e.clientX; startY=e.clientY; startTx=tx; startTy=ty;
+    wrap.setPointerCapture(e.pointerId);
+  });
+  wrap.addEventListener('pointermove', (e)=>{
+    if(!dragging) return;
+    tx = startTx + (e.clientX-startX);
+    ty = startTy + (e.clientY-startY);
+    apply();
+  });
+  wrap.addEventListener('pointerup', ()=>{ dragging=false; apply(); });
+  wrap.addEventListener('dblclick', ()=>{
+    if(state.pinAddMode) return;
+    scale = scale>1 ? 1 : 2.5;
+    tx=0; ty=0;
+    apply();
+  });
+  apply();
+}
+function toggleDrivePinMode(){
+  state.pinAddMode = !state.pinAddMode;
+  openPinId = null; pinDraft = null;
+  if(currentDriveMediaFileId) openDriveMedia((state.driveFiles||[]).find(x=>x.id===currentDriveMediaFileId), 'image');
+}
+function driveImageWrapClick(e){
+  if(!state.pinAddMode) return;
+  if(e.target.closest('.dm-pin') || e.target.closest('.dm-pin-composer') || e.target.closest('.dm-pin-toolbar')) return;
+  const wrap = document.getElementById('drive-lightbox-imgwrap');
+  const rect = wrap.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width;
+  const y = (e.clientY - rect.top) / rect.height;
+  if(x<0||x>1||y<0||y>1) return;
+  openPinId = null;
+  pinDraft = { fileId: currentDriveMediaFileId, x, y };
+  refreshPinsLayer(currentDriveMediaFileId);
+}
+function refreshPinsLayer(fileId){
+  const layer = document.getElementById('drive-lightbox-pins');
+  if(!layer) return;
+  const pins = annotationsForFile(fileId);
+  let html = pins.map((p,i)=>`
+    <div class="dm-pin ${p.resolved?'resolved':''}" style="left:${(p.x*100).toFixed(2)}%;top:${(p.y*100).toFixed(2)}%" onclick="event.stopPropagation();openPinThread('${p.id}')">
+      <span class="dm-pin-glyph">${i+1}</span>
+    </div>`).join('');
+  pins.forEach(p=>{
+    if(p.id === openPinId) html += renderPinComposer(p.x, p.y, p);
+  });
+  if(pinDraft && pinDraft.fileId === fileId) html += renderPinComposer(pinDraft.x, pinDraft.y, null);
+  layer.innerHTML = html;
+}
+function renderPinComposer(x, y, pin){
+  const left = (x*100).toFixed(2), top = (y*100).toFixed(2);
+  // anchors just below-right of the pin's tip; nudges left when that would run off the right edge
+  const style = `left:${left}%;top:${top}%;transform:translate(${x>0.65?'-100%':'6px'}, 10px)`;
+  if(!pin){
+    return `<div class="dm-pin-composer" style="${style}" onclick="event.stopPropagation()">
+      <textarea id="pin-draft-text" placeholder="Leave a comment on this spot… (@Name to tag someone)" autofocus></textarea>
+      <div class="row" style="gap:6px;justify-content:flex-end">
+        <button class="btn btn-sm btn-ghost" onclick="cancelPinDraft()">Cancel</button>
+        <button class="btn btn-sm btn-gold" onclick="savePinDraft()">Save</button>
+      </div>
+    </div>`;
+  }
+  const canManage = pin.author === state.currentUser || isSupervisor();
+  const thread = [Object.assign({id:pin.id, author:pin.author, ts:pin.ts, text:pin.text}, {})].concat(pin.replies||[]);
+  return `<div class="dm-pin-composer" style="${style}" onclick="event.stopPropagation()">
+    <div class="dm-pin-thread">${thread.map(c=>`
+      <div class="dm-pin-comment"><span class="who">${esc(c.author)}</span><span class="when">${new Date(c.ts).toLocaleDateString()}</span><div>${renderMentionText(c.text)}</div></div>
+    `).join('')}</div>
+    <textarea id="pin-reply-text-${pin.id}" placeholder="Reply…"></textarea>
+    <div class="row" style="gap:6px;justify-content:space-between;align-items:center">
+      <span class="row" style="gap:6px">
+        <button class="btn btn-sm btn-ghost" onclick="togglePinResolved('${pin.id}')">${pin.resolved?'↺ Reopen':'✓ Resolve'}</button>
+        ${canManage?`<button class="btn btn-sm btn-danger" onclick="deletePin('${pin.id}')">Delete</button>`:''}
+      </span>
+      <button class="btn btn-sm btn-gold" onclick="addPinReply('${pin.id}')">Reply</button>
+    </div>
+  </div>`;
+}
+function cancelPinDraft(){
+  pinDraft = null;
+  if(currentDriveMediaFileId) refreshPinsLayer(currentDriveMediaFileId);
+}
+async function savePinDraft(){
+  if(!pinDraft) return;
+  const ta = document.getElementById('pin-draft-text');
+  const text = (ta?.value||'').trim();
+  if(!text){ toast('Write a comment before saving the pin'); return; }
+  if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); return; }
+  const pin = { id: uid('pin'), driveFileId: pinDraft.fileId, x: pinDraft.x, y: pinDraft.y,
+    author: state.currentUser, ts: Date.now(), text, resolved: false, replies: [] };
+  state.annotations.push(pin);
+  await saveAnnotations();
+  await notifyPinMentions(text, pin.driveFileId);
+  pinDraft = null;
+  state.pinAddMode = false;
+  refreshPinsLayer(pin.driveFileId);
+}
+function openPinThread(id){
+  openPinId = (openPinId === id) ? null : id;
+  pinDraft = null;
+  const pin = state.annotations.find(a=>a.id===id);
+  if(pin) refreshPinsLayer(pin.driveFileId);
+}
+async function addPinReply(id){
+  const pin = state.annotations.find(a=>a.id===id); if(!pin) return;
+  const ta = document.getElementById('pin-reply-text-'+id);
+  const text = (ta?.value||'').trim();
+  if(!text) return;
+  if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); return; }
+  if(!pin.replies) pin.replies = [];
+  pin.replies.push({ id: uid('pr'), author: state.currentUser, ts: Date.now(), text });
+  await saveAnnotations();
+  await notifyPinMentions(text, pin.driveFileId);
+  refreshPinsLayer(pin.driveFileId);
+}
+async function togglePinResolved(id){
+  const pin = state.annotations.find(a=>a.id===id); if(!pin) return;
+  pin.resolved = !pin.resolved;
+  await saveAnnotations();
+  refreshPinsLayer(pin.driveFileId);
+}
+async function deletePin(id){
+  const pin = state.annotations.find(a=>a.id===id); if(!pin) return;
+  if(!(pin.author === state.currentUser || isSupervisor())) return;
+  if(!confirm('Delete this pin and its comments?')) return;
+  const fileId = pin.driveFileId;
+  state.annotations = state.annotations.filter(a=>a.id!==id);
+  await saveAnnotations();
+  openPinId = null;
+  refreshPinsLayer(fileId);
+}
+async function notifyPinMentions(text, fileId){
+  const names = extractMentions(text);
+  const file = (state.driveFiles||[]).find(x=>x.id===fileId);
+  for(const name of names){
+    if(name===state.currentUser) continue;
+    await addNotification(name, 'pin', 'pin:'+fileId, file ? file.name : 'a file', state.currentUser, text.slice(0,60));
+  }
 }
 async function driveUploadFiles(fileList){
   const files = Array.from(fileList || []);
@@ -3194,6 +3400,7 @@ async function driveDeletePrompt(cardEl){
     await driveApiTrash(id);
     toast('Moved to trash');
     await removeDocumentLinksForDriveFile(id); // so a deleted file's link doesn't keep showing up under a task
+    await removeAnnotationsForDriveFile(id); // and its pinned comments don't linger either
     await loadDriveFolder(state.driveCurrentFolderId);
   }catch(err){ console.error(err); toast('Could not delete'); }
 }
@@ -3201,6 +3408,11 @@ async function removeDocumentLinksForDriveFile(driveFileId){
   const before = state.documents.length;
   state.documents = state.documents.filter(d => d.driveFileId !== driveFileId);
   if(state.documents.length !== before) await saveDocuments();
+}
+async function removeAnnotationsForDriveFile(driveFileId){
+  const before = state.annotations.length;
+  state.annotations = state.annotations.filter(a => a.driveFileId !== driveFileId);
+  if(state.annotations.length !== before) await saveAnnotations();
 }
 function driveCancelMove(){ state.driveMovePending = null; render(); }
 async function driveCompleteMove(){
@@ -3274,8 +3486,10 @@ function renderDriveBrowser(){
         ? `<img src="${esc(f.thumbnailLink)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${icon}'}))">`
         : icon;
       const playBadge = isVideo ? `<span class="doc-thumb-play">▶</span>` : '';
+      const pinCount = fileKind==='image' ? annotationsForFile(f.id).length : 0;
+      const pinBadge = pinCount ? `<span class="doc-thumb-pins">📍 ${pinCount}</span>` : '';
       return `<div class="doc-card" data-file-id="${esc(f.id)}" data-file-name="${esc(f.name)}" data-is-folder="${isFolder}" onclick="driveCardClick(this)">
-        <div class="doc-thumb">${thumb}${playBadge}</div>
+        <div class="doc-thumb">${thumb}${playBadge}${pinBadge}</div>
         <div class="doc-card-body">
           <div class="doc-card-name" title="${esc(f.name)}">${esc(f.name)}</div>
           <div class="doc-card-meta">
