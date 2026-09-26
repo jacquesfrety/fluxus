@@ -718,6 +718,15 @@ async function driveApiFindOrCreateFolder(name, parentId){
   const created = await driveApiCreateFolder(name, parentId);
   return created.id;
 }
+async function ensureForumDriveFolder(){
+  const rootId = driveFolderId(state.project.driveUrl);
+  if(!rootId) throw new Error('no team drive folder configured for this project');
+  if(!state.project.forumFolderId){
+    state.project.forumFolderId = await driveApiFindOrCreateFolder('Forum', rootId);
+    await saveProject();
+  }
+  return state.project.forumFolderId;
+}
 async function ensureTaskDriveFolder(task){
   const rootId = driveFolderId(state.project.driveUrl);
   if(!rootId) throw new Error('no team drive folder configured for this project');
@@ -2631,6 +2640,7 @@ function renderSupportView(){
       <div class="forum-post-meta">
         <button class="forum-vote-btn ${voted?'voted':''}" onclick="event.stopPropagation();toggleVote('${p.id}')">▲ ${votes.length}</button>
         <span>💬 ${comments.length}</span>
+        ${p.driveFile?'<span>📷</span>':''}
         <span>by ${esc(p.author||'Someone')} · ${fmtWhen(p.ts)}</span>
       </div>
     </div>`;
@@ -2669,8 +2679,22 @@ function openNewPostDrawer(){
       </div>
       <div class="field"><label>Title</label><input id="new-post-title" placeholder="Short summary"></div>
       <div class="field"><label>Description</label><textarea id="new-post-desc" rows="5" placeholder="What's happening? What would you like to see?"></textarea></div>
+      <div class="field">
+        <label>Screenshot <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label>
+        <div id="post-image-preview-wrap"></div>
+        <label class="btn btn-sm">📎 Attach image<input type="file" accept="image/*" style="display:none" onchange="handlePostImagePick(event)"></label>
+      </div>
       <button class="btn btn-gold" onclick="createPost()">Post</button>
     </div>`;
+}
+let pendingPostImageFile = null;
+function handlePostImagePick(e){
+  const file = e.target.files[0]; if(!file) return;
+  pendingPostImageFile = file;
+  resizeImage(file, 300, 0.7).then(dataUrl=>{
+    document.getElementById('post-image-preview-wrap').innerHTML =
+      `<div class="chat-preview"><img src="${dataUrl}"><button onclick="pendingPostImageFile=null;document.getElementById('post-image-preview-wrap').innerHTML=''">✕</button></div>`;
+  });
 }
 async function createPost(){
   const title = document.getElementById('new-post-title').value.trim();
@@ -2681,7 +2705,28 @@ async function createPost(){
     id: uid('p'), type, title, description, author: state.currentUser, ts: Date.now(),
     status: 'Open', votes: [], comments: []
   };
+  if(pendingPostImageFile){
+    if(!driveFolderId(state.project.driveUrl)){
+      toast('No team drive folder is set for this project yet — ask a Supervisor to add one in Project Settings');
+      return;
+    }
+    if(!state.driveSignedIn){
+      signInGoogleDrive();
+      toast('Signing in to Google Drive… once that finishes, click Post again');
+      return;
+    }
+    try{
+      const folderId = await ensureForumDriveFolder();
+      const uploaded = await driveApiUpload(pendingPostImageFile, folderId);
+      post.driveFile = { id: uploaded.id, name: uploaded.name, thumbnailLink: uploaded.thumbnailLink||'', webViewLink: uploaded.webViewLink||'' };
+    }catch(err){
+      console.error(err);
+      toast('Could not upload the screenshot — post not created');
+      return;
+    }
+  }
   state.forumPosts.push(post);
+  pendingPostImageFile = null;
   await saveForumPosts();
   closeDrawer();
   render();
@@ -2715,6 +2760,7 @@ function renderPostDrawerContent(postId){
     </div>
     <div class="drawer-body">
       ${p.description?`<div class="chat-text" style="margin-bottom:14px">${esc(p.description)}</div>`:''}
+      ${p.driveFile?.thumbnailLink?`<img class="chat-img" src="${esc(p.driveFile.thumbnailLink)}" data-post-id="${esc(p.id)}" onclick="openLightbox('${esc(driveThumbLarge(p.driveFile.thumbnailLink,1600))}')" onerror="forumImgError(this)" style="margin-bottom:14px">`:''}
       <div class="row" style="gap:10px;margin-bottom:16px">
         <button class="forum-vote-btn ${voted?'voted':''}" onclick="toggleVote('${p.id}')">▲ ${votes.length} vote${votes.length===1?'':'s'}</button>
       </div>
@@ -2734,15 +2780,17 @@ function renderPostDrawerContent(postId){
                   <div class="chat-meta"><b>${esc(c.author||'Someone')}</b> · ${fmtWhen(c.ts)}
                     ${(c.author===state.currentUser)?`<span class="chat-actions"><span class="chat-action-link" onclick="deleteForumComment('${p.id}','${c.id}')">Delete</span></span>`:''}
                   </div>
-                  <div class="chat-text">${esc(c.text)}</div>
+                  ${c.text?`<div class="chat-text">${esc(c.text)}</div>`:''}
+                  ${c.driveFile?.thumbnailLink?`<img class="chat-img" src="${esc(c.driveFile.thumbnailLink)}" data-post-id="${esc(p.id)}" data-comment-id="${esc(c.id)}" onclick="openLightbox('${esc(driveThumbLarge(c.driveFile.thumbnailLink,1600))}')" onerror="forumImgError(this)">`:''}
                 </div>
               </div>
             </div>`).join('') : '<div class="chat-empty">No comments yet.</div>'}
         </div>
         <div class="chat-compose">
           <textarea id="post-comment-input" placeholder="Add a comment…"></textarea>
+          <div id="post-comment-image-preview-wrap"></div>
           <div class="chat-compose-foot">
-            <span></span>
+            <label class="btn btn-sm btn-ghost" style="margin:0">📎 Image<input type="file" accept="image/*" style="display:none" onchange="handlePostCommentImagePick(event)"></label>
             <button class="btn btn-gold btn-sm" onclick="postForumComment('${p.id}')">Post</button>
           </div>
         </div>
@@ -2756,17 +2804,78 @@ async function setPostStatus(postId, status){
   await saveForumPosts();
   render();
 }
+let pendingPostCommentImageFile = null;
+function handlePostCommentImagePick(e){
+  const file = e.target.files[0]; if(!file) return;
+  pendingPostCommentImageFile = file;
+  resizeImage(file, 300, 0.7).then(dataUrl=>{
+    document.getElementById('post-comment-image-preview-wrap').innerHTML =
+      `<div class="chat-preview"><img src="${dataUrl}"><button onclick="pendingPostCommentImageFile=null;document.getElementById('post-comment-image-preview-wrap').innerHTML=''">✕</button></div>`;
+  });
+}
 async function postForumComment(postId){
   if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); return; }
   const input = document.getElementById('post-comment-input');
   const text = input.value.trim();
-  if(!text) return;
+  if(!text && !pendingPostCommentImageFile) return;
   const p = state.forumPosts.find(x=>x.id===postId); if(!p) return;
+  const comment = {id:uid('c'), author: state.currentUser, text, ts: Date.now()};
+  if(pendingPostCommentImageFile){
+    if(!driveFolderId(state.project.driveUrl)){
+      toast('No team drive folder is set for this project yet — ask a Supervisor to add one in Project Settings');
+      return;
+    }
+    if(!state.driveSignedIn){
+      signInGoogleDrive();
+      toast('Signing in to Google Drive… once that finishes, click Post again');
+      return;
+    }
+    try{
+      const folderId = await ensureForumDriveFolder();
+      const uploaded = await driveApiUpload(pendingPostCommentImageFile, folderId);
+      comment.driveFile = { id: uploaded.id, name: uploaded.name, thumbnailLink: uploaded.thumbnailLink||'', webViewLink: uploaded.webViewLink||'' };
+    }catch(err){
+      console.error(err);
+      toast('Could not upload the image — comment not posted');
+      return;
+    }
+  }
   if(!p.comments) p.comments = [];
-  p.comments.push({id:uid('c'), author: state.currentUser, text, ts: Date.now()});
+  p.comments.push(comment);
+  pendingPostCommentImageFile = null;
   await saveForumPosts();
   document.getElementById('drawer').innerHTML = renderPostDrawerContent(postId);
   render();
+}
+async function forumImgError(img){
+  const postId = img.dataset.postId, commentId = img.dataset.commentId;
+  const p = state.forumPosts.find(x=>x.id===postId); if(!p) return;
+  const target = commentId ? (p.comments||[]).find(c=>c.id===commentId) : p;
+  if(!target || !target.driveFile) return;
+  const fallbackLink = (label)=>{
+    const a = document.createElement('a');
+    a.href = target.driveFile.webViewLink || '#';
+    a.target = '_blank'; a.rel = 'noopener noreferrer';
+    a.className = 'chat-action-link';
+    a.textContent = label;
+    img.replaceWith(a);
+  };
+  if(img.dataset.retried){ fallbackLink('🖼 Image (preview link expired — open in Drive)'); return; }
+  img.dataset.retried = '1';
+  if(!state.driveSignedIn){ fallbackLink('🖼 Image (sign in to Google, then reload, to preview here)'); return; }
+  try{
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${target.driveFile.id}?fields=thumbnailLink,webViewLink`, { headers: driveHeaders() });
+    if(!res.ok) throw new Error('refresh failed: '+res.status);
+    const data = await res.json();
+    target.driveFile.thumbnailLink = data.thumbnailLink || target.driveFile.thumbnailLink;
+    target.driveFile.webViewLink = data.webViewLink || target.driveFile.webViewLink;
+    img.src = target.driveFile.thumbnailLink;
+    img.onclick = () => openLightbox(driveThumbLarge(target.driveFile.thumbnailLink, 1600));
+    await saveForumPosts();
+  }catch(e){
+    console.error(e);
+    fallbackLink('🖼 Image (open in Drive)');
+  }
 }
 async function deleteForumComment(postId, commentId){
   if(!confirm('Delete this comment?')) return;
