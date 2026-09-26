@@ -393,6 +393,11 @@
   .mention-picker-item:hover{background:var(--surface2);}
   .assignee-picker-pop{position:fixed;background:var(--surface3);border:1px solid var(--line);border-radius:8px;
     padding:5px;z-index:55;max-height:240px;overflow-y:auto;min-width:170px;box-shadow:0 10px 30px rgba(0,0,0,.4);}
+  .mention-auto-pop{position:fixed;background:var(--surface3);border:1px solid var(--line);border-radius:8px;
+    padding:5px;z-index:80;max-height:200px;overflow-y:auto;min-width:160px;box-shadow:0 10px 30px rgba(0,0,0,.4);}
+  .mention-auto-item{padding:6px 9px;border-radius:5px;cursor:pointer;font-size:12.5px;display:flex;
+    align-items:center;gap:7px;}
+  .mention-auto-item:hover, .mention-auto-item.active{background:var(--surface2);}
 
   /* notifications */
   .notif-btn{position:relative;background:var(--surface2);border:1px solid var(--line);border-radius:8px;
@@ -443,7 +448,7 @@
   .dm-image-wrap img{display:block;}
   .dm-pins-layer{position:absolute;inset:0;pointer-events:none;}
   .dm-pin{position:absolute;transform:translate(-50%,-100%);pointer-events:auto;cursor:pointer;
-    width:28px;height:28px;border-radius:50% 50% 50% 0;background:var(--red);border:2px solid #5A1418;
+    width:28px;height:28px;border-radius:50% 50% 50% 0;background:#FF2D2D;border:2px solid #7A0000;
     display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;
     box-shadow:0 2px 8px rgba(0,0,0,.5);transform-origin:bottom left;}
   .dm-pin.resolved{background:var(--surface3);color:#fff;border-color:rgba(255,255,255,.4);}
@@ -538,6 +543,7 @@
   <button id="drive-lightbox-next" class="drive-lightbox-nav drive-lightbox-nav-next" onclick="event.stopPropagation();driveMediaStep(1)" aria-label="Next">›</button>
 </div>
 <div id="assignee-picker"></div>
+<div id="mention-autocomplete"></div>
 <div class="toast" id="toast"></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -3264,8 +3270,11 @@ function applyDriveCursor(){
   if(svg) svg.classList.toggle('active', state.drawMode);
   if(wrap) wrap.style.cursor = (state.pinAddMode || state.drawMode) ? 'crosshair' : '';
 }
+// deliberately more saturated/vivid than the app's muted --red/--green/--blue theme tokens, so a
+// pin or a drawn mark stays eye-catching against a screenshot or render instead of blending in
+const MARKER_COLORS = { red:'#FF2D2D', green:'#12B84C', blue:'#1665F0' };
 function driveColorHex(color){
-  return { red:'#E5646A', green:'#6FCF97', blue:'#3B82F6' }[color] || '#E5646A';
+  return MARKER_COLORS[color] || MARKER_COLORS.red;
 }
 function refreshDriveToolbar(fileId){
   const el = document.getElementById('drive-lightbox-toolbar');
@@ -3274,9 +3283,9 @@ function refreshDriveToolbar(fileId){
     <button class="btn btn-sm ${state.pinAddMode?'btn-gold':'btn-ghost'}" onclick="event.stopPropagation();toggleDrivePinMode()">📍 ${state.pinAddMode?'Click to pin…':'Add pin'}</button>
     <button class="btn btn-sm ${state.drawMode?'btn-gold':'btn-ghost'}" onclick="event.stopPropagation();toggleDriveDrawMode()">🖊 ${state.drawMode?'Drawing…':'Draw'}</button>
     ${state.drawMode ? `
-      <span class="dm-color-swatch ${state.drawColor==='red'?'active':''}" style="background:#E5646A" title="Red" onclick="event.stopPropagation();setDrawColor('red')"></span>
-      <span class="dm-color-swatch ${state.drawColor==='green'?'active':''}" style="background:#6FCF97" title="Green" onclick="event.stopPropagation();setDrawColor('green')"></span>
-      <span class="dm-color-swatch ${state.drawColor==='blue'?'active':''}" style="background:#3B82F6" title="Blue" onclick="event.stopPropagation();setDrawColor('blue')"></span>
+      <span class="dm-color-swatch ${state.drawColor==='red'?'active':''}" style="background:${MARKER_COLORS.red}" title="Red" onclick="event.stopPropagation();setDrawColor('red')"></span>
+      <span class="dm-color-swatch ${state.drawColor==='green'?'active':''}" style="background:${MARKER_COLORS.green}" title="Green" onclick="event.stopPropagation();setDrawColor('green')"></span>
+      <span class="dm-color-swatch ${state.drawColor==='blue'?'active':''}" style="background:${MARKER_COLORS.blue}" title="Blue" onclick="event.stopPropagation();setDrawColor('blue')"></span>
       <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();clearMyDrawings('${esc(fileId)}')">🗑 Clear mine</button>
     ` : ''}
   `;
@@ -3365,6 +3374,8 @@ function refreshPinsLayer(fileId){
   });
   if(pinDraft && pinDraft.fileId === fileId) html += renderPinComposer(pinDraft.x, pinDraft.y, null);
   layer.innerHTML = html;
+  if(pinDraft && pinDraft.fileId === fileId) wireMentionAutocomplete('pin-draft-text');
+  if(openPinId) wireMentionAutocomplete('pin-reply-text-'+openPinId);
 }
 function renderPinComposer(x, y, pin){
   const left = (x*100).toFixed(2), top = (y*100).toFixed(2);
@@ -4212,6 +4223,7 @@ async function renderChat(taskId){
   if(!wrap) return;
   const msgs = await loadChat(taskId);
   if(!document.getElementById('chat-thread')) return; // drawer may have closed while awaiting
+  wireMentionAutocomplete('chat-input');
 
   const banner = document.getElementById('chat-reply-banner');
   if(banner){
@@ -4324,6 +4336,69 @@ function insertMention(name){
   mentionPickerOpen = false;
   const el = document.getElementById('mention-picker'); if(el) el.innerHTML = '';
 }
+
+/* ---- @mention autocomplete: shows a filtered team-member dropdown as you type "@" into any
+   wired textarea (task chat, pin comments/replies), instead of requiring the separate "@ Tag"
+   button. A textarea must be re-wired each time it's freshly inserted into the DOM (a fresh
+   innerHTML render drops old listeners along with the old node) ---- */
+let mentionAuto = { open:false, textareaId:null, start:-1, end:-1 };
+let mentionAutoItems = [];
+let mentionAutoHighlight = 0;
+function wireMentionAutocomplete(id){
+  const ta = document.getElementById(id);
+  if(!ta) return;
+  ta.addEventListener('input', ()=> updateMentionAutocomplete(id));
+  ta.addEventListener('keydown', (e)=> mentionAutoKeydown(e, id));
+  ta.addEventListener('blur', ()=> setTimeout(closeMentionAutocomplete, 150)); // delay so a click on an item registers first
+}
+function updateMentionAutocomplete(id){
+  const ta = document.getElementById(id);
+  if(!ta){ closeMentionAutocomplete(); return; }
+  const caret = ta.selectionStart;
+  const before = ta.value.slice(0, caret);
+  const m = /(?:^|[\s])@([^\s@]*)$/.exec(before);
+  if(!m){ closeMentionAutocomplete(); return; }
+  const query = m[1].toLowerCase();
+  mentionAutoItems = state.team.filter(mem => mem.name && mem.name.toLowerCase().includes(query));
+  if(!mentionAutoItems.length){ closeMentionAutocomplete(); return; }
+  mentionAuto = { open:true, textareaId:id, start: caret - m[1].length - 1, end: caret };
+  mentionAutoHighlight = 0;
+  renderMentionAutocomplete(ta);
+}
+function renderMentionAutocomplete(ta){
+  const pop = document.getElementById('mention-autocomplete');
+  if(!pop) return;
+  const rect = ta.getBoundingClientRect();
+  pop.innerHTML = `<div class="mention-auto-pop" style="left:${rect.left}px;top:${rect.bottom+4}px">${
+    mentionAutoItems.map((mem,i)=>`<div class="mention-auto-item ${i===mentionAutoHighlight?'active':''}" onmousedown="event.preventDefault();selectMentionAuto(${i})">${avatarForMember(mem,18)}<span>${esc(mem.name)}</span></div>`).join('')
+  }</div>`;
+}
+function selectMentionAuto(i){
+  const mem = mentionAutoItems[i];
+  if(!mem || !mentionAuto.open) return;
+  const ta = document.getElementById(mentionAuto.textareaId);
+  if(!ta){ closeMentionAutocomplete(); return; }
+  const value = ta.value;
+  const caretAfter = mentionAuto.start + mem.name.length + 2;
+  ta.value = value.slice(0, mentionAuto.start) + '@' + mem.name + ' ' + value.slice(mentionAuto.end);
+  ta.focus();
+  ta.setSelectionRange(caretAfter, caretAfter);
+  closeMentionAutocomplete();
+}
+function mentionAutoKeydown(e, id){
+  if(!mentionAuto.open || mentionAuto.textareaId!==id) return;
+  if(e.key==='ArrowDown'){ e.preventDefault(); mentionAutoHighlight = (mentionAutoHighlight+1) % mentionAutoItems.length; renderMentionAutocomplete(document.getElementById(id)); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); mentionAutoHighlight = (mentionAutoHighlight-1+mentionAutoItems.length) % mentionAutoItems.length; renderMentionAutocomplete(document.getElementById(id)); }
+  else if(e.key==='Enter' || e.key==='Tab'){ e.preventDefault(); selectMentionAuto(mentionAutoHighlight); }
+  else if(e.key==='Escape'){ closeMentionAutocomplete(); }
+}
+function closeMentionAutocomplete(){
+  mentionAuto = { open:false, textareaId:null, start:-1, end:-1 };
+  mentionAutoItems = [];
+  const pop = document.getElementById('mention-autocomplete');
+  if(pop) pop.innerHTML = '';
+}
+
 async function postMessage(taskId){
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
