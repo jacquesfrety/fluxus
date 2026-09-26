@@ -3282,6 +3282,7 @@ function refreshDriveToolbar(fileId){
   el.innerHTML = `
     <button class="btn btn-sm ${state.pinAddMode?'btn-gold':'btn-ghost'}" onclick="event.stopPropagation();toggleDrivePinMode()">📍 ${state.pinAddMode?'Click to pin…':'Add pin'}</button>
     <button class="btn btn-sm ${state.drawMode?'btn-gold':'btn-ghost'}" onclick="event.stopPropagation();toggleDriveDrawMode()">🖊 ${state.drawMode?'Drawing…':'Draw'}</button>
+    <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();undoLastMark('${esc(fileId)}')">↩ Undo</button>
     ${state.drawMode ? `
       <span class="dm-color-swatch ${state.drawColor==='red'?'active':''}" style="background:${MARKER_COLORS.red}" title="Red" onclick="event.stopPropagation();setDrawColor('red')"></span>
       <span class="dm-color-swatch ${state.drawColor==='green'?'active':''}" style="background:${MARKER_COLORS.green}" title="Green" onclick="event.stopPropagation();setDrawColor('green')"></span>
@@ -3348,6 +3349,35 @@ async function clearMyDrawings(fileId){
   state.drawings = state.drawings.filter(s=>!(s.driveFileId===fileId && s.author===state.currentUser));
   await saveDrawings();
   refreshDrawLayer(fileId);
+}
+function lastMineOnFile(fileId){
+  // the most recently created pin or drawn stroke of the current user's own on this image,
+  // whichever of the two came last — a single "Undo" covers both kinds of mark
+  if(!state.currentUser) return null;
+  const mine = state.annotations.filter(a=>a.driveFileId===fileId && a.author===state.currentUser)
+    .map(a=>({ kind:'pin', id:a.id, ts:a.ts }))
+    .concat(state.drawings.filter(s=>s.driveFileId===fileId && s.author===state.currentUser)
+      .map(s=>({ kind:'stroke', id:s.id, ts:s.ts })));
+  if(!mine.length) return null;
+  mine.sort((a,b)=>b.ts-a.ts);
+  return mine[0];
+}
+async function undoLastMark(fileId){
+  const last = lastMineOnFile(fileId);
+  if(!last){ toast('Nothing of yours to undo on this image'); return; }
+  if(last.kind==='pin'){
+    state.annotations = state.annotations.filter(a=>a.id!==last.id);
+    await saveAnnotations();
+    if(openPinId===last.id) openPinId=null;
+    if(pinDraft && pinDraft.fileId===fileId) pinDraft=null;
+    refreshPinsLayer(fileId);
+    toast('Removed your last pin');
+  } else {
+    state.drawings = state.drawings.filter(s=>s.id!==last.id);
+    await saveDrawings();
+    refreshDrawLayer(fileId);
+    toast('Removed your last drawing stroke');
+  }
 }
 function driveImageWrapClick(e){
   if(!state.pinAddMode) return;
