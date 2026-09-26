@@ -2141,14 +2141,24 @@ function levelTotals(level){
     drawCallsBest: usage.reduce((s,u)=>s+(Number(u.asset.materialSlots)||1),0)
   };
 }
-function drawCallsRow(totals){
+function drawCallsRow(totals, target){
+  const rangeLabel = totals.drawCallsBest===totals.drawCallsWorst
+    ? fmtNum(totals.drawCallsBest)
+    : `[${fmtNum(totals.drawCallsBest)}-${fmtNum(totals.drawCallsWorst)}]`;
+  let barHtml;
+  if(!target){
+    barHtml = `<span class="faint" style="font-size:12px">${rangeLabel} (no budget set)</span>`;
+  } else {
+    const over = totals.drawCallsWorst > target;
+    const pct = Math.min(100, Math.round((totals.drawCallsWorst/target)*100));
+    barHtml = `<div class="row" style="gap:8px;align-items:center">
+      <span class="bar-track" style="width:100px"><span class="bar-fill" style="width:${pct}%;background:${over?'var(--red)':'var(--teal)'}"></span></span>
+      <span style="font-size:12px;${over?'color:var(--red);font-weight:700':''}">${rangeLabel} / ${fmtNum(target)}${over?' ⚠':''}</span>
+    </div>`;
+  }
   return `<div style="margin-top:8px">
-    <label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Estimated draw calls <span title="Best case assumes GPU Instancing/Static Batching merges every repeat of the same asset into one draw call per material slot. Worst case assumes no batching at all. Actual result depends on how the scene is authored (static flags, shared materials, transparency, per-instance overrides).">ⓘ</span></label>
-    <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
-      <span style="font-size:13px"><b style="color:var(--teal)">${fmtNum(totals.drawCallsBest)}</b> <span class="faint" style="font-size:11px">best case</span></span>
-      <span class="faint">–</span>
-      <span style="font-size:13px"><b style="color:var(--red)">${fmtNum(totals.drawCallsWorst)}</b> <span class="faint" style="font-size:11px">worst case</span></span>
-    </div>
+    <label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Draw calls <span title="Range is [best case-worst case]. Best case assumes GPU Instancing/Static Batching merges every repeat of the same asset into one draw call per material slot. Worst case assumes no batching at all. Actual result depends on how the scene is authored (static flags, shared materials, transparency, per-instance overrides). The budget bar compares against the worst case, the safer number.">ⓘ</span></label>
+    ${barHtml}
   </div>`;
 }
 function assetLevels(assetId){
@@ -2437,7 +2447,7 @@ function renderLevelsView(){
       </div>
       <div style="margin-top:10px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Polygons</label>${budgetBar(totals.polys, l.budgetPolys)}</div>
       <div style="margin-top:8px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Textures used: ${totals.textures}</label>${budgetBar(totals.textures, l.budgetTextures)}</div>
-      ${drawCallsRow(totals)}
+      ${drawCallsRow(totals, l.budgetDrawCalls)}
       ${levelAssetThumbsStrip(l)}
     </div>`;
   }).join('');
@@ -2464,11 +2474,12 @@ function renderLevelDrawerContent(id){
         <div class="field"><label>Polygon target <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label><input id="level-budget-polys" type="number" min="0" step="1" value="${l?.budgetPolys||''}" placeholder="No target"></div>
         <div class="field"><label>Texture target <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label><input id="level-budget-tex" type="number" min="0" step="1" value="${l?.budgetTextures||''}" placeholder="No target"></div>
       </div>
+      <div class="field"><label>Draw call budget <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label><input id="level-budget-drawcalls" type="number" min="0" step="1" value="${l?.budgetDrawCalls||''}" placeholder="No budget"></div>
       ${l?`<div class="field">
         <label>Current total</label>
         <div style="margin-bottom:6px">${budgetBar(totals.polys, l.budgetPolys)}</div>
         <div>${budgetBar(totals.textures, l.budgetTextures)}</div>
-        ${drawCallsRow(totals)}
+        ${drawCallsRow(totals, l.budgetDrawCalls)}
         ${levelAssetThumbsStrip(l)}
       </div>`:''}
       <div class="field"><label>Assets used in this level <span class="faint" style="text-transform:none;font-weight:400">(quantity — some assets are placed more than once)</span></label>
@@ -2499,6 +2510,7 @@ async function saveLevelForm(editingId){
     description: document.getElementById('level-desc').value.trim(),
     budgetPolys: parseInt(document.getElementById('level-budget-polys').value)||null,
     budgetTextures: parseInt(document.getElementById('level-budget-tex').value)||null,
+    budgetDrawCalls: parseInt(document.getElementById('level-budget-drawcalls').value)||null,
     assetUsage
   };
   if(editingId){
