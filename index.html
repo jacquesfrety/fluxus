@@ -144,6 +144,11 @@
     padding:3px 9px;border-radius:99px;white-space:nowrap;}
   .bar-track{width:64px;height:5px;background:var(--surface3);border-radius:3px;overflow:hidden;}
   .bar-fill{height:100%;background:var(--teal);}
+  tr.task-group-row{cursor:pointer;background:var(--surface2);}
+  tr.task-group-row:hover td{background:var(--surface3);}
+  tr.task-group-row td{padding:9px 10px;font-weight:700;font-size:13px;border-bottom:1px solid var(--line);}
+  .task-group-chevron{display:inline-block;width:14px;color:var(--gold);}
+  .task-group-name{letter-spacing:.2px;}
 
   /* ---- kanban ---- */
   .kanban{display:flex;gap:14px;align-items:flex-start;overflow-x:auto;padding-bottom:10px;}
@@ -830,6 +835,8 @@ let state = {
   filters: { category: "", taskList: "", assignee: "", status: "", search: "" },
   timelineFilters: { category: "", taskList: "", assignee: "" },
   sort: { key: null, dir: "asc" },
+  groupTasksByList: lsGet('tasksGroupByList', false),
+  collapsedTaskGroups: lsGet('tasksCollapsedGroups', []),
 };
 
 function uid(prefix){ return prefix + Math.random().toString(36).slice(2,7); }
@@ -1566,6 +1573,34 @@ function categoryTag(name){
 function taskListTag(name){
   return `<span class="tasklisttag">${esc(name||'—')}</span>`;
 }
+function toggleGroupTasksByList(){
+  state.groupTasksByList = !state.groupTasksByList;
+  lsSet('tasksGroupByList', state.groupTasksByList);
+  render();
+}
+function isTaskGroupCollapsed(name){
+  return state.collapsedTaskGroups.includes(name);
+}
+function toggleTaskGroupCollapse(name){
+  const i = state.collapsedTaskGroups.indexOf(name);
+  if(i===-1) state.collapsedTaskGroups.push(name); else state.collapsedTaskGroups.splice(i,1);
+  lsSet('tasksCollapsedGroups', state.collapsedTaskGroups);
+  render();
+}
+function groupTasksByTaskList(tasks){
+  const groups = {};
+  const order = [];
+  state.taskLists.forEach(l=>{ groups[l] = []; order.push(l); });
+  const noListKey = '__none__';
+  tasks.forEach(t=>{
+    const key = t.taskList && groups[t.taskList] !== undefined ? t.taskList : (t.taskList || noListKey);
+    if(groups[key]===undefined){ groups[key]=[]; if(key!==noListKey) order.push(key); }
+    groups[key].push(t);
+  });
+  const result = order.filter(k=>groups[k] && groups[k].length).map(k=>({ key:k, name:k, tasks: groups[k] }));
+  if(groups[noListKey] && groups[noListKey].length) result.push({ key:noListKey, name:'No task list', tasks: groups[noListKey] });
+  return result;
+}
 
 /* ============================= TEAM VIEW ============================= */
 function renderTeamView(){
@@ -1802,13 +1837,14 @@ function renderTasksView(){
     </select>
     <button class="btn btn-ghost btn-sm" onclick="openManageCategories()">Manage categories</button>
     <button class="btn btn-ghost btn-sm" onclick="openManageTaskLists()">Manage task lists</button>
+    <button class="btn btn-sm ${state.groupTasksByList?'btn-gold':'btn-ghost'}" onclick="toggleGroupTasksByList()">${state.groupTasksByList?'✓ ':''}Group by task list</button>
   </div>`;
 
   if(tasks.length===0){
     return filterBar + `<div class="empty-state"><div class="display">No tasks match</div>Adjust the filters, or add a new task.</div>`;
   }
 
-  const rows = tasks.map(t=>{
+  const taskRowHtml = (t)=>{
     const dep = dependencyStatus(t);
     const overdue = isOverdue(t);
     const catColor = categoryColor(t.category);
@@ -1836,9 +1872,9 @@ function renderTasksView(){
       <td class="${overdue?'dep-warn':''}"><input type="date" class="inline-edit" style="${overdue?'border-color:var(--red)':''}" value="${t.due||''}" onchange="updateField('${t.id}','due',this.value)"></td>
       <td><span class="row" style="gap:7px"><input type="number" class="inline-edit pct-input" min="0" max="100" step="5" value="${t.pct||0}" onchange="updateField('${t.id}','pct',parseInt(this.value)||0)">%</span></td>
     </tr>`;
-  }).join('');
+  };
 
-  return filterBar + `<table class="ttable"><thead><tr>
+  const thead = `<thead><tr>
     <th class="sortable" onclick="setSort('name')">Task${sortArrow('name')}</th>
     <th class="sortable" onclick="setSort('category')">Category${sortArrow('category')}</th>
     <th class="sortable" onclick="setSort('taskList')">Task list${sortArrow('taskList')}</th>
@@ -1847,7 +1883,34 @@ function renderTasksView(){
     <th class="sortable" onclick="setSort('priority')">Priority${sortArrow('priority')}</th>
     <th class="sortable" onclick="setSort('due')">Due${sortArrow('due')}</th>
     <th class="sortable" onclick="setSort('pct')">Progress${sortArrow('pct')}</th>
-  </tr></thead><tbody>${rows}</tbody></table>`;
+  </tr></thead>`;
+
+  if(!state.groupTasksByList){
+    const rows = tasks.map(taskRowHtml).join('');
+    return filterBar + `<table class="ttable">${thead}<tbody>${rows}</tbody></table>`;
+  }
+
+  const groups = groupTasksByTaskList(tasks);
+  const groupBlocks = groups.map(g=>{
+    const collapsed = isTaskGroupCollapsed(g.key);
+    const total = g.tasks.length;
+    const avgPct = Math.round(g.tasks.reduce((s,t)=>s+(t.pct||0),0) / (total||1));
+    const headerRow = `<tr class="task-group-row" onclick="toggleTaskGroupCollapse('${esc(g.key)}')">
+      <td colspan="8">
+        <span class="task-group-chevron">${collapsed?'▸':'▾'}</span>
+        <span class="task-group-name">${esc(g.name)}</span>
+        <span class="faint" style="font-size:12px;margin-left:6px">${total} task${total===1?'':'s'}</span>
+        <span class="row" style="gap:7px;float:right;align-items:center">
+          <span class="bar-track" style="width:90px"><span class="bar-fill" style="width:${avgPct}%"></span></span>
+          <span class="faint" style="font-size:12px">${avgPct}%</span>
+        </span>
+      </td>
+    </tr>`;
+    const bodyRows = collapsed ? '' : g.tasks.map(taskRowHtml).join('');
+    return headerRow + bodyRows;
+  }).join('');
+
+  return filterBar + `<table class="ttable">${thead}<tbody>${groupBlocks}</tbody></table>`;
 }
 function openManageCategories(){
   document.getElementById('overlay').classList.add('open');
