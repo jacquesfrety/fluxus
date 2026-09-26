@@ -2289,16 +2289,52 @@ function openAssetDrawer(id){
   drawer.classList.add('open');
   drawer.innerHTML = renderAssetDrawerContent(id);
 }
-function handleAssetImagePick(evt){
-  const file = evt.target.files[0];
-  if(!file) return;
+function isHeicFile(file){
+  const name = (file.name||'').toLowerCase();
+  return file.type==='image/heic' || file.type==='image/heif' || name.endsWith('.heic') || name.endsWith('.heif');
+}
+let heic2anyLoadPromise = null;
+function loadHeic2Any(){
+  if(window.heic2any) return Promise.resolve();
+  if(heic2anyLoadPromise) return heic2anyLoadPromise;
+  heic2anyLoadPromise = new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+    s.onload = resolve;
+    s.onerror = ()=>reject(new Error('failed to load heic2any'));
+    document.head.appendChild(s);
+  });
+  return heic2anyLoadPromise;
+}
+function readImageFileAsDataURL(file, preview){
   const reader = new FileReader();
   reader.onload = ()=>{
     pendingAssetImage = reader.result;
-    const preview = document.getElementById('asset-image-preview');
     if(preview) preview.innerHTML = `<img src="${reader.result}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`;
   };
   reader.readAsDataURL(file);
+}
+async function handleAssetImagePick(evt){
+  const file = evt.target.files[0];
+  if(!file) return;
+  const preview = document.getElementById('asset-image-preview');
+  if(!isHeicFile(file)){
+    readImageFileAsDataURL(file, preview);
+    return;
+  }
+  // Browsers can't decode/display HEIC/HEIF (the default photo format on iPhones) in an <img>,
+  // so convert it to a JPEG in-browser first via heic2any (loaded from CDN on first use).
+  if(preview) preview.innerHTML = '<div class="faint" style="font-size:12px">Converting HEIC photo…</div>';
+  try{
+    await loadHeic2Any();
+    const converted = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+    const jpegBlob = Array.isArray(converted) ? converted[0] : converted;
+    readImageFileAsDataURL(jpegBlob, preview);
+  } catch(err){
+    console.error('HEIC conversion failed', err);
+    if(preview) preview.innerHTML = '<div class="faint" style="font-size:12px;color:var(--red)">Couldn\'t convert this HEIC photo. Try exporting it as JPEG/PNG first.</div>';
+    toast('Could not convert HEIC photo');
+  }
 }
 function clearAssetImage(){
   pendingAssetImage = null;
@@ -2348,7 +2384,7 @@ function renderAssetDrawerContent(id){
       <div class="field"><label>Image <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label>
         <div class="row" style="gap:10px;align-items:center">
           <div id="asset-image-preview">${a?.image?`<img src="${esc(a.image)}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`:'<div class="faint" style="font-size:12px">No image</div>'}</div>
-          <input type="file" accept="image/*" id="asset-image-file" onchange="handleAssetImagePick(event)">
+          <input type="file" accept="image/*,.heic,.heif" id="asset-image-file" onchange="handleAssetImagePick(event)">
           ${a?.image?`<button type="button" class="btn btn-sm btn-ghost" onclick="clearAssetImage()">Remove</button>`:''}
         </div>
       </div>
