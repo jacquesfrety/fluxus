@@ -1279,6 +1279,13 @@ async function addNotification(forUser, type, taskId, taskName, fromUser, snippe
   await saveNotifications();
   renderNotifBell();
 }
+function adminNotificationTargets(){
+  // the Administrator identity isn't a fixed name — it's whoever's Google account matches
+  // OWNER_EMAILS, which may or may not also have a team profile in this project (see
+  // syncCurrentUserFromAuth). Resolve to whatever name(s) that account will actually appear as.
+  const matched = [...new Set(state.team.filter(m=>isOwnerEmail(m.email)).map(m=>m.name))];
+  return matched.length ? matched : ['Administrator'];
+}
 function myNotifications(){
   return state.notifications.filter(n=>n.forUser===state.currentUser).sort((a,b)=>b.ts-a.ts);
 }
@@ -1297,9 +1304,9 @@ function renderNotifBell(){
     </div>
     ${mine.length ? mine.slice(0,40).map(n=>`
       <div class="notif-item ${n.read?'':'unread'}" onclick="openNotification('${n.id}')">
-        <div class="notif-icon">${n.type==='tag'?'@':'↩'}</div>
+        <div class="notif-icon">${n.type==='tag'?'@':n.type==='newpost'?'📣':'↩'}</div>
         <div class="notif-text">
-          <b>${esc(n.fromUser)}</b> ${n.type==='tag'?'tagged you in':'replied to you in'} <b>${esc(n.taskName)}</b>
+          <b>${esc(n.fromUser)}</b> ${n.type==='tag'?'tagged you in':n.type==='newpost'?'posted a new topic:':'replied to you in'} <b>${esc(n.taskName)}</b>
           <div class="faint">${esc(n.snippet||'')}</div>
           <div class="notif-time">${fmtWhen(n.ts)}</div>
         </div>
@@ -1327,8 +1334,13 @@ async function openNotification(id){
   await saveNotifications();
   renderNotifBell();
   closeNotifPanel();
-  setView('tasks');
-  openDrawer(n.taskId);
+  if(typeof n.taskId==='string' && n.taskId.startsWith('post:')){
+    setView('support');
+    openPostDrawer(n.taskId.slice(5));
+  } else {
+    setView('tasks');
+    openDrawer(n.taskId);
+  }
 }
 document.addEventListener('keydown', (e)=>{
   const lb = document.getElementById('drive-lightbox');
@@ -2728,6 +2740,11 @@ async function createPost(){
   state.forumPosts.push(post);
   pendingPostImageFile = null;
   await saveForumPosts();
+  const snippet = (description||'(no description)').slice(0,60) + ((description||'').length>60?'…':'');
+  for(const name of adminNotificationTargets()){
+    if(name===state.currentUser) continue; // don't notify the Admin about their own post
+    await addNotification(name, 'newpost', 'post:'+post.id, title, state.currentUser, snippet);
+  }
   closeDrawer();
   render();
 }
