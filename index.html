@@ -2141,23 +2141,30 @@ function levelTotals(level){
     drawCallsBest: usage.reduce((s,u)=>s+(Number(u.asset.materialSlots)||1),0)
   };
 }
-function drawCallsRow(totals, target){
+const DRAWCALLS_TOOLTIP = "Range is [best case-worst case]. Best case assumes GPU Instancing/Static Batching merges every repeat of the same asset into one draw call per material slot. Worst case assumes no batching at all. Actual result depends on how the scene is authored (static flags, shared materials, transparency, per-instance overrides). The budget bar compares against the worst case, the safer number.";
+function drawCallsBarOnly(totals, target){
   const rangeLabel = totals.drawCallsBest===totals.drawCallsWorst
     ? fmtNum(totals.drawCallsBest)
     : `[${fmtNum(totals.drawCallsBest)}-${fmtNum(totals.drawCallsWorst)}]`;
-  let barHtml;
   if(!target){
-    barHtml = `<span class="faint" style="font-size:12px">${rangeLabel} (no budget set)</span>`;
-  } else {
-    const over = totals.drawCallsWorst > target;
-    const pct = Math.min(100, Math.round((totals.drawCallsWorst/target)*100));
-    barHtml = `<div class="row" style="gap:8px;align-items:center">
-      <span class="bar-track" style="width:100px"><span class="bar-fill" style="width:${pct}%;background:${over?'var(--red)':'var(--teal)'}"></span></span>
-      <span style="font-size:12px;${over?'color:var(--red);font-weight:700':''}">${rangeLabel} / ${fmtNum(target)}${over?' ⚠':''}</span>
-    </div>`;
+    return `<span class="faint" style="font-size:12px">${rangeLabel} (no budget set)</span>`;
   }
+  const over = totals.drawCallsWorst > target;
+  const pct = Math.min(100, Math.round((totals.drawCallsWorst/target)*100));
+  return `<div class="row" style="gap:8px;align-items:center">
+    <span class="bar-track" style="width:100px"><span class="bar-fill" style="width:${pct}%;background:${over?'var(--red)':'var(--teal)'}"></span></span>
+    <span style="font-size:12px;${over?'color:var(--red);font-weight:700':''}">${rangeLabel} / ${fmtNum(target)}${over?' ⚠':''}</span>
+  </div>`;
+}
+function drawCallsRow(totals, target){
   return `<div style="margin-top:8px">
-    <label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Draw calls <span title="Range is [best case-worst case]. Best case assumes GPU Instancing/Static Batching merges every repeat of the same asset into one draw call per material slot. Worst case assumes no batching at all. Actual result depends on how the scene is authored (static flags, shared materials, transparency, per-instance overrides). The budget bar compares against the worst case, the safer number.">ⓘ</span></label>
+    <label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Draw calls <span title="${esc(DRAWCALLS_TOOLTIP)}">ⓘ</span></label>
+    ${drawCallsBarOnly(totals, target)}
+  </div>`;
+}
+function metricLine(label, barHtml, tooltip){
+  return `<div class="row" style="align-items:center;gap:10px;margin-top:6px;flex-wrap:nowrap">
+    <label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;flex:0 0 auto;white-space:nowrap">${label}${tooltip?` <span title="${esc(tooltip)}">ⓘ</span>`:''}</label>
     ${barHtml}
   </div>`;
 }
@@ -2445,9 +2452,9 @@ function renderLevelsView(){
         <div><b>${esc(l.name)}</b>${l.description?`<div class="faint" style="font-size:12px;margin-top:2px">${esc(l.description)}</div>`:''}</div>
         <span class="faint" style="font-size:12px">${totals.count} asset${totals.count===1?'':'s'} · ${totals.instances} instance${totals.instances===1?'':'s'} · ${totals.textures} texture${totals.textures===1?'':'s'}</span>
       </div>
-      <div style="margin-top:10px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Polygons</label>${budgetBar(totals.polys, l.budgetPolys)}</div>
-      <div style="margin-top:8px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Textures used: ${totals.textures}</label>${budgetBar(totals.textures, l.budgetTextures)}</div>
-      ${drawCallsRow(totals, l.budgetDrawCalls)}
+      <div style="margin-top:10px">${metricLine('Polygons', budgetBar(totals.polys, l.budgetPolys))}</div>
+      ${metricLine('Textures', budgetBar(totals.textures, l.budgetTextures))}
+      ${metricLine('Draw calls', drawCallsBarOnly(totals, l.budgetDrawCalls), DRAWCALLS_TOOLTIP)}
       ${levelAssetThumbsStrip(l)}
     </div>`;
   }).join('');
