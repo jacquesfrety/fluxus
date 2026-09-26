@@ -443,9 +443,9 @@
   .dm-image-wrap img{display:block;}
   .dm-pins-layer{position:absolute;inset:0;pointer-events:none;}
   .dm-pin{position:absolute;transform:translate(-50%,-100%);pointer-events:auto;cursor:pointer;
-    width:26px;height:26px;border-radius:50% 50% 50% 0;background:var(--gold);border:2px solid #1A1608;
-    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#1A1608;
-    box-shadow:0 2px 6px rgba(0,0,0,.4);transform-origin:bottom left;}
+    width:28px;height:28px;border-radius:50% 50% 50% 0;background:var(--red);border:2px solid #5A1418;
+    display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;
+    box-shadow:0 2px 8px rgba(0,0,0,.5);transform-origin:bottom left;}
   .dm-pin.resolved{background:var(--surface3);color:#fff;border-color:rgba(255,255,255,.4);}
   .dm-pin span{transform:rotate(45deg);display:block;}
   .dm-pin-glyph{transform:rotate(45deg);}
@@ -457,7 +457,13 @@
   .dm-pin-comment{margin-bottom:7px;}
   .dm-pin-comment .who{font-weight:700;color:var(--gold);font-size:11.5px;}
   .dm-pin-comment .when{color:var(--ink-faint);font-size:10.5px;margin-left:5px;}
-  .dm-pin-toolbar{position:absolute;top:10px;left:10px;z-index:2;pointer-events:auto;}
+  .dm-pin-toolbar{position:absolute;top:10px;left:10px;z-index:3;pointer-events:auto;
+    display:flex;align-items:center;gap:6px;flex-wrap:wrap;max-width:calc(100% - 20px);}
+  .dm-draw-layer{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;touch-action:none;}
+  .dm-draw-layer.active{pointer-events:auto;cursor:crosshair;}
+  .dm-color-swatch{width:20px;height:20px;border-radius:50%;border:2px solid rgba(255,255,255,.55);
+    cursor:pointer;display:inline-block;box-shadow:0 1px 4px rgba(0,0,0,.4);}
+  .dm-color-swatch.active{box-shadow:0 0 0 2px #fff,0 1px 4px rgba(0,0,0,.4);}
 
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface3);
     border:1px solid var(--line);color:var(--ink);padding:9px 16px;border-radius:7px;font-size:12.5px;
@@ -860,6 +866,9 @@ let state = {
   collapsedTaskGroups: lsGet('tasksCollapsedGroups', []),
   annotations: [],
   pinAddMode: false,
+  drawings: [],
+  drawMode: false,
+  drawColor: 'red',
 };
 
 function uid(prefix){ return prefix + Math.random().toString(36).slice(2,7); }
@@ -903,10 +912,10 @@ async function fsSet(key, value){
 }
 async function loadAll(){
   try{
-    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq, annotations] = await Promise.all([
+    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq, annotations, markups] = await Promise.all([
       fsGet('categories'), fsGet('taskLists'), fsGet('tasks'),
       fsGet('team'), fsGet('project'),
-      fsGet('notifications'), fsGet('forumPosts'), fsGet('documents'), fsGet('taskIdSeq'), fsGet('annotations')
+      fsGet('notifications'), fsGet('forumPosts'), fsGet('documents'), fsGet('taskIdSeq'), fsGet('annotations'), fsGet('markups')
     ]);
     state.team = team || [];
     state.tasks = tasks || [];
@@ -921,6 +930,7 @@ async function loadAll(){
     state.forumPosts = forumPosts || [];
     state.documents = documents || [];
     state.annotations = annotations || [];
+    state.drawings = markups || [];
     state.timelineLabelsWidth = lsGet('timelineLabelsWidth', 520);
     state.theme = lsGet('theme', 'dark');
     document.documentElement.setAttribute('data-theme', state.theme);
@@ -995,6 +1005,7 @@ async function saveTheme(){ lsSet('theme', state.theme); }
 async function saveForumPosts(){ await fsSet('forumPosts', state.forumPosts); }
 async function saveDocuments(){ await fsSet('documents', state.documents); }
 async function saveAnnotations(){ await fsSet('annotations', state.annotations); }
+async function saveDrawings(){ await fsSet('markups', state.drawings); }
 async function setTheme(t){
   state.theme = t;
   document.documentElement.setAttribute('data-theme', t);
@@ -3138,15 +3149,21 @@ async function openDriveMedia(f, kind){
       ? `<model-viewer class="drive-model-viewer" src="${url}" camera-controls auto-rotate shadow-intensity="1" exposure="1" alt="${esc(f.name||'3D model')}"></model-viewer>`
       : `<div class="dm-image-wrap" id="drive-lightbox-imgwrap" onclick="driveImageWrapClick(event)">
           <img id="drive-lightbox-img" src="${url}">
+          <svg class="dm-draw-layer ${state.drawMode?'active':''}" id="drive-lightbox-draw" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
           <div class="dm-pins-layer" id="drive-lightbox-pins"></div>
-          <div class="dm-pin-toolbar"><button class="btn btn-sm ${state.pinAddMode?'btn-gold':'btn-ghost'}" onclick="event.stopPropagation();toggleDrivePinMode()">📍 ${state.pinAddMode?'Click the image to pin…':'Add pin'}</button></div>
+          <div class="dm-pin-toolbar" id="drive-lightbox-toolbar"></div>
         </div>`;
     document.getElementById('drive-lightbox-hint').textContent = kind === 'image' ? 'Scroll to zoom · drag to pan · double-click to reset'
       : kind === 'model' ? 'Drag to rotate · scroll to zoom'
       : '';
     if(kind === 'image'){
-      wireDriveImageZoom(document.getElementById('drive-lightbox-imgwrap'), document.getElementById('drive-lightbox-img'));
+      const wrap = document.getElementById('drive-lightbox-imgwrap');
+      const svg = document.getElementById('drive-lightbox-draw');
+      wireDriveImageZoom(wrap, document.getElementById('drive-lightbox-img'));
+      wireDriveDraw(wrap, svg, f.id);
       refreshPinsLayer(f.id);
+      refreshDrawLayer(f.id);
+      refreshDriveToolbar(f.id);
     }
   }catch(e){
     console.error(e);
@@ -3162,6 +3179,7 @@ function driveMediaStep(dir){
   if(!next) return;
   if(currentDriveMediaUrl){ URL.revokeObjectURL(currentDriveMediaUrl); currentDriveMediaUrl = null; }
   currentDriveMediaFileId = next.id;
+  openPinId = null; pinDraft = null;
   openDriveMedia(next, driveMediaKind(next));
 }
 function closeDriveMedia(){
@@ -3171,6 +3189,7 @@ function closeDriveMedia(){
   currentDriveMediaFileId = null;
   if(currentDriveMediaUrl){ URL.revokeObjectURL(currentDriveMediaUrl); currentDriveMediaUrl = null; }
   state.pinAddMode = false;
+  state.drawMode = false;
   openPinId = null; pinDraft = null;
 }
 
@@ -3192,7 +3211,7 @@ function wireDriveImageZoom(wrap, img){
   img.addEventListener('dragstart', (e)=> e.preventDefault());
   function apply(){
     wrap.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
-    wrap.style.cursor = state.pinAddMode ? 'crosshair' : (scale>1 ? 'grab' : 'zoom-in');
+    wrap.style.cursor = (state.pinAddMode || state.drawMode) ? 'crosshair' : (scale>1 ? 'grab' : 'zoom-in');
   }
   wrap.style.transform = '';
   wrap.addEventListener('wheel', (e)=>{
@@ -3202,7 +3221,7 @@ function wireDriveImageZoom(wrap, img){
     apply();
   }, {passive:false});
   wrap.addEventListener('pointerdown', (e)=>{
-    if(scale<=1 || state.pinAddMode) return;
+    if(scale<=1 || state.pinAddMode || state.drawMode) return;
     dragging=true; startX=e.clientX; startY=e.clientY; startTx=tx; startTy=ty;
     wrap.setPointerCapture(e.pointerId);
   });
@@ -3214,7 +3233,7 @@ function wireDriveImageZoom(wrap, img){
   });
   wrap.addEventListener('pointerup', ()=>{ dragging=false; apply(); });
   wrap.addEventListener('dblclick', ()=>{
-    if(state.pinAddMode) return;
+    if(state.pinAddMode || state.drawMode) return;
     scale = scale>1 ? 1 : 2.5;
     tx=0; ty=0;
     apply();
@@ -3223,8 +3242,103 @@ function wireDriveImageZoom(wrap, img){
 }
 function toggleDrivePinMode(){
   state.pinAddMode = !state.pinAddMode;
+  if(state.pinAddMode) state.drawMode = false;
   openPinId = null; pinDraft = null;
-  if(currentDriveMediaFileId) openDriveMedia((state.driveFiles||[]).find(x=>x.id===currentDriveMediaFileId), 'image');
+  refreshDriveToolbar(currentDriveMediaFileId);
+  applyDriveCursor();
+}
+function toggleDriveDrawMode(){
+  state.drawMode = !state.drawMode;
+  if(state.drawMode) state.pinAddMode = false;
+  openPinId = null; pinDraft = null;
+  refreshDriveToolbar(currentDriveMediaFileId);
+  applyDriveCursor();
+}
+function setDrawColor(color){
+  state.drawColor = color;
+  refreshDriveToolbar(currentDriveMediaFileId);
+}
+function applyDriveCursor(){
+  const wrap = document.getElementById('drive-lightbox-imgwrap');
+  const svg = document.getElementById('drive-lightbox-draw');
+  if(svg) svg.classList.toggle('active', state.drawMode);
+  if(wrap) wrap.style.cursor = (state.pinAddMode || state.drawMode) ? 'crosshair' : '';
+}
+function driveColorHex(color){
+  return { red:'#E5646A', green:'#6FCF97', blue:'#3B82F6' }[color] || '#E5646A';
+}
+function refreshDriveToolbar(fileId){
+  const el = document.getElementById('drive-lightbox-toolbar');
+  if(!el) return;
+  el.innerHTML = `
+    <button class="btn btn-sm ${state.pinAddMode?'btn-gold':'btn-ghost'}" onclick="event.stopPropagation();toggleDrivePinMode()">📍 ${state.pinAddMode?'Click to pin…':'Add pin'}</button>
+    <button class="btn btn-sm ${state.drawMode?'btn-gold':'btn-ghost'}" onclick="event.stopPropagation();toggleDriveDrawMode()">🖊 ${state.drawMode?'Drawing…':'Draw'}</button>
+    ${state.drawMode ? `
+      <span class="dm-color-swatch ${state.drawColor==='red'?'active':''}" style="background:#E5646A" title="Red" onclick="event.stopPropagation();setDrawColor('red')"></span>
+      <span class="dm-color-swatch ${state.drawColor==='green'?'active':''}" style="background:#6FCF97" title="Green" onclick="event.stopPropagation();setDrawColor('green')"></span>
+      <span class="dm-color-swatch ${state.drawColor==='blue'?'active':''}" style="background:#3B82F6" title="Blue" onclick="event.stopPropagation();setDrawColor('blue')"></span>
+      <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();clearMyDrawings('${esc(fileId)}')">🗑 Clear mine</button>
+    ` : ''}
+  `;
+}
+function drawingsForFile(fileId){
+  return state.drawings.filter(s=>s.driveFileId===fileId);
+}
+function strokePathD(points){
+  return points.map((p,i)=> (i===0?'M':'L') + p[0].toFixed(4) + ',' + p[1].toFixed(4)).join(' ');
+}
+function refreshDrawLayer(fileId){
+  const svg = document.getElementById('drive-lightbox-draw');
+  if(!svg) return;
+  svg.innerHTML = drawingsForFile(fileId).map(s=>
+    `<path d="${strokePathD(s.points)}" fill="none" stroke="${driveColorHex(s.color)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>`
+  ).join('');
+}
+function wireDriveDraw(wrap, svg, fileId){
+  let points = null;
+  let liveEl = null;
+  function relPoint(e){
+    const rect = wrap.getBoundingClientRect();
+    return [ Math.min(1,Math.max(0,(e.clientX-rect.left)/rect.width)), Math.min(1,Math.max(0,(e.clientY-rect.top)/rect.height)) ];
+  }
+  svg.addEventListener('pointerdown', (e)=>{
+    if(!state.drawMode) return;
+    e.stopPropagation();
+    points = [relPoint(e)];
+    liveEl = document.createElementNS('http://www.w3.org/2000/svg','path');
+    liveEl.setAttribute('fill','none');
+    liveEl.setAttribute('stroke', driveColorHex(state.drawColor));
+    liveEl.setAttribute('stroke-width','3');
+    liveEl.setAttribute('stroke-linecap','round');
+    liveEl.setAttribute('stroke-linejoin','round');
+    liveEl.setAttribute('vector-effect','non-scaling-stroke');
+    liveEl.setAttribute('d', strokePathD(points));
+    svg.appendChild(liveEl);
+    svg.setPointerCapture(e.pointerId);
+  });
+  svg.addEventListener('pointermove', (e)=>{
+    if(!points) return;
+    points.push(relPoint(e));
+    liveEl.setAttribute('d', strokePathD(points));
+  });
+  svg.addEventListener('pointerup', async ()=>{
+    if(!points){ return; }
+    const pts = points; points = null; liveEl = null;
+    if(pts.length < 2) { refreshDrawLayer(fileId); return; }
+    if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); refreshDrawLayer(fileId); return; }
+    state.drawings.push({ id: uid('dr'), driveFileId: fileId, color: state.drawColor, points: pts, author: state.currentUser, ts: Date.now() });
+    await saveDrawings();
+    refreshDrawLayer(fileId);
+  });
+}
+async function clearMyDrawings(fileId){
+  if(!state.currentUser) return;
+  const mine = state.drawings.filter(s=>s.driveFileId===fileId && s.author===state.currentUser);
+  if(!mine.length){ toast('No drawings of yours on this image'); return; }
+  if(!confirm(`Remove your ${mine.length} drawing stroke(s) from this image?`)) return;
+  state.drawings = state.drawings.filter(s=>!(s.driveFileId===fileId && s.author===state.currentUser));
+  await saveDrawings();
+  refreshDrawLayer(fileId);
 }
 function driveImageWrapClick(e){
   if(!state.pinAddMode) return;
@@ -3401,6 +3515,7 @@ async function driveDeletePrompt(cardEl){
     toast('Moved to trash');
     await removeDocumentLinksForDriveFile(id); // so a deleted file's link doesn't keep showing up under a task
     await removeAnnotationsForDriveFile(id); // and its pinned comments don't linger either
+    await removeDrawingsForDriveFile(id); // nor its drawn marks
     await loadDriveFolder(state.driveCurrentFolderId);
   }catch(err){ console.error(err); toast('Could not delete'); }
 }
@@ -3413,6 +3528,11 @@ async function removeAnnotationsForDriveFile(driveFileId){
   const before = state.annotations.length;
   state.annotations = state.annotations.filter(a => a.driveFileId !== driveFileId);
   if(state.annotations.length !== before) await saveAnnotations();
+}
+async function removeDrawingsForDriveFile(driveFileId){
+  const before = state.drawings.length;
+  state.drawings = state.drawings.filter(s => s.driveFileId !== driveFileId);
+  if(state.drawings.length !== before) await saveDrawings();
 }
 function driveCancelMove(){ state.driveMovePending = null; render(); }
 async function driveCompleteMove(){
