@@ -65,6 +65,9 @@
   .project-header-meta{display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;}
   .project-header-notes{margin-top:9px;color:var(--ink-dim);font-size:13px;white-space:pre-wrap;line-height:1.5;}
   nav{display:flex;flex-direction:column;gap:2px;}
+  .nav-group-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;
+    color:var(--ink-faint);padding:14px 10px 4px;}
+  .nav-group-label.first{padding-top:2px;}
   .nav-btn{display:flex;align-items:center;gap:10px;padding:9px 10px;border:none;background:none;
     color:var(--ink-dim);border-radius:6px;text-align:left;font-size:13.5px;font-weight:500;}
   .nav-btn:hover{background:var(--surface2);color:var(--ink);}
@@ -1126,16 +1129,16 @@ function fmtDate(iso){
 
 /* ============================= render shell ============================= */
 const NAV = [
-  {id:'dashboard', label:'Dashboard', icon:'◈'},
-  {id:'tasks', label:'Tasks', icon:'☰'},
-  {id:'timeline', label:'Timeline', icon:'▤'},
-  {id:'kanban', label:'Kanban', icon:'▦'},
-  {id:'documents', label:'Documents', icon:'📁'},
-  {id:'assets', label:'Assets', icon:'⬡', wip:true},
-  {id:'levels', label:'Levels', icon:'▥', wip:true},
-  {id:'team', label:'Team', icon:'◐'},
-  {id:'support', label:'PMS Support', icon:'⚙'},
-  {id:'reports', label:'Reports', icon:'▣', supervisorOnly:true},
+  {id:'dashboard', label:'Dashboard', icon:'◈', group:'Project'},
+  {id:'tasks', label:'Tasks', icon:'☰', group:'Project'},
+  {id:'timeline', label:'Timeline', icon:'▤', group:'Project'},
+  {id:'kanban', label:'Kanban', icon:'▦', group:'Project'},
+  {id:'reports', label:'Reports', icon:'▣', supervisorOnly:true, group:'Project'},
+  {id:'assets', label:'Assets', icon:'⬡', wip:true, group:'Assets'},
+  {id:'levels', label:'Levels', icon:'▥', wip:true, group:'Assets'},
+  {id:'documents', label:'Documents', icon:'📁', group:'Collaboration'},
+  {id:'team', label:'Team', icon:'◐', group:'Collaboration'},
+  {id:'support', label:'PMS Support', icon:'⚙', group:'Collaboration'},
 ];
 const TITLES = {team:["Team","Everyone working on this project"], tasks:["Tasks","The full list, grouped and filterable"],
   kanban:["Kanban","Drag a card, or use the status menu"], timeline:["Timeline","Gantt-style view across the project"],
@@ -1148,10 +1151,19 @@ const TITLES = {team:["Team","Everyone working on this project"], tasks:["Tasks"
 
 function renderNav(){
   const nav = document.getElementById('nav');
-  nav.innerHTML = NAV.filter(n=>!n.supervisorOnly || isSupervisor()).map(n=>`
+  const items = NAV.filter(n=>!n.supervisorOnly || isSupervisor());
+  let lastGroup = null;
+  nav.innerHTML = items.map(n=>{
+    let header = '';
+    if(n.group && n.group!==lastGroup){
+      header = `<div class="nav-group-label${lastGroup?'':' first'}">${esc(n.group)}</div>`;
+      lastGroup = n.group;
+    }
+    return header + `
     <button class="nav-btn ${state.view===n.id?'active':''}" onclick="setView('${n.id}')" ${n.wip?'style="color:#A8821B"':''}>
       <span class="nav-icon" ${n.wip?'style="color:#A8821B"':''}>${n.icon}</span>${n.label}${n.wip?' <span style="font-size:10px;opacity:.85">(WIP)</span>':''}
-    </button>`).join('');
+    </button>`;
+  }).join('');
 }
 function renderWhoAmI(){
   const el = document.getElementById('whoami');
