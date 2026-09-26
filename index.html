@@ -805,7 +805,7 @@ async function chatImgError(img){
     msg.driveFile.thumbnailLink = data.thumbnailLink || msg.driveFile.thumbnailLink;
     msg.driveFile.webViewLink = data.webViewLink || msg.driveFile.webViewLink;
     img.src = msg.driveFile.thumbnailLink;
-    img.onclick = () => openLightbox(driveThumbLarge(msg.driveFile.thumbnailLink, 1600));
+    img.onclick = () => openMediaLightbox(msg.driveFile.id, driveThumbLarge(msg.driveFile.thumbnailLink, 1600), msg.driveFile.webViewLink||'');
     await saveChat(taskId, msgs); // persist the refreshed link so it's fast next time
   }catch(e){
     console.error(e);
@@ -2885,7 +2885,7 @@ function renderPostDrawerContent(postId){
     </div>
     <div class="drawer-body">
       ${p.description?`<div class="chat-text" style="margin-bottom:14px">${esc(p.description)}</div>`:''}
-      ${p.driveFile?.thumbnailLink?`<img class="chat-img" src="${esc(p.driveFile.thumbnailLink)}" data-post-id="${esc(p.id)}" onclick="openLightbox('${esc(driveThumbLarge(p.driveFile.thumbnailLink,1600))}')" onerror="forumImgError(this)" style="margin-bottom:14px">`:''}
+      ${p.driveFile?.thumbnailLink?`<img class="chat-img" src="${esc(p.driveFile.thumbnailLink)}" data-post-id="${esc(p.id)}" onclick="openMediaLightbox('${esc(p.driveFile.id)}','${esc(driveThumbLarge(p.driveFile.thumbnailLink,1600))}','${esc(p.driveFile.webViewLink||'')}')" onerror="forumImgError(this)" style="margin-bottom:14px">`:''}
       <div class="row" style="gap:10px;margin-bottom:16px">
         <button class="forum-vote-btn ${voted?'voted':''}" onclick="toggleVote('${p.id}')">▲ ${votes.length} vote${votes.length===1?'':'s'}</button>
       </div>
@@ -2906,7 +2906,7 @@ function renderPostDrawerContent(postId){
                     ${(c.author===state.currentUser)?`<span class="chat-actions"><span class="chat-action-link" onclick="deleteForumComment('${p.id}','${c.id}')">Delete</span></span>`:''}
                   </div>
                   ${c.text?`<div class="chat-text">${esc(c.text)}</div>`:''}
-                  ${c.driveFile?.thumbnailLink?`<img class="chat-img" src="${esc(c.driveFile.thumbnailLink)}" data-post-id="${esc(p.id)}" data-comment-id="${esc(c.id)}" onclick="openLightbox('${esc(driveThumbLarge(c.driveFile.thumbnailLink,1600))}')" onerror="forumImgError(this)">`:''}
+                  ${c.driveFile?.thumbnailLink?`<img class="chat-img" src="${esc(c.driveFile.thumbnailLink)}" data-post-id="${esc(p.id)}" data-comment-id="${esc(c.id)}" onclick="openMediaLightbox('${esc(c.driveFile.id)}','${esc(driveThumbLarge(c.driveFile.thumbnailLink,1600))}','${esc(c.driveFile.webViewLink||'')}')" onerror="forumImgError(this)">`:''}
                 </div>
               </div>
             </div>`).join('') : '<div class="chat-empty">No comments yet.</div>'}
@@ -2995,7 +2995,7 @@ async function forumImgError(img){
     target.driveFile.thumbnailLink = data.thumbnailLink || target.driveFile.thumbnailLink;
     target.driveFile.webViewLink = data.webViewLink || target.driveFile.webViewLink;
     img.src = target.driveFile.thumbnailLink;
-    img.onclick = () => openLightbox(driveThumbLarge(target.driveFile.thumbnailLink, 1600));
+    img.onclick = () => openMediaLightbox(target.driveFile.id, driveThumbLarge(target.driveFile.thumbnailLink, 1600), target.driveFile.webViewLink||'');
     await saveForumPosts();
   }catch(e){
     console.error(e);
@@ -3175,6 +3175,38 @@ async function openDriveMedia(f, kind){
     console.error(e);
     content.innerHTML = `<div class="faint" style="padding:40px;text-align:center">Couldn't load a preview — try "Open in Google Drive" below.</div>`;
   }
+}
+/* ---- opens the same annotatable image lightbox (pins, drawing, zoom) for an image that isn't
+   being browsed from a Drive folder — a task chat photo or a Support/Forum screenshot. These are
+   still real files in the team drive (chat/forum uploads go through the same Drive folders as
+   everything else), so pins and drawings on them are stored and shared exactly like on any other
+   Drive image — just reached from a different starting point, and with no "next file" to step to
+   since there's no folder listing here to draw siblings from ---- */
+function openMediaLightbox(fileId, imgUrl, webViewLink){
+  currentDriveMediaFileId = fileId;
+  currentDriveMediaUrl = null; // nothing was fetched as a blob here, so nothing to revoke on close
+  const content = document.getElementById('drive-lightbox-content');
+  const link = document.getElementById('drive-lightbox-link');
+  link.href = webViewLink || '#';
+  document.getElementById('drive-lightbox-hint').textContent = 'Scroll to zoom · drag to pan · double-click to reset';
+  document.getElementById('drive-lightbox').classList.add('open');
+  const prevBtn = document.getElementById('drive-lightbox-prev');
+  const nextBtn = document.getElementById('drive-lightbox-next');
+  if(prevBtn) prevBtn.style.visibility = 'hidden';
+  if(nextBtn) nextBtn.style.visibility = 'hidden';
+  content.innerHTML = `<div class="dm-image-wrap" id="drive-lightbox-imgwrap" onclick="driveImageWrapClick(event)">
+      <img id="drive-lightbox-img" src="${esc(imgUrl)}">
+      <svg class="dm-draw-layer ${state.drawMode?'active':''}" id="drive-lightbox-draw" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
+      <div class="dm-pins-layer" id="drive-lightbox-pins"></div>
+      <div class="dm-pin-toolbar" id="drive-lightbox-toolbar"></div>
+    </div>`;
+  const wrap = document.getElementById('drive-lightbox-imgwrap');
+  const svg = document.getElementById('drive-lightbox-draw');
+  wireDriveImageZoom(wrap, document.getElementById('drive-lightbox-img'));
+  wireDriveDraw(wrap, svg, fileId);
+  refreshPinsLayer(fileId);
+  refreshDrawLayer(fileId);
+  refreshDriveToolbar(fileId);
 }
 function driveMediaStep(dir){
   const siblings = driveMediaSiblings();
@@ -4302,7 +4334,7 @@ async function renderChat(taskId){
           ${m.replyTo?`<div class="chat-reply-quote">↩ ${esc(m.replyTo.author)}: ${esc(m.replyTo.snippet)}</div>`:''}
           ${m.text?`<div class="chat-text">${renderMentionText(m.text)}</div>`:''}
           ${m.driveFile && m.driveFile.thumbnailLink
-            ? `<img class="chat-img" src="${esc(m.driveFile.thumbnailLink)}" data-task-id="${esc(taskId)}" data-msg-id="${esc(m.id)}" onclick="openLightbox('${esc(driveThumbLarge(m.driveFile.thumbnailLink,1600))}')" onerror="chatImgError(this)">`
+            ? `<img class="chat-img" src="${esc(m.driveFile.thumbnailLink)}" data-task-id="${esc(taskId)}" data-msg-id="${esc(m.id)}" onclick="openMediaLightbox('${esc(m.driveFile.id)}','${esc(driveThumbLarge(m.driveFile.thumbnailLink,1600))}','${esc(m.driveFile.webViewLink||'')}')" onerror="chatImgError(this)">`
             : (m.image?`<img class="chat-img" src="${m.image}" onclick="openLightbox('${m.image}')">`:'')}
         </div>
       </div>
