@@ -577,6 +577,12 @@ const DOC_TYPES = ["Image","Video","Document","Website","Folder","Other"];
 const DOC_TYPE_ICON = {"Image":"🖼","Video":"🎬","Document":"📄","Website":"🌐","Folder":"📁","Other":"🔗"};
 const DOC_TYPE_COLOR = {"Image":"#3B82F6","Video":"#B08BE0","Document":"#4FB6AC","Website":"#7FA8D9","Folder":"#D9A441","Other":"#6B7280"};
 
+/* asset/level budget tracking — a lightweight poly/texture-budget tool for a Unity/Quest 3
+   project: assets carry a poly count + texture size, levels are just a checked-off set of
+   assets whose numbers get summed live against an optional per-level target */
+const ASSET_CATEGORIES = ["Prop","Environment","Character","Effect","UI","Other"];
+const ASSET_CATEGORY_COLOR = {"Prop":"#D9A441","Environment":"#6FCF97","Character":"#E5646A","Effect":"#B08BE0","UI":"#7FA8D9","Other":"#6B7280"};
+
 /* ============================= firebase ============================= */
 const firebaseConfig = {
   apiKey: "AIzaSyD8zC3Q78dan_ceYrHqCv0fl36c1dtNNG0",
@@ -875,6 +881,8 @@ let state = {
   drawings: [],
   drawMode: false,
   drawColor: 'red',
+  assets: [],
+  levels: [],
 };
 
 function uid(prefix){ return prefix + Math.random().toString(36).slice(2,7); }
@@ -918,10 +926,11 @@ async function fsSet(key, value){
 }
 async function loadAll(){
   try{
-    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq, annotations, markups] = await Promise.all([
+    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq, annotations, markups, assets, levels] = await Promise.all([
       fsGet('categories'), fsGet('taskLists'), fsGet('tasks'),
       fsGet('team'), fsGet('project'),
-      fsGet('notifications'), fsGet('forumPosts'), fsGet('documents'), fsGet('taskIdSeq'), fsGet('annotations'), fsGet('markups')
+      fsGet('notifications'), fsGet('forumPosts'), fsGet('documents'), fsGet('taskIdSeq'), fsGet('annotations'), fsGet('markups'),
+      fsGet('assets'), fsGet('levels')
     ]);
     state.team = team || [];
     state.tasks = tasks || [];
@@ -937,6 +946,8 @@ async function loadAll(){
     state.documents = documents || [];
     state.annotations = annotations || [];
     state.drawings = markups || [];
+    state.assets = assets || [];
+    state.levels = levels || [];
     state.timelineLabelsWidth = lsGet('timelineLabelsWidth', 520);
     state.theme = lsGet('theme', 'dark');
     document.documentElement.setAttribute('data-theme', state.theme);
@@ -1012,6 +1023,8 @@ async function saveForumPosts(){ await fsSet('forumPosts', state.forumPosts); }
 async function saveDocuments(){ await fsSet('documents', state.documents); }
 async function saveAnnotations(){ await fsSet('annotations', state.annotations); }
 async function saveDrawings(){ await fsSet('markups', state.drawings); }
+async function saveAssets(){ await fsSet('assets', state.assets); }
+async function saveLevels(){ await fsSet('levels', state.levels); }
 async function setTheme(t){
   state.theme = t;
   document.documentElement.setAttribute('data-theme', t);
@@ -1117,6 +1130,8 @@ const NAV = [
   {id:'timeline', label:'Timeline', icon:'▤'},
   {id:'kanban', label:'Kanban', icon:'▦'},
   {id:'documents', label:'Documents', icon:'📁'},
+  {id:'assets', label:'Assets', icon:'⬡'},
+  {id:'levels', label:'Levels', icon:'▥'},
   {id:'team', label:'Team', icon:'◐'},
   {id:'support', label:'PMS Support', icon:'⚙'},
   {id:'reports', label:'Reports', icon:'▣', supervisorOnly:true},
@@ -1126,7 +1141,9 @@ const TITLES = {team:["Team","Everyone working on this project"], tasks:["Tasks"
   dashboard:["Dashboard","Where things stand right now"],
   reports:["Reports","Per-member stats — visible to Supervisors only"],
   support:["PMS Support","Report bugs, request features, and see what's planned"],
-  documents:["Documents","A library of files that live in the cloud (OneDrive, Drive…)"]};
+  documents:["Documents","A library of files that live in the cloud (OneDrive, Drive…)"],
+  assets:["Assets","3D assets — polygon and texture budget per item"],
+  levels:["Levels","Which assets go in each level, and the running budget total"]};
 
 function renderNav(){
   const nav = document.getElementById('nav');
@@ -1437,6 +1454,8 @@ function render(){
   if(state.view==='tasks') actions.innerHTML = `<button class="btn btn-ghost" onclick="openManageTaskLists()">+ New task list</button><button class="btn btn-gold" onclick="createTask()">+ New task</button>`;
   if(state.view==='support') actions.innerHTML = `<button class="btn btn-gold" onclick="openNewPostDrawer()">+ New post</button>`;
   if(state.view==='documents') actions.innerHTML = '';
+  if(state.view==='assets') actions.innerHTML = `<button class="btn btn-gold" onclick="openNewAssetDrawer()">+ New asset</button>`;
+  if(state.view==='levels') actions.innerHTML = `<button class="btn btn-gold" onclick="openNewLevelDrawer()">+ New level</button>`;
 
   const v = document.getElementById('view');
   if(state.view==='team') v.innerHTML = renderTeamView();
@@ -1447,6 +1466,8 @@ function render(){
   else if(state.view==='reports') v.innerHTML = renderReportsView();
   else if(state.view==='support') v.innerHTML = renderSupportView();
   else if(state.view==='documents') v.innerHTML = renderDocumentsView();
+  else if(state.view==='assets') v.innerHTML = renderAssetsView();
+  else if(state.view==='levels') v.innerHTML = renderLevelsView();
 
   if(state.view==='kanban') wireKanbanDnD();
   if(state.view==='timeline'){ wireTimelineControls(); wireTimelineDrag(); wireTimelineResize(); wireOtherColsSync(); }
@@ -2081,6 +2102,227 @@ async function deleteTaskListEntry(i){
   document.getElementById('drawer').innerHTML = renderManageTaskListsContent();
   render();
 }
+
+/* ============================= ASSETS & LEVELS (budget tracking) =============================
+   Two pages, one canonical relationship: a level's assetIds array is the only place the
+   asset<->level link is stored. The Asset drawer's "Used in these levels" checklist edits that
+   same array (by toggling this asset's id into/out of each level), so there's never a second
+   copy of the relationship that could drift out of sync. Level totals (polygons, texture MB) are
+   always computed live from whichever assets are currently checked — never stored redundantly. */
+function levelAssets(level){
+  const ids = level.assetIds || [];
+  return state.assets.filter(a=>ids.includes(a.id));
+}
+function levelTotals(level){
+  const assets = levelAssets(level);
+  return {
+    count: assets.length,
+    polys: assets.reduce((s,a)=>s+(Number(a.polyCount)||0),0),
+    textureMB: assets.reduce((s,a)=>s+(Number(a.textureMB)||0),0)
+  };
+}
+function assetLevels(assetId){
+  return state.levels.filter(l=>(l.assetIds||[]).includes(assetId));
+}
+function budgetBar(current, target){
+  if(!target) return `<span class="faint" style="font-size:12px">${fmtNum(current)} (no target set)</span>`;
+  const pct = Math.min(100, Math.round((current/target)*100));
+  const over = current > target;
+  return `<div class="row" style="gap:8px;align-items:center">
+    <span class="bar-track" style="width:100px"><span class="bar-fill" style="width:${pct}%;background:${over?'var(--red)':'var(--teal)'}"></span></span>
+    <span style="font-size:12px;${over?'color:var(--red);font-weight:700':''}">${fmtNum(current)} / ${fmtNum(target)}${over?' ⚠':''}</span>
+  </div>`;
+}
+function fmtNum(n){ return (Number(n)||0).toLocaleString(); }
+
+/* ---- Assets page ---- */
+function renderAssetsView(){
+  if(state.assets.length===0){
+    return `<div class="empty-state"><div class="display">No assets yet</div>Add the 3D assets your team is building, with their polygon count and texture size, to track a budget per level.</div>`;
+  }
+  const rows = state.assets.map(a=>{
+    const color = ASSET_CATEGORY_COLOR[a.category] || '#6B7280';
+    const usedIn = assetLevels(a.id);
+    return `<tr class="taskrow">
+      <td><span class="taskname" onclick="openAssetDrawer('${a.id}')">${esc(a.name)}</span></td>
+      <td><span class="tagpill" style="background:${color}29;color:${color};border:1px solid ${color}66">${esc(a.category||'—')}</span></td>
+      <td>${fmtNum(a.polyCount)}</td>
+      <td>${a.textureMB?fmtNum(a.textureMB)+' MB':'—'}</td>
+      <td>${usedIn.length ? usedIn.map(l=>`<span class="tasklisttag">${esc(l.name)}</span>`).join(' ') : '<span class="faint" style="font-size:12px">Not used in a level yet</span>'}</td>
+    </tr>`;
+  }).join('');
+  return `<table class="ttable"><thead><tr>
+    <th>Asset</th><th>Category</th><th>Polygons</th><th>Texture size</th><th>Used in</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+}
+function openNewAssetDrawer(){ openAssetDrawer(null); }
+function openAssetDrawer(id){
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = renderAssetDrawerContent(id);
+}
+function renderAssetDrawerContent(id){
+  const a = id ? state.assets.find(x=>x.id===id) : null;
+  const usedLevelIds = a ? (assetLevels(a.id).map(l=>l.id)) : [];
+  return `<div class="drawer-head">
+      <div><h2 style="margin:0;font-size:17px">${a?'Edit asset':'New asset'}</h2></div>
+      <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="field"><label>Name</label><input id="asset-name" value="${esc(a?.name||'')}" placeholder="e.g. Reception Desk"></div>
+      <div class="field"><label>Category</label>
+        <select id="asset-category">${ASSET_CATEGORIES.map(c=>`<option value="${c}" ${a?.category===c?'selected':''}>${c}</option>`).join('')}</select>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Polygons</label><input id="asset-polys" type="number" min="0" step="1" value="${a?.polyCount||''}" placeholder="0"></div>
+        <div class="field"><label>Texture size (MB)</label><input id="asset-tex" type="number" min="0" step="0.1" value="${a?.textureMB||''}" placeholder="0"></div>
+      </div>
+      <div class="field"><label>Notes</label><textarea id="asset-notes" rows="3" placeholder="Optional">${esc(a?.notes||'')}</textarea></div>
+      <div class="field"><label>Used in these levels</label>
+        <div class="manage-list">${state.levels.length ? state.levels.map(l=>`
+          <div class="dash-task-row">
+            <span>${esc(l.name)}</span>
+            <input type="checkbox" data-level-id="${l.id}" ${usedLevelIds.includes(l.id)?'checked':''}>
+          </div>`).join('') : '<div class="faint" style="font-size:12px">No levels yet — create one on the Levels page</div>'}
+        </div>
+      </div>
+      <div class="row" style="justify-content:space-between;margin-top:14px">
+        ${a?`<button class="btn btn-danger btn-sm" onclick="deleteAsset('${a.id}')">Delete</button>`:'<span></span>'}
+        <button class="btn btn-gold" onclick="saveAssetForm(${a?`'${a.id}'`:'null'})">${a?'Save changes':'Add asset'}</button>
+      </div>
+    </div>`;
+}
+async function saveAssetForm(editingId){
+  const name = document.getElementById('asset-name').value.trim();
+  if(!name){ toast('Name is required'); return; }
+  const fields = {
+    name,
+    category: document.getElementById('asset-category').value,
+    polyCount: parseInt(document.getElementById('asset-polys').value)||0,
+    textureMB: parseFloat(document.getElementById('asset-tex').value)||0,
+    notes: document.getElementById('asset-notes').value.trim()
+  };
+  const checkedLevelIds = [...document.querySelectorAll('#drawer input[data-level-id]:checked')].map(el=>el.dataset.levelId);
+  let assetId = editingId;
+  if(editingId){
+    const a = state.assets.find(x=>x.id===editingId);
+    if(a) Object.assign(a, fields);
+  } else {
+    assetId = uid('as');
+    state.assets.push(Object.assign({id: assetId}, fields));
+  }
+  await saveAssets();
+  // sync the level<->asset links from whatever's checked right now
+  state.levels.forEach(l=>{
+    if(!l.assetIds) l.assetIds = [];
+    const shouldBeIn = checkedLevelIds.includes(l.id);
+    const isIn = l.assetIds.includes(assetId);
+    if(shouldBeIn && !isIn) l.assetIds.push(assetId);
+    if(!shouldBeIn && isIn) l.assetIds = l.assetIds.filter(x=>x!==assetId);
+  });
+  await saveLevels();
+  closeDrawer();
+  render();
+}
+async function deleteAsset(id){
+  if(!confirm('Delete this asset? It will be removed from any level using it.')) return;
+  state.assets = state.assets.filter(a=>a.id!==id);
+  await saveAssets();
+  state.levels.forEach(l=>{ if(l.assetIds) l.assetIds = l.assetIds.filter(x=>x!==id); });
+  await saveLevels();
+  closeDrawer();
+  render();
+}
+
+/* ---- Levels page ---- */
+function renderLevelsView(){
+  if(state.levels.length===0){
+    return `<div class="empty-state"><div class="display">No levels yet</div>Create a level, then check off which assets belong to it to see its running polygon/texture budget.</div>`;
+  }
+  const cards = state.levels.map(l=>{
+    const totals = levelTotals(l);
+    return `<div class="card" style="cursor:pointer" onclick="openLevelDrawer('${l.id}')">
+      <div class="row" style="justify-content:space-between;align-items:start">
+        <div><b>${esc(l.name)}</b>${l.description?`<div class="faint" style="font-size:12px;margin-top:2px">${esc(l.description)}</div>`:''}</div>
+        <span class="faint" style="font-size:12px">${totals.count} asset${totals.count===1?'':'s'}</span>
+      </div>
+      <div style="margin-top:10px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Polygons</label>${budgetBar(totals.polys, l.budgetPolys)}</div>
+      <div style="margin-top:8px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Textures (MB)</label>${budgetBar(totals.textureMB, l.budgetTextureMB)}</div>
+    </div>`;
+  }).join('');
+  return `<div class="dash-grid">${cards}</div>`;
+}
+function openNewLevelDrawer(){ openLevelDrawer(null); }
+function openLevelDrawer(id){
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = renderLevelDrawerContent(id);
+}
+function renderLevelDrawerContent(id){
+  const l = id ? state.levels.find(x=>x.id===id) : null;
+  const totals = l ? levelTotals(l) : {polys:0, textureMB:0, count:0};
+  const checkedIds = l ? (l.assetIds||[]) : [];
+  return `<div class="drawer-head">
+      <div><h2 style="margin:0;font-size:17px">${l?'Edit level':'New level'}</h2></div>
+      <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="field"><label>Name</label><input id="level-name" value="${esc(l?.name||'')}" placeholder="e.g. Reception Area"></div>
+      <div class="field"><label>Description</label><textarea id="level-desc" rows="2" placeholder="Optional">${esc(l?.description||'')}</textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Polygon target <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label><input id="level-budget-polys" type="number" min="0" step="1" value="${l?.budgetPolys||''}" placeholder="No target"></div>
+        <div class="field"><label>Texture target (MB) <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label><input id="level-budget-tex" type="number" min="0" step="0.1" value="${l?.budgetTextureMB||''}" placeholder="No target"></div>
+      </div>
+      ${l?`<div class="field">
+        <label>Current total</label>
+        <div style="margin-bottom:6px">${budgetBar(totals.polys, l.budgetPolys)}</div>
+        <div>${budgetBar(totals.textureMB, l.budgetTextureMB)}</div>
+      </div>`:''}
+      <div class="field"><label>Assets used in this level</label>
+        <div class="manage-list">${state.assets.length ? state.assets.map(a=>`
+          <div class="dash-task-row">
+            <span>${esc(a.name)} <span class="faint" style="font-size:11px">(${fmtNum(a.polyCount)} polys${a.textureMB?', '+fmtNum(a.textureMB)+' MB':''})</span></span>
+            <input type="checkbox" data-asset-id="${a.id}" ${checkedIds.includes(a.id)?'checked':''}>
+          </div>`).join('') : '<div class="faint" style="font-size:12px">No assets yet — create one on the Assets page</div>'}
+        </div>
+      </div>
+      <div class="row" style="justify-content:space-between;margin-top:14px">
+        ${l?`<button class="btn btn-danger btn-sm" onclick="deleteLevel('${l.id}')">Delete</button>`:'<span></span>'}
+        <button class="btn btn-gold" onclick="saveLevelForm(${l?`'${l.id}'`:'null'})">${l?'Save changes':'Add level'}</button>
+      </div>
+    </div>`;
+}
+async function saveLevelForm(editingId){
+  const name = document.getElementById('level-name').value.trim();
+  if(!name){ toast('Name is required'); return; }
+  const assetIds = [...document.querySelectorAll('#drawer input[data-asset-id]:checked')].map(el=>el.dataset.assetId);
+  const fields = {
+    name,
+    description: document.getElementById('level-desc').value.trim(),
+    budgetPolys: parseInt(document.getElementById('level-budget-polys').value)||null,
+    budgetTextureMB: parseFloat(document.getElementById('level-budget-tex').value)||null,
+    assetIds
+  };
+  if(editingId){
+    const l = state.levels.find(x=>x.id===editingId);
+    if(l) Object.assign(l, fields);
+  } else {
+    state.levels.push(Object.assign({id: uid('lv')}, fields));
+  }
+  await saveLevels();
+  closeDrawer();
+  render();
+}
+async function deleteLevel(id){
+  if(!confirm('Delete this level? Its assets are not affected — only the grouping is removed.')) return;
+  state.levels = state.levels.filter(l=>l.id!==id);
+  await saveLevels();
+  closeDrawer();
+  render();
+}
+
 async function createTask(){
   const id = nextTaskId();
   const start = todayISO();
