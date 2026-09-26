@@ -2308,6 +2308,20 @@ function loadHeic2Any(){
   });
   return heic2anyLoadPromise;
 }
+async function convertHeicBlob(blob){
+  // heic2any occasionally fails converting straight to JPEG for certain HEIC variants
+  // (e.g. iPhone "Portrait mode" HEICs with an embedded depth map) but succeeds targeting PNG,
+  // so try JPEG first and fall back to PNG before giving up.
+  await loadHeic2Any();
+  try{
+    const converted = await window.heic2any({ blob, toType: 'image/jpeg', quality: 0.85 });
+    return Array.isArray(converted) ? converted[0] : converted;
+  }catch(jpegErr){
+    console.error('HEIC->JPEG conversion failed, trying PNG', jpegErr);
+    const converted = await window.heic2any({ blob, toType: 'image/png' });
+    return Array.isArray(converted) ? converted[0] : converted;
+  }
+}
 function readImageFileAsDataURL(file, preview){
   const reader = new FileReader();
   reader.onload = ()=>{
@@ -2325,17 +2339,15 @@ async function handleAssetImagePick(evt){
     return;
   }
   // Browsers can't decode/display HEIC/HEIF (the default photo format on iPhones) in an <img>,
-  // so convert it to a JPEG in-browser first via heic2any (loaded from CDN on first use).
+  // so convert it to a JPEG (or PNG, as a fallback) in-browser first via heic2any (loaded from CDN on first use).
   if(preview) preview.innerHTML = '<div class="faint" style="font-size:12px">Converting HEIC photo…</div>';
   try{
-    await loadHeic2Any();
-    const converted = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
-    const jpegBlob = Array.isArray(converted) ? converted[0] : converted;
-    readImageFileAsDataURL(jpegBlob, preview);
+    const outBlob = await convertHeicBlob(file);
+    readImageFileAsDataURL(outBlob, preview);
   } catch(err){
     console.error('HEIC conversion failed', err);
-    if(preview) preview.innerHTML = '<div class="faint" style="font-size:12px;color:var(--red)">Couldn\'t convert this HEIC photo. Try exporting it as JPEG/PNG first.</div>';
-    toast('Could not convert HEIC photo');
+    if(preview) preview.innerHTML = `<div class="faint" style="font-size:12px;color:var(--red)">Couldn't convert this HEIC photo (${esc(err?.message||'unknown error')}). Try exporting it as JPEG/PNG first.</div>`;
+    toast('Could not convert HEIC photo: '+(err?.message||'unknown error'));
   }
 }
 function clearAssetImage(){
@@ -3660,15 +3672,13 @@ async function openDriveMedia(f, kind){
     if(!res.ok) throw new Error('fetch failed: '+res.status);
     let blob = await res.blob();
     // Browsers can't decode HEIC/HEIF (the default iPhone photo format) in an <img>/<video>, so
-    // convert it to a JPEG in-browser first — same conversion used for the Asset image upload.
+    // convert it to a JPEG/PNG in-browser first — same conversion used for the Asset image upload.
     if(kind === 'image' && isHeicFile(f)){
       try{
-        await loadHeic2Any();
-        const converted = await window.heic2any({ blob, toType: 'image/jpeg', quality: 0.85 });
-        blob = Array.isArray(converted) ? converted[0] : converted;
+        blob = await convertHeicBlob(blob);
       }catch(convErr){
         console.error('HEIC conversion failed for Drive image', convErr);
-        toast('Could not convert this HEIC photo for preview');
+        toast('Could not convert this HEIC photo: '+(convErr?.message||'unknown error'));
       }
     }
     const url = URL.createObjectURL(blob);
