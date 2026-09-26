@@ -2104,25 +2104,34 @@ async function deleteTaskListEntry(i){
 }
 
 /* ============================= ASSETS & LEVELS (budget tracking) =============================
-   Two pages, one canonical relationship: a level's assetIds array is the only place the
-   asset<->level link is stored. The Asset drawer's "Used in these levels" checklist edits that
-   same array (by toggling this asset's id into/out of each level), so there's never a second
-   copy of the relationship that could drift out of sync. Level totals (polygons, texture MB) are
-   always computed live from whichever assets are currently checked — never stored redundantly. */
-function levelAssets(level){
-  const ids = level.assetIds || [];
-  return state.assets.filter(a=>ids.includes(a.id));
+   Two pages, one canonical relationship: a level's assetUsage array (of {assetId, qty}) is the
+   only place the asset<->level link is stored, now with an instance count since some assets are
+   placed multiple times in the same level. The Asset drawer's "Used in these levels" checklist
+   edits that same array (toggling this asset's id into/out of each level at qty 1), so there's
+   never a second copy of the relationship that could drift out of sync. Level totals (polygons,
+   texture count) are always computed live — never stored redundantly. Polygons scale with
+   instance count; texture maps are counted once per asset (materials are shared across instances). */
+const TEXTURE_MAP_TYPES = ["Albedo","Metallic","Smoothness","Normal","Height"];
+function assetTextureCount(a){ return (a?.textureMaps||[]).length; }
+function levelAssetUsage(level){
+  const usage = (level && level.assetUsage) || [];
+  return usage.map(u=>({ asset: state.assets.find(a=>a.id===u.assetId), qty: u.qty||1 })).filter(u=>u.asset);
+}
+function assetLevelQty(level, assetId){
+  const u = ((level && level.assetUsage) || []).find(u=>u.assetId===assetId);
+  return u ? u.qty : 0;
 }
 function levelTotals(level){
-  const assets = levelAssets(level);
+  const usage = levelAssetUsage(level);
   return {
-    count: assets.length,
-    polys: assets.reduce((s,a)=>s+(Number(a.polyCount)||0),0),
-    textureMB: assets.reduce((s,a)=>s+(Number(a.textureMB)||0),0)
+    count: usage.length,
+    instances: usage.reduce((s,u)=>s+u.qty,0),
+    polys: usage.reduce((s,u)=>s+(Number(u.asset.polyCount)||0)*u.qty,0),
+    textures: usage.reduce((s,u)=>s+assetTextureCount(u.asset),0)
   };
 }
 function assetLevels(assetId){
-  return state.levels.filter(l=>(l.assetIds||[]).includes(assetId));
+  return state.levels.filter(l=>(l.assetUsage||[]).some(u=>u.assetId===assetId));
 }
 function budgetBar(current, target){
   if(!target) return `<span class="faint" style="font-size:12px">${fmtNum(current)} (no target set)</span>`;
@@ -2136,47 +2145,88 @@ function budgetBar(current, target){
 function fmtNum(n){ return (Number(n)||0).toLocaleString(); }
 
 /* ---- Assets page ---- */
+let pendingAssetImage; // undefined = unchanged, null = removed, dataURL string = new image
 function renderAssetsView(){
   if(state.assets.length===0){
-    return `<div class="empty-state"><div class="display">No assets yet</div>Add the 3D assets your team is building, with their polygon count and texture size, to track a budget per level.</div>`;
+    return `<div class="empty-state"><div class="display">No assets yet</div>Add the 3D assets your team is building, with their polygon count and texture maps, to track a budget per level.</div>`;
   }
   const rows = state.assets.map(a=>{
     const color = ASSET_CATEGORY_COLOR[a.category] || '#6B7280';
     const usedIn = assetLevels(a.id);
+    const texCount = assetTextureCount(a);
     return `<tr class="taskrow">
-      <td><span class="taskname" onclick="openAssetDrawer('${a.id}')">${esc(a.name)}</span></td>
+      <td><div class="row" style="gap:8px;align-items:center">${a.image?`<img src="${esc(a.image)}" style="width:28px;height:28px;object-fit:cover;border-radius:6px;border:1px solid var(--line)">`:''}<span class="taskname" onclick="openAssetDrawer('${a.id}')">${esc(a.name)}</span></div></td>
       <td><span class="tagpill" style="background:${color}29;color:${color};border:1px solid ${color}66">${esc(a.category||'—')}</span></td>
+      <td class="faint" style="font-size:12px">${esc(a.fileName||'—')}</td>
       <td>${fmtNum(a.polyCount)}</td>
-      <td>${a.textureMB?fmtNum(a.textureMB)+' MB':'—'}</td>
+      <td>${texCount ? texCount+' map'+(texCount===1?'':'s') : '—'}</td>
       <td>${usedIn.length ? usedIn.map(l=>`<span class="tasklisttag">${esc(l.name)}</span>`).join(' ') : '<span class="faint" style="font-size:12px">Not used in a level yet</span>'}</td>
     </tr>`;
   }).join('');
   return `<table class="ttable"><thead><tr>
-    <th>Asset</th><th>Category</th><th>Polygons</th><th>Texture size</th><th>Used in</th>
+    <th>Asset</th><th>Category</th><th>File</th><th>Polygons</th><th>Textures</th><th>Used in</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
 function openNewAssetDrawer(){ openAssetDrawer(null); }
 function openAssetDrawer(id){
+  pendingAssetImage = undefined;
   document.getElementById('overlay').classList.add('open');
   const drawer = document.getElementById('drawer');
   drawer.classList.add('open');
   drawer.innerHTML = renderAssetDrawerContent(id);
 }
+function handleAssetImagePick(evt){
+  const file = evt.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    pendingAssetImage = reader.result;
+    const preview = document.getElementById('asset-image-preview');
+    if(preview) preview.innerHTML = `<img src="${reader.result}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`;
+  };
+  reader.readAsDataURL(file);
+}
+function clearAssetImage(){
+  pendingAssetImage = null;
+  const preview = document.getElementById('asset-image-preview');
+  if(preview) preview.innerHTML = '<div class="faint" style="font-size:12px">No image</div>';
+}
+function updateAssetTexCountPreview(){
+  const n = document.querySelectorAll('#drawer input[data-texmap]:checked').length;
+  const el = document.getElementById('asset-tex-count-preview');
+  if(el) el.textContent = `${n} texture${n===1?'':'s'} needed`;
+}
 function renderAssetDrawerContent(id){
   const a = id ? state.assets.find(x=>x.id===id) : null;
   const usedLevelIds = a ? (assetLevels(a.id).map(l=>l.id)) : [];
+  const maps = a?.textureMaps || [];
   return `<div class="drawer-head">
       <div><h2 style="margin:0;font-size:17px">${a?'Edit asset':'New asset'}</h2></div>
       <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
     </div>
     <div class="drawer-body">
       <div class="field"><label>Name</label><input id="asset-name" value="${esc(a?.name||'')}" placeholder="e.g. Reception Desk"></div>
-      <div class="field"><label>Category</label>
-        <select id="asset-category">${ASSET_CATEGORIES.map(c=>`<option value="${c}" ${a?.category===c?'selected':''}>${c}</option>`).join('')}</select>
-      </div>
       <div class="field-row">
-        <div class="field"><label>Polygons</label><input id="asset-polys" type="number" min="0" step="1" value="${a?.polyCount||''}" placeholder="0"></div>
-        <div class="field"><label>Texture size (MB)</label><input id="asset-tex" type="number" min="0" step="0.1" value="${a?.textureMB||''}" placeholder="0"></div>
+        <div class="field"><label>Category</label>
+          <select id="asset-category">${ASSET_CATEGORIES.map(c=>`<option value="${c}" ${a?.category===c?'selected':''}>${c}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Asset file name <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label><input id="asset-filename" value="${esc(a?.fileName||'')}" placeholder="e.g. desk_v3.fbx"></div>
+      </div>
+      <div class="field"><label>Polygons</label><input id="asset-polys" type="number" min="0" step="1" value="${a?.polyCount||''}" placeholder="0"></div>
+      <div class="field"><label>Texture maps</label>
+        <div class="row" style="gap:12px;flex-wrap:wrap">${TEXTURE_MAP_TYPES.map(m=>`
+          <label class="row" style="gap:5px;align-items:center;font-size:13px;font-weight:400;text-transform:none">
+            <input type="checkbox" data-texmap="${m}" onchange="updateAssetTexCountPreview()" ${maps.includes(m)?'checked':''}> ${m}
+          </label>`).join('')}
+        </div>
+        <div class="faint" style="font-size:12px;margin-top:6px" id="asset-tex-count-preview">${maps.length} texture${maps.length===1?'':'s'} needed</div>
+      </div>
+      <div class="field"><label>Image <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label>
+        <div class="row" style="gap:10px;align-items:center">
+          <div id="asset-image-preview">${a?.image?`<img src="${esc(a.image)}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`:'<div class="faint" style="font-size:12px">No image</div>'}</div>
+          <input type="file" accept="image/*" id="asset-image-file" onchange="handleAssetImagePick(event)">
+          ${a?.image?`<button type="button" class="btn btn-sm btn-ghost" onclick="clearAssetImage()">Remove</button>`:''}
+        </div>
       </div>
       <div class="field"><label>Notes</label><textarea id="asset-notes" rows="3" placeholder="Optional">${esc(a?.notes||'')}</textarea></div>
       <div class="field"><label>Used in these levels</label>
@@ -2196,13 +2246,16 @@ function renderAssetDrawerContent(id){
 async function saveAssetForm(editingId){
   const name = document.getElementById('asset-name').value.trim();
   if(!name){ toast('Name is required'); return; }
+  const textureMaps = [...document.querySelectorAll('#drawer input[data-texmap]:checked')].map(el=>el.dataset.texmap);
   const fields = {
     name,
     category: document.getElementById('asset-category').value,
+    fileName: document.getElementById('asset-filename').value.trim(),
     polyCount: parseInt(document.getElementById('asset-polys').value)||0,
-    textureMB: parseFloat(document.getElementById('asset-tex').value)||0,
+    textureMaps,
     notes: document.getElementById('asset-notes').value.trim()
   };
+  if(pendingAssetImage !== undefined) fields.image = pendingAssetImage || '';
   const checkedLevelIds = [...document.querySelectorAll('#drawer input[data-level-id]:checked')].map(el=>el.dataset.levelId);
   let assetId = editingId;
   if(editingId){
@@ -2213,15 +2266,16 @@ async function saveAssetForm(editingId){
     state.assets.push(Object.assign({id: assetId}, fields));
   }
   await saveAssets();
-  // sync the level<->asset links from whatever's checked right now
+  // sync the level<->asset links from whatever's checked right now (new links default to qty 1)
   state.levels.forEach(l=>{
-    if(!l.assetIds) l.assetIds = [];
+    if(!l.assetUsage) l.assetUsage = [];
     const shouldBeIn = checkedLevelIds.includes(l.id);
-    const isIn = l.assetIds.includes(assetId);
-    if(shouldBeIn && !isIn) l.assetIds.push(assetId);
-    if(!shouldBeIn && isIn) l.assetIds = l.assetIds.filter(x=>x!==assetId);
+    const idx = l.assetUsage.findIndex(u=>u.assetId===assetId);
+    if(shouldBeIn && idx===-1) l.assetUsage.push({assetId, qty:1});
+    if(!shouldBeIn && idx!==-1) l.assetUsage.splice(idx,1);
   });
   await saveLevels();
+  pendingAssetImage = undefined;
   closeDrawer();
   render();
 }
@@ -2229,7 +2283,7 @@ async function deleteAsset(id){
   if(!confirm('Delete this asset? It will be removed from any level using it.')) return;
   state.assets = state.assets.filter(a=>a.id!==id);
   await saveAssets();
-  state.levels.forEach(l=>{ if(l.assetIds) l.assetIds = l.assetIds.filter(x=>x!==id); });
+  state.levels.forEach(l=>{ if(l.assetUsage) l.assetUsage = l.assetUsage.filter(u=>u.assetId!==id); });
   await saveLevels();
   closeDrawer();
   render();
@@ -2238,17 +2292,17 @@ async function deleteAsset(id){
 /* ---- Levels page ---- */
 function renderLevelsView(){
   if(state.levels.length===0){
-    return `<div class="empty-state"><div class="display">No levels yet</div>Create a level, then check off which assets belong to it to see its running polygon/texture budget.</div>`;
+    return `<div class="empty-state"><div class="display">No levels yet</div>Create a level, then set how many of each asset it uses to see its running polygon/texture budget.</div>`;
   }
   const cards = state.levels.map(l=>{
     const totals = levelTotals(l);
     return `<div class="card" style="cursor:pointer" onclick="openLevelDrawer('${l.id}')">
       <div class="row" style="justify-content:space-between;align-items:start">
         <div><b>${esc(l.name)}</b>${l.description?`<div class="faint" style="font-size:12px;margin-top:2px">${esc(l.description)}</div>`:''}</div>
-        <span class="faint" style="font-size:12px">${totals.count} asset${totals.count===1?'':'s'}</span>
+        <span class="faint" style="font-size:12px">${totals.count} asset${totals.count===1?'':'s'} · ${totals.instances} instance${totals.instances===1?'':'s'}</span>
       </div>
       <div style="margin-top:10px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Polygons</label>${budgetBar(totals.polys, l.budgetPolys)}</div>
-      <div style="margin-top:8px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Textures (MB)</label>${budgetBar(totals.textureMB, l.budgetTextureMB)}</div>
+      <div style="margin-top:8px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Textures</label>${budgetBar(totals.textures, l.budgetTextures)}</div>
     </div>`;
   }).join('');
   return `<div class="dash-grid">${cards}</div>`;
@@ -2262,8 +2316,7 @@ function openLevelDrawer(id){
 }
 function renderLevelDrawerContent(id){
   const l = id ? state.levels.find(x=>x.id===id) : null;
-  const totals = l ? levelTotals(l) : {polys:0, textureMB:0, count:0};
-  const checkedIds = l ? (l.assetIds||[]) : [];
+  const totals = l ? levelTotals(l) : {polys:0, textures:0, count:0, instances:0};
   return `<div class="drawer-head">
       <div><h2 style="margin:0;font-size:17px">${l?'Edit level':'New level'}</h2></div>
       <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
@@ -2273,19 +2326,22 @@ function renderLevelDrawerContent(id){
       <div class="field"><label>Description</label><textarea id="level-desc" rows="2" placeholder="Optional">${esc(l?.description||'')}</textarea></div>
       <div class="field-row">
         <div class="field"><label>Polygon target <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label><input id="level-budget-polys" type="number" min="0" step="1" value="${l?.budgetPolys||''}" placeholder="No target"></div>
-        <div class="field"><label>Texture target (MB) <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label><input id="level-budget-tex" type="number" min="0" step="0.1" value="${l?.budgetTextureMB||''}" placeholder="No target"></div>
+        <div class="field"><label>Texture target <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label><input id="level-budget-tex" type="number" min="0" step="1" value="${l?.budgetTextures||''}" placeholder="No target"></div>
       </div>
       ${l?`<div class="field">
         <label>Current total</label>
         <div style="margin-bottom:6px">${budgetBar(totals.polys, l.budgetPolys)}</div>
-        <div>${budgetBar(totals.textureMB, l.budgetTextureMB)}</div>
+        <div>${budgetBar(totals.textures, l.budgetTextures)}</div>
       </div>`:''}
-      <div class="field"><label>Assets used in this level</label>
-        <div class="manage-list">${state.assets.length ? state.assets.map(a=>`
-          <div class="dash-task-row">
-            <span>${esc(a.name)} <span class="faint" style="font-size:11px">(${fmtNum(a.polyCount)} polys${a.textureMB?', '+fmtNum(a.textureMB)+' MB':''})</span></span>
-            <input type="checkbox" data-asset-id="${a.id}" ${checkedIds.includes(a.id)?'checked':''}>
-          </div>`).join('') : '<div class="faint" style="font-size:12px">No assets yet — create one on the Assets page</div>'}
+      <div class="field"><label>Assets used in this level <span class="faint" style="text-transform:none;font-weight:400">(quantity — some assets are placed more than once)</span></label>
+        <div class="manage-list">${state.assets.length ? state.assets.map(a=>{
+          const qty = assetLevelQty(l, a.id);
+          const texCount = assetTextureCount(a);
+          return `<div class="dash-task-row">
+            <span>${esc(a.name)} <span class="faint" style="font-size:11px">(${fmtNum(a.polyCount)} polys${texCount?', '+texCount+' tex':''})</span></span>
+            <input type="number" min="0" step="1" data-asset-id="${a.id}" value="${qty||''}" placeholder="0" style="width:56px;text-align:center">
+          </div>`;
+        }).join('') : '<div class="faint" style="font-size:12px">No assets yet — create one on the Assets page</div>'}
         </div>
       </div>
       <div class="row" style="justify-content:space-between;margin-top:14px">
@@ -2297,13 +2353,15 @@ function renderLevelDrawerContent(id){
 async function saveLevelForm(editingId){
   const name = document.getElementById('level-name').value.trim();
   if(!name){ toast('Name is required'); return; }
-  const assetIds = [...document.querySelectorAll('#drawer input[data-asset-id]:checked')].map(el=>el.dataset.assetId);
+  const assetUsage = [...document.querySelectorAll('#drawer input[data-asset-id]')]
+    .map(el=>({assetId: el.dataset.assetId, qty: parseInt(el.value)||0}))
+    .filter(u=>u.qty>0);
   const fields = {
     name,
     description: document.getElementById('level-desc').value.trim(),
     budgetPolys: parseInt(document.getElementById('level-budget-polys').value)||null,
-    budgetTextureMB: parseFloat(document.getElementById('level-budget-tex').value)||null,
-    assetIds
+    budgetTextures: parseInt(document.getElementById('level-budget-tex').value)||null,
+    assetUsage
   };
   if(editingId){
     const l = state.levels.find(x=>x.id===editingId);
