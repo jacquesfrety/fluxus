@@ -1963,8 +1963,11 @@ async function createTask(){
 }
 
 /* ============================= KANBAN VIEW ============================= */
+// same statuses as everywhere else, just reordered so the board reads left-to-right as a pipeline
+// ending in "Completed" — other views (filters, reports) keep STATUSES' own order.
+const KANBAN_COLUMN_ORDER = ["Not Started","In Progress","In Review","Needs Revision","On Hold","Completed"];
 function renderKanbanView(){
-  return `<div class="kanban">${STATUSES.map(s=>{
+  return `<div class="kanban">${KANBAN_COLUMN_ORDER.map(s=>{
     const items = state.tasks.filter(t=>t.status===s);
     return `<div class="kcol">
       <div class="kcol-head" style="background:${STATUS_COLOR[s]};color:#0F1216">
