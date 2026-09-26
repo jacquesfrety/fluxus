@@ -2409,14 +2409,14 @@ function renderLevelsView(){
     return `<div class="card" style="cursor:pointer" onclick="openLevelDrawer('${l.id}')">
       <div class="row" style="justify-content:space-between;align-items:start">
         <div><b>${esc(l.name)}</b>${l.description?`<div class="faint" style="font-size:12px;margin-top:2px">${esc(l.description)}</div>`:''}</div>
-        <span class="faint" style="font-size:12px">${totals.count} asset${totals.count===1?'':'s'} · ${totals.instances} instance${totals.instances===1?'':'s'}</span>
+        <span class="faint" style="font-size:12px">${totals.count} asset${totals.count===1?'':'s'} · ${totals.instances} instance${totals.instances===1?'':'s'} · ${totals.textures} texture${totals.textures===1?'':'s'}</span>
       </div>
       <div style="margin-top:10px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Polygons</label>${budgetBar(totals.polys, l.budgetPolys)}</div>
-      <div style="margin-top:8px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Textures</label>${budgetBar(totals.textures, l.budgetTextures)}</div>
+      <div style="margin-top:8px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Textures used: ${totals.textures}</label>${budgetBar(totals.textures, l.budgetTextures)}</div>
       ${levelAssetThumbsStrip(l)}
     </div>`;
   }).join('');
-  return `<div class="dash-grid">${cards}</div>`;
+  return `<div style="display:flex;flex-direction:column;gap:14px">${cards}</div>`;
 }
 function openNewLevelDrawer(){ openLevelDrawer(null); }
 function openLevelDrawer(id){
