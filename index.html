@@ -2290,8 +2290,10 @@ function openAssetDrawer(id){
   drawer.innerHTML = renderAssetDrawerContent(id);
 }
 function isHeicFile(file){
+  // Works for both a picked <input type=file> File (file.type) and a Drive file-metadata object (file.mimeType)
   const name = (file.name||'').toLowerCase();
-  return file.type==='image/heic' || file.type==='image/heif' || name.endsWith('.heic') || name.endsWith('.heif');
+  const mt = file.type || file.mimeType || '';
+  return mt==='image/heic' || mt==='image/heif' || name.endsWith('.heic') || name.endsWith('.heif');
 }
 let heic2anyLoadPromise = null;
 function loadHeic2Any(){
@@ -3656,7 +3658,19 @@ async function openDriveMedia(f, kind){
   try{
     const res = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, { headers: driveHeaders() });
     if(!res.ok) throw new Error('fetch failed: '+res.status);
-    const blob = await res.blob();
+    let blob = await res.blob();
+    // Browsers can't decode HEIC/HEIF (the default iPhone photo format) in an <img>/<video>, so
+    // convert it to a JPEG in-browser first — same conversion used for the Asset image upload.
+    if(kind === 'image' && isHeicFile(f)){
+      try{
+        await loadHeic2Any();
+        const converted = await window.heic2any({ blob, toType: 'image/jpeg', quality: 0.85 });
+        blob = Array.isArray(converted) ? converted[0] : converted;
+      }catch(convErr){
+        console.error('HEIC conversion failed for Drive image', convErr);
+        toast('Could not convert this HEIC photo for preview');
+      }
+    }
     const url = URL.createObjectURL(blob);
     currentDriveMediaUrl = url;
     content.innerHTML = kind === 'video'
