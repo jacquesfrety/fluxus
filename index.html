@@ -1149,8 +1149,8 @@ const TITLES = {team:["Team","Everyone working on this project"], tasks:["Tasks"
 function renderNav(){
   const nav = document.getElementById('nav');
   nav.innerHTML = NAV.filter(n=>!n.supervisorOnly || isSupervisor()).map(n=>`
-    <button class="nav-btn ${state.view===n.id?'active':''}" onclick="setView('${n.id}')" ${n.wip?'style="color:#F2C230"':''}>
-      <span class="nav-icon" ${n.wip?'style="color:#F2C230"':''}>${n.icon}</span>${n.label}${n.wip?' <span style="font-size:10px;opacity:.85">(WIP)</span>':''}
+    <button class="nav-btn ${state.view===n.id?'active':''}" onclick="setView('${n.id}')" ${n.wip?'style="color:#A8821B"':''}>
+      <span class="nav-icon" ${n.wip?'style="color:#A8821B"':''}>${n.icon}</span>${n.label}${n.wip?' <span style="font-size:10px;opacity:.85">(WIP)</span>':''}
     </button>`).join('');
 }
 function renderWhoAmI(){
@@ -2129,8 +2129,27 @@ function levelTotals(level){
     count: usage.length,
     instances: usage.reduce((s,u)=>s+u.qty,0),
     polys: usage.reduce((s,u)=>s+(Number(u.asset.polyCount)||0)*u.qty,0),
-    textures: usage.reduce((s,u)=>s+assetTextureCount(u.asset),0)
+    textures: usage.reduce((s,u)=>s+assetTextureCount(u.asset),0),
+    // Draw-call ESTIMATE, not a profiler measurement. Two bounds, per Unity 6 URP/Quest 3 (OpenXR, Vulkan) behavior:
+    // - "worst case": no batching at all — one draw call per material slot per placed instance.
+    // - "best case": every repeat of the same asset merges into one draw call per its material slot, which is
+    //   what Unity's GPU Instancing / SRP Batcher and (for static, non-moving props) Static Batching can achieve
+    //   when all instances share the same mesh+material and the shader supports instancing.
+    // Real numbers land between these depending on how the scene is actually authored (static flags, shader
+    // variants, transparency/sorting breaking batches, per-instance material overrides, etc).
+    drawCallsWorst: usage.reduce((s,u)=>s+(Number(u.asset.materialSlots)||1)*u.qty,0),
+    drawCallsBest: usage.reduce((s,u)=>s+(Number(u.asset.materialSlots)||1),0)
   };
+}
+function drawCallsRow(totals){
+  return `<div style="margin-top:8px">
+    <label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Estimated draw calls <span title="Best case assumes GPU Instancing/Static Batching merges every repeat of the same asset into one draw call per material slot. Worst case assumes no batching at all. Actual result depends on how the scene is authored (static flags, shared materials, transparency, per-instance overrides).">ⓘ</span></label>
+    <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:13px"><b style="color:var(--teal)">${fmtNum(totals.drawCallsBest)}</b> <span class="faint" style="font-size:11px">best case</span></span>
+      <span class="faint">–</span>
+      <span style="font-size:13px"><b style="color:var(--red)">${fmtNum(totals.drawCallsWorst)}</b> <span class="faint" style="font-size:11px">worst case</span></span>
+    </div>
+  </div>`;
 }
 function assetLevels(assetId){
   return state.levels.filter(l=>(l.assetUsage||[]).some(u=>u.assetId===assetId));
@@ -2192,6 +2211,7 @@ function renderAssetsView(){
     return `<tr class="taskrow">
       <td><div class="row" style="gap:8px;align-items:center">${assetThumb(a, 28)}<span class="taskname" onclick="openAssetDrawer('${a.id}')">${esc(a.name)}</span></div></td>
       <td><input type="number" class="inline-edit" min="0" step="1" style="width:90px;max-width:90px" value="${a.polyCount||''}" placeholder="0" onchange="updateAssetField('${a.id}','polyCount',parseInt(this.value)||0)"></td>
+      <td><input type="number" class="inline-edit" min="1" step="1" style="width:70px;max-width:70px" value="${a.materialSlots||1}" placeholder="1" onchange="updateAssetField('${a.id}','materialSlots',parseInt(this.value)||1)"></td>
       <td>
         <div class="row" style="gap:8px;flex-wrap:wrap;max-width:220px">${TEXTURE_MAP_TYPES.map(m=>{
           const checked = (a.textureMaps||[]).includes(m);
@@ -2222,7 +2242,7 @@ function renderAssetsView(){
     </tr>`;
   }).join('');
   return modeSwitch + `<table class="ttable"><thead><tr>
-    <th>Asset</th><th>Triangles</th><th>Textures</th><th>Category</th><th>Used in</th><th>File name</th><th>Format</th>
+    <th>Asset</th><th>Triangles</th><th>Mat. slots</th><th>Textures</th><th>Category</th><th>Used in</th><th>File name</th><th>Format</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
 function openNewAssetDrawer(){ openAssetDrawer(null); }
@@ -2277,7 +2297,10 @@ function renderAssetDrawerContent(id){
           </label>`).join('')}
         </div>
       </div>
-      <div class="field"><label>Triangles</label><input id="asset-polys" type="number" min="0" step="1" value="${a?.polyCount||''}" placeholder="0"></div>
+      <div class="field-row">
+        <div class="field"><label>Triangles</label><input id="asset-polys" type="number" min="0" step="1" value="${a?.polyCount||''}" placeholder="0"></div>
+        <div class="field"><label>Material slots <span class="faint" style="text-transform:none;font-weight:400">(for draw-call estimate)</span></label><input id="asset-matslots" type="number" min="1" step="1" value="${a?.materialSlots||1}" placeholder="1"></div>
+      </div>
       <div class="field"><label>Texture maps</label>
         <div class="row" style="gap:12px;flex-wrap:wrap">${TEXTURE_MAP_TYPES.map(m=>`
           <label class="row" style="gap:5px;align-items:center;font-size:13px;font-weight:400;text-transform:none">
@@ -2352,6 +2375,7 @@ async function saveAssetForm(editingId){
     fileName: document.getElementById('asset-filename').value.trim(),
     fileFormats,
     polyCount: parseInt(document.getElementById('asset-polys').value)||0,
+    materialSlots: parseInt(document.getElementById('asset-matslots').value)||1,
     textureMaps,
     notes: document.getElementById('asset-notes').value.trim()
   };
@@ -2413,6 +2437,7 @@ function renderLevelsView(){
       </div>
       <div style="margin-top:10px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Polygons</label>${budgetBar(totals.polys, l.budgetPolys)}</div>
       <div style="margin-top:8px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Textures used: ${totals.textures}</label>${budgetBar(totals.textures, l.budgetTextures)}</div>
+      ${drawCallsRow(totals)}
       ${levelAssetThumbsStrip(l)}
     </div>`;
   }).join('');
@@ -2443,6 +2468,7 @@ function renderLevelDrawerContent(id){
         <label>Current total</label>
         <div style="margin-bottom:6px">${budgetBar(totals.polys, l.budgetPolys)}</div>
         <div>${budgetBar(totals.textures, l.budgetTextures)}</div>
+        ${drawCallsRow(totals)}
         ${levelAssetThumbsStrip(l)}
       </div>`:''}
       <div class="field"><label>Assets used in this level <span class="faint" style="text-transform:none;font-weight:400">(quantity — some assets are placed more than once)</span></label>
