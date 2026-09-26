@@ -883,6 +883,7 @@ let state = {
   drawColor: 'red',
   assets: [],
   levels: [],
+  assetsViewMode: lsGet('assetsViewMode', 'list'),
 };
 
 function uid(prefix){ return prefix + Math.random().toString(36).slice(2,7); }
@@ -2146,16 +2147,46 @@ function fmtNum(n){ return (Number(n)||0).toLocaleString(); }
 
 /* ---- Assets page ---- */
 let pendingAssetImage; // undefined = unchanged, null = removed, dataURL string = new image
+function setAssetsViewMode(mode){
+  state.assetsViewMode = mode;
+  lsSet('assetsViewMode', mode);
+  render();
+}
+function assetThumb(a, size){
+  size = size || 40;
+  if(a.image) return `<img src="${esc(a.image)}" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:6px;border:1px solid var(--line)">`;
+  const color = ASSET_CATEGORY_COLOR[a.category] || '#6B7280';
+  return `<div style="width:${size}px;height:${size}px;border-radius:6px;background:${color}29;border:1px solid ${color}66;display:flex;align-items:center;justify-content:center;color:${color};font-size:${Math.round(size*0.45)}px">▢</div>`;
+}
 function renderAssetsView(){
+  const modeSwitch = `<div class="row" style="gap:6px;margin-bottom:14px">
+    <button class="btn btn-sm ${state.assetsViewMode==='list'?'btn-gold':'btn-ghost'}" onclick="setAssetsViewMode('list')">☰ List</button>
+    <button class="btn btn-sm ${state.assetsViewMode==='thumbs'?'btn-gold':'btn-ghost'}" onclick="setAssetsViewMode('thumbs')">▦ Thumbnails</button>
+  </div>`;
   if(state.assets.length===0){
-    return `<div class="empty-state"><div class="display">No assets yet</div>Add the 3D assets your team is building, with their polygon count and texture maps, to track a budget per level.</div>`;
+    return modeSwitch + `<div class="empty-state"><div class="display">No assets yet</div>Add the 3D assets your team is building, with their polygon count and texture maps, to track a budget per level.</div>`;
+  }
+  if(state.assetsViewMode==='thumbs'){
+    const cards = state.assets.map(a=>{
+      const color = ASSET_CATEGORY_COLOR[a.category] || '#6B7280';
+      const usedIn = assetLevels(a.id);
+      const texCount = assetTextureCount(a);
+      return `<div class="card" style="cursor:pointer" onclick="openAssetDrawer('${a.id}')">
+        <div class="row" style="justify-content:center;margin-bottom:10px">${assetThumb(a, 96)}</div>
+        <div style="text-align:center"><b>${esc(a.name)}</b></div>
+        <div class="row" style="justify-content:center;margin-top:6px"><span class="tagpill" style="background:${color}29;color:${color};border:1px solid ${color}66">${esc(a.category||'—')}</span></div>
+        <div class="faint" style="font-size:12px;text-align:center;margin-top:8px">${fmtNum(a.polyCount)} polys${texCount?' · '+texCount+' tex':''}</div>
+        <div style="text-align:center;margin-top:6px">${usedIn.length ? usedIn.map(l=>`<span class="tasklisttag">${esc(l.name)}</span>`).join(' ') : '<span class="faint" style="font-size:12px">Not used in a level yet</span>'}</div>
+      </div>`;
+    }).join('');
+    return modeSwitch + `<div class="dash-grid">${cards}</div>`;
   }
   const rows = state.assets.map(a=>{
     const color = ASSET_CATEGORY_COLOR[a.category] || '#6B7280';
     const usedIn = assetLevels(a.id);
     const texCount = assetTextureCount(a);
     return `<tr class="taskrow">
-      <td><div class="row" style="gap:8px;align-items:center">${a.image?`<img src="${esc(a.image)}" style="width:28px;height:28px;object-fit:cover;border-radius:6px;border:1px solid var(--line)">`:''}<span class="taskname" onclick="openAssetDrawer('${a.id}')">${esc(a.name)}</span></div></td>
+      <td><div class="row" style="gap:8px;align-items:center">${assetThumb(a, 28)}<span class="taskname" onclick="openAssetDrawer('${a.id}')">${esc(a.name)}</span></div></td>
       <td><span class="tagpill" style="background:${color}29;color:${color};border:1px solid ${color}66">${esc(a.category||'—')}</span></td>
       <td class="faint" style="font-size:12px">${esc(a.fileName||'—')}</td>
       <td>${fmtNum(a.polyCount)}</td>
@@ -2163,7 +2194,7 @@ function renderAssetsView(){
       <td>${usedIn.length ? usedIn.map(l=>`<span class="tasklisttag">${esc(l.name)}</span>`).join(' ') : '<span class="faint" style="font-size:12px">Not used in a level yet</span>'}</td>
     </tr>`;
   }).join('');
-  return `<table class="ttable"><thead><tr>
+  return modeSwitch + `<table class="ttable"><thead><tr>
     <th>Asset</th><th>Category</th><th>File</th><th>Polygons</th><th>Textures</th><th>Used in</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
@@ -2290,6 +2321,16 @@ async function deleteAsset(id){
 }
 
 /* ---- Levels page ---- */
+function levelAssetThumbsStrip(level){
+  const usage = levelAssetUsage(level);
+  if(!usage.length) return '';
+  return `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">${usage.map(u=>`
+    <div style="position:relative" title="${esc(u.asset.name)}">
+      ${assetThumb(u.asset, 36)}
+      ${u.qty>1?`<span style="position:absolute;bottom:-5px;right:-5px;background:var(--gold,#D9A441);color:#1a1a1a;font-size:10px;font-weight:700;border-radius:8px;padding:1px 5px;line-height:1.3;border:1px solid var(--bg,#111)">×${u.qty}</span>`:''}
+    </div>`).join('')}
+  </div>`;
+}
 function renderLevelsView(){
   if(state.levels.length===0){
     return `<div class="empty-state"><div class="display">No levels yet</div>Create a level, then set how many of each asset it uses to see its running polygon/texture budget.</div>`;
@@ -2303,6 +2344,7 @@ function renderLevelsView(){
       </div>
       <div style="margin-top:10px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Polygons</label>${budgetBar(totals.polys, l.budgetPolys)}</div>
       <div style="margin-top:8px"><label class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Textures</label>${budgetBar(totals.textures, l.budgetTextures)}</div>
+      ${levelAssetThumbsStrip(l)}
     </div>`;
   }).join('');
   return `<div class="dash-grid">${cards}</div>`;
@@ -2332,6 +2374,7 @@ function renderLevelDrawerContent(id){
         <label>Current total</label>
         <div style="margin-bottom:6px">${budgetBar(totals.polys, l.budgetPolys)}</div>
         <div>${budgetBar(totals.textures, l.budgetTextures)}</div>
+        ${levelAssetThumbsStrip(l)}
       </div>`:''}
       <div class="field"><label>Assets used in this level <span class="faint" style="text-transform:none;font-weight:400">(quantity — some assets are placed more than once)</span></label>
         <div class="manage-list">${state.assets.length ? state.assets.map(a=>{
