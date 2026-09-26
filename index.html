@@ -1131,8 +1131,8 @@ const NAV = [
   {id:'timeline', label:'Timeline', icon:'▤'},
   {id:'kanban', label:'Kanban', icon:'▦'},
   {id:'documents', label:'Documents', icon:'📁'},
-  {id:'assets', label:'Assets', icon:'⬡'},
-  {id:'levels', label:'Levels', icon:'▥'},
+  {id:'assets', label:'Assets', icon:'⬡', wip:true},
+  {id:'levels', label:'Levels', icon:'▥', wip:true},
   {id:'team', label:'Team', icon:'◐'},
   {id:'support', label:'PMS Support', icon:'⚙'},
   {id:'reports', label:'Reports', icon:'▣', supervisorOnly:true},
@@ -1149,8 +1149,8 @@ const TITLES = {team:["Team","Everyone working on this project"], tasks:["Tasks"
 function renderNav(){
   const nav = document.getElementById('nav');
   nav.innerHTML = NAV.filter(n=>!n.supervisorOnly || isSupervisor()).map(n=>`
-    <button class="nav-btn ${state.view===n.id?'active':''}" onclick="setView('${n.id}')">
-      <span class="nav-icon">${n.icon}</span>${n.label}
+    <button class="nav-btn ${state.view===n.id?'active':''}" onclick="setView('${n.id}')" ${n.wip?'style="color:#F2C230"':''}>
+      <span class="nav-icon" ${n.wip?'style="color:#F2C230"':''}>${n.icon}</span>${n.label}${n.wip?' <span style="font-size:10px;opacity:.85">(WIP)</span>':''}
     </button>`).join('');
 }
 function renderWhoAmI(){
@@ -2113,6 +2113,7 @@ async function deleteTaskListEntry(i){
    texture count) are always computed live — never stored redundantly. Polygons scale with
    instance count; texture maps are counted once per asset (materials are shared across instances). */
 const TEXTURE_MAP_TYPES = ["Albedo","Metallic","Smoothness","Normal","Height"];
+const FILE_FORMATS = [".ma",".fbx",".glb"];
 function assetTextureCount(a){ return (a?.textureMaps||[]).length; }
 function levelAssetUsage(level){
   const usage = (level && level.assetUsage) || [];
@@ -2171,11 +2172,13 @@ function renderAssetsView(){
       const color = ASSET_CATEGORY_COLOR[a.category] || '#6B7280';
       const usedIn = assetLevels(a.id);
       const texCount = assetTextureCount(a);
+      const formats = a.fileFormats||[];
       return `<div class="card" style="cursor:pointer" onclick="openAssetDrawer('${a.id}')">
         <div class="row" style="justify-content:center;margin-bottom:10px">${assetThumb(a, 96)}</div>
         <div style="text-align:center"><b>${esc(a.name)}</b></div>
         <div class="row" style="justify-content:center;margin-top:6px"><span class="tagpill" style="background:${color}29;color:${color};border:1px solid ${color}66">${esc(a.category||'—')}</span></div>
-        <div class="faint" style="font-size:12px;text-align:center;margin-top:8px">${fmtNum(a.polyCount)} polys${texCount?' · '+texCount+' tex':''}</div>
+        <div class="faint" style="font-size:12px;text-align:center;margin-top:8px">${fmtNum(a.polyCount)} tris${texCount?' · '+texCount+' tex':''}</div>
+        ${a.fileName?`<div class="faint" style="font-size:12px;text-align:center;margin-top:2px">${esc(a.fileName)}${formats.length?' ('+formats.join(', ')+')':''}</div>`:''}
         <div style="text-align:center;margin-top:6px">${usedIn.length ? usedIn.map(l=>`<span class="tasklisttag">${esc(l.name)}</span>`).join(' ') : '<span class="faint" style="font-size:12px">Not used in a level yet</span>'}</div>
       </div>`;
     }).join('');
@@ -2185,17 +2188,19 @@ function renderAssetsView(){
     const color = ASSET_CATEGORY_COLOR[a.category] || '#6B7280';
     const usedIn = assetLevels(a.id);
     const texCount = assetTextureCount(a);
+    const formats = a.fileFormats||[];
     return `<tr class="taskrow">
       <td><div class="row" style="gap:8px;align-items:center">${assetThumb(a, 28)}<span class="taskname" onclick="openAssetDrawer('${a.id}')">${esc(a.name)}</span></div></td>
-      <td><span class="tagpill" style="background:${color}29;color:${color};border:1px solid ${color}66">${esc(a.category||'—')}</span></td>
-      <td class="faint" style="font-size:12px">${esc(a.fileName||'—')}</td>
       <td>${fmtNum(a.polyCount)}</td>
       <td>${texCount ? texCount+' map'+(texCount===1?'':'s') : '—'}</td>
+      <td><span class="tagpill" style="background:${color}29;color:${color};border:1px solid ${color}66">${esc(a.category||'—')}</span></td>
       <td>${usedIn.length ? usedIn.map(l=>`<span class="tasklisttag">${esc(l.name)}</span>`).join(' ') : '<span class="faint" style="font-size:12px">Not used in a level yet</span>'}</td>
+      <td class="faint" style="font-size:12px">${esc(a.fileName||'—')}</td>
+      <td>${formats.length ? formats.map(f=>`<span class="tagpill">${esc(f)}</span>`).join(' ') : '<span class="faint" style="font-size:12px">—</span>'}</td>
     </tr>`;
   }).join('');
   return modeSwitch + `<table class="ttable"><thead><tr>
-    <th>Asset</th><th>Category</th><th>File</th><th>Polygons</th><th>Textures</th><th>Used in</th>
+    <th>Asset</th><th>Triangles</th><th>Textures</th><th>Category</th><th>Used in</th><th>File name</th><th>Format</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
 function openNewAssetDrawer(){ openAssetDrawer(null); }
@@ -2243,7 +2248,14 @@ function renderAssetDrawerContent(id){
         </div>
         <div class="field"><label>Asset file name <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label><input id="asset-filename" value="${esc(a?.fileName||'')}" placeholder="e.g. desk_v3.fbx"></div>
       </div>
-      <div class="field"><label>Polygons</label><input id="asset-polys" type="number" min="0" step="1" value="${a?.polyCount||''}" placeholder="0"></div>
+      <div class="field"><label>File format</label>
+        <div class="row" style="gap:12px;flex-wrap:wrap">${FILE_FORMATS.map(f=>`
+          <label class="row" style="gap:5px;align-items:center;font-size:13px;font-weight:400;text-transform:none">
+            <input type="checkbox" data-fileformat="${f}" ${(a?.fileFormats||[]).includes(f)?'checked':''}> ${f}
+          </label>`).join('')}
+        </div>
+      </div>
+      <div class="field"><label>Triangles</label><input id="asset-polys" type="number" min="0" step="1" value="${a?.polyCount||''}" placeholder="0"></div>
       <div class="field"><label>Texture maps</label>
         <div class="row" style="gap:12px;flex-wrap:wrap">${TEXTURE_MAP_TYPES.map(m=>`
           <label class="row" style="gap:5px;align-items:center;font-size:13px;font-weight:400;text-transform:none">
@@ -2278,10 +2290,12 @@ async function saveAssetForm(editingId){
   const name = document.getElementById('asset-name').value.trim();
   if(!name){ toast('Name is required'); return; }
   const textureMaps = [...document.querySelectorAll('#drawer input[data-texmap]:checked')].map(el=>el.dataset.texmap);
+  const fileFormats = [...document.querySelectorAll('#drawer input[data-fileformat]:checked')].map(el=>el.dataset.fileformat);
   const fields = {
     name,
     category: document.getElementById('asset-category').value,
     fileName: document.getElementById('asset-filename').value.trim(),
+    fileFormats,
     polyCount: parseInt(document.getElementById('asset-polys').value)||0,
     textureMaps,
     notes: document.getElementById('asset-notes').value.trim()
