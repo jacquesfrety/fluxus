@@ -1819,6 +1819,7 @@ function renderTasksView(){
   const filterBar = `<div class="filterbar">
     <input type="text" id="tasks-search-input" placeholder="Search tasks…" value="${esc(state.filters.search)}"
       oninput="state.filters.search=this.value;render()" style="min-width:180px">
+    <button class="btn btn-sm ${state.groupTasksByList?'btn-gold':'btn-ghost'}" onclick="toggleGroupTasksByList()">${state.groupTasksByList?'✓ ':''}Group by task list</button>
     <select onchange="state.filters.category=this.value;render()">
       <option value="">All categories</option>
       ${state.categories.map(c=>`<option value="${esc(c.name)}" ${state.filters.category===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
@@ -1837,7 +1838,6 @@ function renderTasksView(){
     </select>
     <button class="btn btn-ghost btn-sm" onclick="openManageCategories()">Manage categories</button>
     <button class="btn btn-ghost btn-sm" onclick="openManageTaskLists()">Manage task lists</button>
-    <button class="btn btn-sm ${state.groupTasksByList?'btn-gold':'btn-ghost'}" onclick="toggleGroupTasksByList()">${state.groupTasksByList?'✓ ':''}Group by task list</button>
   </div>`;
 
   if(tasks.length===0){
