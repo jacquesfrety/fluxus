@@ -2346,7 +2346,7 @@ async function handleAssetImagePick(evt){
     readImageFileAsDataURL(outBlob, preview);
   } catch(err){
     console.error('HEIC conversion failed', err);
-    if(preview) preview.innerHTML = `<div class="faint" style="font-size:12px;color:var(--red)">Couldn't convert this HEIC photo (${esc(err?.message||'unknown error')}). Try exporting it as JPEG/PNG first.</div>`;
+    if(preview) preview.innerHTML = `<div class="faint" style="font-size:12px;color:var(--red)">Couldn't convert this HEIC photo in-browser (${esc(err?.message||'unknown error')}) — this particular HEIC variant isn't supported by the converter. Export/share it as JPEG or PNG from your phone or computer first, then upload that instead.</div>`;
     toast('Could not convert HEIC photo: '+(err?.message||'unknown error'));
   }
 }
@@ -3668,21 +3668,24 @@ async function openDriveMedia(f, kind){
   if(nextBtn) nextBtn.style.visibility = (idx>=0 && idx<siblings.length-1) ? 'visible' : 'hidden';
 
   try{
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, { headers: driveHeaders() });
-    if(!res.ok) throw new Error('fetch failed: '+res.status);
-    let blob = await res.blob();
-    // Browsers can't decode HEIC/HEIF (the default iPhone photo format) in an <img>/<video>, so
-    // convert it to a JPEG/PNG in-browser first — same conversion used for the Asset image upload.
-    if(kind === 'image' && isHeicFile(f)){
-      try{
-        blob = await convertHeicBlob(blob);
-      }catch(convErr){
-        console.error('HEIC conversion failed for Drive image', convErr);
-        toast('Could not convert this HEIC photo: '+(convErr?.message||'unknown error'));
-      }
+    let url;
+    // Browsers can't decode HEIC/HEIF (the default iPhone photo format) directly in an <img>, and
+    // client-side HEIC decoders (heic2any/libheif-js) are unreliable across iPhone HEIC variants —
+    // some fail outright with ERR_LIBHEIF on photos from newer iPhones/iOS versions. Google Drive
+    // already auto-transcodes a viewable JPEG thumbnail for every image it stores (that's what the
+    // file-browser cards already show), so for HEIC images we skip fetching/decoding the original
+    // bytes ourselves entirely and just use Drive's own transcoded preview, upsized. Slightly capped
+    // resolution versus the true original, but far more reliable than a WASM decoder that keeps failing.
+    if(kind === 'image' && isHeicFile(f) && f.thumbnailLink){
+      url = driveThumbLarge(f.thumbnailLink, 2000);
+      currentDriveMediaUrl = null; // not a blob URL, nothing to revoke on close
+    } else {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, { headers: driveHeaders() });
+      if(!res.ok) throw new Error('fetch failed: '+res.status);
+      const blob = await res.blob();
+      url = URL.createObjectURL(blob);
+      currentDriveMediaUrl = url;
     }
-    const url = URL.createObjectURL(blob);
-    currentDriveMediaUrl = url;
     content.innerHTML = kind === 'video'
       ? `<video src="${url}" controls autoplay></video>`
       : kind === 'pdf'
