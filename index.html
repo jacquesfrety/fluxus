@@ -85,7 +85,7 @@
     color:var(--ink-dim);border-radius:6px;text-align:left;font-size:13.5px;font-weight:500;}
   .nav-btn:hover{background:var(--surface2);color:var(--ink);}
   .nav-btn.active{background:var(--surface2);color:var(--gold);}
-  .nav-icon{width:16px;text-align:center;opacity:.85;font-size:14px;}
+  .nav-icon{width:16px;text-align:center;opacity:1;font-size:14px;}
   .sidebar-foot{margin-top:auto;}
   .sidebar-foot-inner{padding-top:14px;border-top:1px solid var(--line);margin-top:10px;}
   .theme-toggle{display:flex;gap:4px;margin-top:10px;background:var(--surface2);border-radius:7px;padding:3px;}
@@ -1144,14 +1144,14 @@ function fmtDate(iso){
 /* ============================= render shell ============================= */
 const NAV = [
   {id:'dashboard', label:'Dashboard', icon:'🧭', group:'Project'},
-  {id:'tasks', label:'Tasks', icon:'☰', group:'Project'},
+  {id:'tasks', label:'Tasks', icon:'📋', group:'Project'},
   {id:'timeline', label:'Timeline', icon:'📅', group:'Project'},
   {id:'kanban', label:'Kanban', icon:'📊', group:'Project'},
   {id:'reports', label:'Reports', icon:'▣', supervisorOnly:true, group:'Project'},
   {id:'assets', label:'Assets', icon:'⬡', wip:true, group:'Assets'},
   {id:'levels', label:'Levels', icon:'▥', wip:true, group:'Assets'},
   {id:'documents', label:'Documents', icon:'📁', group:'Collaboration'},
-  {id:'team', label:'Team', icon:'◐', group:'Collaboration'},
+  {id:'team', label:'Team', icon:'🧑', group:'Collaboration'},
   {id:'support', label:'PMS Support', icon:'🎧', group:'Collaboration'},
 ];
 const TITLES = {team:["Team","Everyone working on this project"], tasks:["Tasks","The full list, grouped and filterable"],
