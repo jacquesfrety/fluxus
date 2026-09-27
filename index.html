@@ -1803,8 +1803,19 @@ async function saveTeamMember(id){
     if(m.role==='Supervisor' && role!=='Supervisor' && state.team.filter(x=>x.role==='Supervisor').length<=1){
       toast('Cannot change the last Supervisor\'s role — promote someone else first'); return;
     }
+    const oldName = m.name;
     Object.assign(m, {name, role, email, phone, notes});
     if(pendingAvatar) m.avatar = pendingAvatar;
+    if(oldName && oldName!==name){
+      let tasksTouched = false;
+      state.tasks.forEach(t=>{
+        if((t.assignees||[]).includes(oldName)){
+          t.assignees = t.assignees.map(a=>a===oldName?name:a);
+          tasksTouched = true;
+        }
+      });
+      if(tasksTouched) await saveTasks();
+    }
   } else {
     state.team.push({id:uid('u'), name, role, email, phone, notes, avatar: pendingAvatar || ''});
   }
