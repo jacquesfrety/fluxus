@@ -65,6 +65,8 @@
   .brand.editable:hover{background:var(--surface2);}
   .brand.editable:hover .brand-name{color:var(--gold);}
   .brand-mark{width:26px;height:26px;border-radius:6px;background:linear-gradient(135deg,var(--gold),var(--teal));
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:center;background-size:58%;
     flex:0 0 auto;}
   .brand-name{font-size:21px;font-weight:800;letter-spacing:.2px;color:var(--ink);
     overflow-wrap:break-word;word-break:break-word;line-height:1.2;}
@@ -1141,16 +1143,16 @@ function fmtDate(iso){
 
 /* ============================= render shell ============================= */
 const NAV = [
-  {id:'dashboard', label:'Dashboard', icon:'◈', group:'Project'},
+  {id:'dashboard', label:'Dashboard', icon:'🧭', group:'Project'},
   {id:'tasks', label:'Tasks', icon:'☰', group:'Project'},
-  {id:'timeline', label:'Timeline', icon:'▤', group:'Project'},
-  {id:'kanban', label:'Kanban', icon:'▦', group:'Project'},
+  {id:'timeline', label:'Timeline', icon:'📅', group:'Project'},
+  {id:'kanban', label:'Kanban', icon:'📊', group:'Project'},
   {id:'reports', label:'Reports', icon:'▣', supervisorOnly:true, group:'Project'},
   {id:'assets', label:'Assets', icon:'⬡', wip:true, group:'Assets'},
   {id:'levels', label:'Levels', icon:'▥', wip:true, group:'Assets'},
   {id:'documents', label:'Documents', icon:'📁', group:'Collaboration'},
   {id:'team', label:'Team', icon:'◐', group:'Collaboration'},
-  {id:'support', label:'PMS Support', icon:'⚙', group:'Collaboration'},
+  {id:'support', label:'PMS Support', icon:'🎧', group:'Collaboration'},
 ];
 const TITLES = {team:["Team","Everyone working on this project"], tasks:["Tasks","The full list, grouped and filterable"],
   kanban:["Kanban","Drag a card, or use the status menu"], timeline:["Timeline","Gantt-style view across the project"],
