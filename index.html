@@ -3095,8 +3095,13 @@ function renderDashboardView(){
   });
 
   const byDue = (a,b)=> (a.due||'9999-99-99').localeCompare(b.due||'9999-99-99');
-  const myCurrentTasks = tasks.filter(t=>(t.assignees||[]).includes(state.currentUser) && t.status!=='Completed').sort(byDue);
-  const teamCurrentTasks = tasks.filter(t=>t.status!=='Completed').sort(byDue);
+  const isCurrentWork = t=>{
+    if(t.status==='Completed' || t.status==='On Hold') return false;
+    if(t.start && t.start>todayISO()) return false; // not due to start yet
+    return true;
+  };
+  const myCurrentTasks = tasks.filter(t=>(t.assignees||[]).includes(state.currentUser) && isCurrentWork(t)).sort(byDue);
+  const teamCurrentTasks = tasks.filter(isCurrentWork).sort(byDue);
   const teamCurrentShown = teamCurrentTasks.slice(0,8);
   const lateTasks = tasks.filter(isOverdue).sort(byDue);
 
