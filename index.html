@@ -2631,11 +2631,17 @@ function renderLevelsView(){
   if(state.levels.length===0){
     return `<div class="empty-state"><div class="display">No levels yet</div>Create a level, then set how many of each asset it uses to see its running polygon/texture budget.</div>`;
   }
-  const cards = state.levels.map(l=>{
+  const cards = state.levels.map((l,i)=>{
     const totals = levelTotals(l);
     return `<div class="card" style="cursor:pointer" onclick="openLevelDrawer('${l.id}')">
       <div class="row" style="justify-content:space-between;align-items:start">
-        <div><b>${esc(l.name)}</b>${l.description?`<div class="faint" style="font-size:12px;margin-top:2px">${esc(l.description)}</div>`:''}</div>
+        <div class="row" style="align-items:flex-start;gap:8px">
+          <div style="display:flex;flex-direction:column;gap:2px" onclick="event.stopPropagation()">
+            <button class="btn btn-ghost" style="padding:1px 5px;font-size:10px;line-height:1" title="Move up" onclick="moveLevel('${l.id}',-1)" ${i===0?'disabled':''}>▲</button>
+            <button class="btn btn-ghost" style="padding:1px 5px;font-size:10px;line-height:1" title="Move down" onclick="moveLevel('${l.id}',1)" ${i===state.levels.length-1?'disabled':''}>▼</button>
+          </div>
+          <div><b>${esc(l.name)}</b>${l.description?`<div class="faint" style="font-size:12px;margin-top:2px">${esc(l.description)}</div>`:''}</div>
+        </div>
         <span class="faint" style="font-size:12px">${totals.count} asset${totals.count===1?'':'s'} · ${totals.instances} instance${totals.instances===1?'':'s'} · ${totals.textures} texture${totals.textures===1?'':'s'}</span>
       </div>
       <div style="margin-top:10px">${metricLine('Polygons', budgetBar(totals.polys, l.budgetPolys))}</div>
@@ -2714,6 +2720,15 @@ async function saveLevelForm(editingId){
   }
   await saveLevels();
   closeDrawer();
+  render();
+}
+async function moveLevel(id, dir){
+  const idx = state.levels.findIndex(l=>l.id===id);
+  if(idx===-1) return;
+  const swapWith = idx + dir;
+  if(swapWith<0 || swapWith>=state.levels.length) return;
+  [state.levels[idx], state.levels[swapWith]] = [state.levels[swapWith], state.levels[idx]];
+  await saveLevels();
   render();
 }
 async function deleteLevel(id){
