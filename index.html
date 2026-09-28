@@ -1240,8 +1240,8 @@ const NAV = [
   {id:'timeline', label:'Timeline', icon:'📅', group:'Project'},
   {id:'kanban', label:'Kanban', icon:'📊', group:'Project'},
   {id:'reports', label:'Reports', icon:'▣', supervisorOnly:true, group:'Project'},
-  {id:'assets', label:'Assets', icon:'⬡', wip:true, group:'Assets'},
-  {id:'levels', label:'Levels', icon:'▥', wip:true, group:'Assets'},
+  {id:'assets', label:'Assets', icon:'⬡', group:'Assets'},
+  {id:'levels', label:'Levels', icon:'▥', group:'Assets'},
   {id:'documents', label:'Documents', icon:'📁', group:'Collaboration'},
   {id:'team', label:'Team', icon:'🧑', group:'Collaboration'},
   {id:'support', label:'PMS Support', icon:'🎧', group:'Collaboration'},
@@ -1266,8 +1266,8 @@ function renderNav(){
       lastGroup = n.group;
     }
     return header + `
-    <button class="nav-btn ${state.view===n.id?'active':''}" onclick="setView('${n.id}')" ${n.wip?'style="color:#A8821B"':''}>
-      <span class="nav-icon" ${n.wip?'style="color:#A8821B"':''}>${n.icon}</span>${n.label}${n.wip?' <span style="font-size:10px;opacity:.85">(WIP)</span>':''}
+    <button class="nav-btn ${state.view===n.id?'active':''}" onclick="setView('${n.id}')">
+      <span class="nav-icon">${n.icon}</span>${n.label}
     </button>`;
   }).join('');
 }
