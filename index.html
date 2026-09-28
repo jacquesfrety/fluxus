@@ -538,6 +538,7 @@
       </div>
       <div class="row" style="gap:10px;position:relative">
         <div id="topbar-actions"></div>
+        <button class="notif-btn" id="sound-toggle-btn" onclick="toggleSoundAlerts()" title="Sound alerts on — click to mute">🔊</button>
         <button class="notif-btn" id="notif-btn" onclick="toggleNotifPanel()">🔔<span id="notif-badge"></span></button>
         <div class="notif-panel" id="notif-panel"></div>
       </div>
@@ -637,6 +638,7 @@ async function signInApp(){
   catch(e){ console.error(e); toast('Sign-in failed'); }
 }
 async function signOutApp(){
+  stopLiveAlerts();
   try{ await auth.signOut(); }catch(e){ console.error(e); }
 }
 let authReadyResolve;
@@ -1020,6 +1022,96 @@ async function recordLastSeen(){
   if(!m) return; // e.g. Administrator with no team profile in this project — nothing to stamp
   m.lastSeen = Date.now();
   await fsSet('team', state.team); // save directly — avoid re-running syncMemberEmails() via saveTeam() just for this
+}
+
+/* ---- sound alerts: a "ding" for new notifications, a "bell" when a teammate connects ---- */
+let audioCtx = null;
+function ensureAudioCtx(){
+  if(!audioCtx){
+    try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ return null; }
+  }
+  if(audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
+  return audioCtx;
+}
+// most browsers block audio until the page has seen a user gesture — prime the context on the first one
+document.addEventListener('click', ensureAudioCtx, {once:true});
+document.addEventListener('keydown', ensureAudioCtx, {once:true});
+function soundAlertsOn(){ return lsGet('soundAlertsEnabled', true); }
+function toggleSoundAlerts(){
+  const next = !soundAlertsOn();
+  lsSet('soundAlertsEnabled', next);
+  updateSoundToggleBtn();
+  if(next) playNotificationDing(); // audible confirmation it's back on
+}
+function updateSoundToggleBtn(){
+  const btn = document.getElementById('sound-toggle-btn');
+  if(!btn) return;
+  const on = soundAlertsOn();
+  btn.textContent = on ? '🔊' : '🔇';
+  btn.title = on ? 'Sound alerts on — click to mute' : 'Sound alerts muted — click to unmute';
+}
+function playTone(freq, duration, type, startGain, delay){
+  if(!soundAlertsOn()) return;
+  const ctx = ensureAudioCtx(); if(!ctx) return;
+  const t0 = ctx.currentTime + (delay||0);
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type || 'sine';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(startGain||0.15, t0+0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0+duration);
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.start(t0); osc.stop(t0+duration+0.03);
+}
+function playNotificationDing(){
+  playTone(1318.5, 0.16, 'sine', 0.16, 0);     // a short, simple two-note "ding"
+  playTone(1760,   0.22, 'sine', 0.12, 0.09);
+}
+function playLoginBell(){
+  playTone(659.25, 0.5, 'triangle', 0.14, 0);  // a warmer, longer "bell" for someone joining
+  playTone(987.77, 0.4, 'triangle', 0.09, 0.07);
+}
+
+/* ---- live alerts: since data only loads once, poll for new notifications / teammates connecting ---- */
+let liveAlertsTimer = null;
+let seenNotifIds = new Set();
+let teamLastSeenById = {};
+function initLiveAlerts(){
+  seenNotifIds = new Set(state.notifications.map(n=>n.id));
+  teamLastSeenById = {};
+  state.team.forEach(m=>{ teamLastSeenById[m.id] = m.lastSeen || 0; });
+  if(liveAlertsTimer) clearInterval(liveAlertsTimer);
+  liveAlertsTimer = setInterval(pollLiveAlerts, 20000);
+}
+function stopLiveAlerts(){
+  if(liveAlertsTimer){ clearInterval(liveAlertsTimer); liveAlertsTimer = null; }
+}
+async function pollLiveAlerts(){
+  if(!db || !state.projectId || !state.currentUser) return;
+  try{
+    const [freshNotifs, freshTeam] = await Promise.all([fsGet('notifications'), fsGet('team')]);
+    if(Array.isArray(freshNotifs)){
+      const mineNew = freshNotifs.filter(n=>n.forUser===state.currentUser && !seenNotifIds.has(n.id));
+      seenNotifIds = new Set(freshNotifs.map(n=>n.id));
+      if(mineNew.length){
+        state.notifications = freshNotifs;
+        playNotificationDing();
+        renderNotifBell();
+      }
+    }
+    if(Array.isArray(freshTeam)){
+      freshTeam.forEach(fm=>{
+        const prev = teamLastSeenById[fm.id] || 0;
+        if(fm.name!==state.currentUser && fm.lastSeen && fm.lastSeen>prev){
+          playLoginBell();
+        }
+        teamLastSeenById[fm.id] = fm.lastSeen || 0;
+        const local = state.team.find(x=>x.id===fm.id);
+        if(local) local.lastSeen = fm.lastSeen; // keep Team page's "Last seen" fresh without a full reload
+      });
+    }
+  }catch(e){ console.error('live alert poll failed', e); }
 }
 async function saveTeam(){
   await syncMemberEmails(); // must happen first — the security rules for 'store'/'chats' check this
@@ -5148,6 +5240,7 @@ async function openProject(id){
   await enterApp();
 }
 function switchProject(){
+  stopLiveAlerts();
   state.projectId = null;
   localStorage.removeItem('activeProjectId');
   document.getElementById('app').style.display = 'none';
@@ -5185,6 +5278,8 @@ async function enterApp(){
     return;
   }
   recordLastSeen(); // note that this person connected to this project, for Admin/Supervisors to see on the Team page
+  initLiveAlerts(); // start polling for new notifications / teammates connecting, so sound alerts can fire
+  updateSoundToggleBtn();
   // restore whichever page the person was last on, so a reload doesn't dump them back to Dashboard
   const lastView = lsGet('lastView', null);
   if(lastView && NAV.some(n=>n.id===lastView)) state.view = lastView;
