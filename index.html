@@ -1133,13 +1133,23 @@ async function saveTasks(){
   await fsSet('taskIdSeq', state.taskIdSeq);
   maybeBackupTasks(); // fire-and-forget safety net — never blocks or fails a normal task save
 }
+const TASK_BACKUP_MIN_GAP_MS = 15*60*1000;          // don't snapshot more than once every 15 minutes
+const TASK_BACKUP_RETENTION_MS = 30*24*60*60*1000;  // keep snapshots for 30 days
+const TASK_BACKUP_HARD_CAP = 500;                   // absolute safety ceiling, regardless of age
 function maybeBackupTasks(){
   const last = state.taskBackups[state.taskBackups.length-1];
+  const sinceLast = last ? (Date.now()-last.ts) : Infinity;
   const countChanged = !last || last.count !== state.tasks.length;
-  const dueForTimeBackup = !last || (Date.now() - last.ts) > 6*60*60*1000; // at least every 6h even with no count change
-  if(!countChanged && !dueForTimeBackup) return;
+  // snapshot when: there's nothing yet, or the count changed and we're not snapshotting too rapidly,
+  // or it's just been a long time (a quiet project still gets periodic coverage)
+  const shouldSnapshot = !last || (countChanged && sinceLast>TASK_BACKUP_MIN_GAP_MS) || sinceLast>6*60*60*1000;
+  if(!shouldSnapshot) return;
   const snapshot = { ts: Date.now(), by: state.currentUser||'', count: state.tasks.length, tasks: JSON.parse(JSON.stringify(state.tasks)) };
-  state.taskBackups = [...state.taskBackups, snapshot].slice(-20); // keep the last 20 snapshots
+  let next = [...state.taskBackups, snapshot];
+  const cutoff = Date.now() - TASK_BACKUP_RETENTION_MS;
+  next = next.filter((b,i)=> b.ts>=cutoff || i===next.length-1); // prune anything past 30 days, but always keep at least the newest
+  if(next.length>TASK_BACKUP_HARD_CAP) next = next.slice(-TASK_BACKUP_HARD_CAP);
+  state.taskBackups = next;
   fsSet('taskBackups', state.taskBackups).catch(e=>console.error('backup save failed', e));
 }
 async function restoreTaskBackup(ts){
@@ -3417,7 +3427,7 @@ function renderReportsView(){
   const backups = [...state.taskBackups].reverse();
   const backupsSection = `<div class="card dash-list-card" style="margin-top:14px">
     <h3>Task list backups</h3>
-    <div class="faint" style="margin:-6px 0 10px">A safety net, not an activity log — the app doesn't track who changed or deleted what, but a snapshot of the task list is kept automatically whenever it changes meaningfully. If tasks ever go missing unexpectedly, restore the most recent snapshot from before that happened.</div>
+    <div class="faint" style="margin:-6px 0 10px">A safety net, not an activity log — the app doesn't track who changed or deleted what, but a snapshot of the task list is kept automatically whenever it changes (at most one every 15 minutes), covering the last 30 days. If tasks ever go missing unexpectedly, restore the most recent snapshot from before that happened.</div>
     ${backups.length ? `<div class="manage-list">${backups.map(b=>`
       <div class="dash-task-row">
         <span>${fmtWhen(b.ts)} <span class="faint" style="font-size:11px">— ${b.count} task${b.count===1?'':'s'}${b.by?' · '+esc(b.by):''}</span></span>
