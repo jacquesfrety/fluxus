@@ -881,6 +881,7 @@ let state = {
   categories: [],      // work-type categories, e.g. Modelling, Audio, Web App
   taskLists: [],        // actual task-list containers, e.g. "Environment 1"
   tasks: [],
+  taskBackups: [],     // rolling safety-net snapshots of the tasks list — see maybeBackupTasks()
   taskIdSeq: 0,        // ever-increasing counter for new task IDs — never reused, even after a task is deleted
   currentUser: "",
   view: "dashboard",
@@ -946,14 +947,15 @@ async function fsSet(key, value){
 }
 async function loadAll(){
   try{
-    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq, annotations, markups, assets, levels] = await Promise.all([
+    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq, annotations, markups, assets, levels, taskBackups] = await Promise.all([
       fsGet('categories'), fsGet('taskLists'), fsGet('tasks'),
       fsGet('team'), fsGet('project'),
       fsGet('notifications'), fsGet('forumPosts'), fsGet('documents'), fsGet('taskIdSeq'), fsGet('annotations'), fsGet('markups'),
-      fsGet('assets'), fsGet('levels')
+      fsGet('assets'), fsGet('levels'), fsGet('taskBackups')
     ]);
     state.team = team || [];
     state.tasks = tasks || [];
+    state.taskBackups = taskBackups || [];
     // never let the counter fall behind the highest task number already in use (covers projects
     // saved before this counter existed, and any stray gap) — it only ever moves forward
     const maxExistingTaskNum = state.tasks.reduce((max,t)=>{
@@ -1126,7 +1128,29 @@ async function syncMemberEmails(){
 }
 async function saveCategories(){ await fsSet('categories', state.categories); }
 async function saveTaskListGroups(){ await fsSet('taskLists', state.taskLists); }
-async function saveTasks(){ await fsSet('tasks', state.tasks); await fsSet('taskIdSeq', state.taskIdSeq); }
+async function saveTasks(){
+  await fsSet('tasks', state.tasks);
+  await fsSet('taskIdSeq', state.taskIdSeq);
+  maybeBackupTasks(); // fire-and-forget safety net — never blocks or fails a normal task save
+}
+function maybeBackupTasks(){
+  const last = state.taskBackups[state.taskBackups.length-1];
+  const countChanged = !last || last.count !== state.tasks.length;
+  const dueForTimeBackup = !last || (Date.now() - last.ts) > 6*60*60*1000; // at least every 6h even with no count change
+  if(!countChanged && !dueForTimeBackup) return;
+  const snapshot = { ts: Date.now(), by: state.currentUser||'', count: state.tasks.length, tasks: JSON.parse(JSON.stringify(state.tasks)) };
+  state.taskBackups = [...state.taskBackups, snapshot].slice(-20); // keep the last 20 snapshots
+  fsSet('taskBackups', state.taskBackups).catch(e=>console.error('backup save failed', e));
+}
+async function restoreTaskBackup(ts){
+  if(!isSupervisor()){ toast('Only Supervisors can restore a backup'); return; }
+  const bkp = state.taskBackups.find(b=>b.ts===ts); if(!bkp) return;
+  if(!confirm(`Restore the task list to how it was on ${fmtWhen(ts)}? This replaces the current ${state.tasks.length} task(s) with the ${bkp.count} from that backup. The current list is backed up first, so this can be undone.`)) return;
+  state.tasks = JSON.parse(JSON.stringify(bkp.tasks));
+  await saveTasks();
+  toast('Tasks restored from backup');
+  render();
+}
 async function saveTimelineLabelsWidth(){ lsSet('timelineLabelsWidth', state.timelineLabelsWidth); }
 async function saveTheme(){ lsSet('theme', state.theme); }
 async function saveForumPosts(){ await fsSet('forumPosts', state.forumPosts); }
@@ -3390,9 +3414,21 @@ function renderReportsView(){
     </div>
   </div>`;
 
+  const backups = [...state.taskBackups].reverse();
+  const backupsSection = `<div class="card dash-list-card" style="margin-top:14px">
+    <h3>Task list backups</h3>
+    <div class="faint" style="margin:-6px 0 10px">A safety net, not an activity log — the app doesn't track who changed or deleted what, but a snapshot of the task list is kept automatically whenever it changes meaningfully. If tasks ever go missing unexpectedly, restore the most recent snapshot from before that happened.</div>
+    ${backups.length ? `<div class="manage-list">${backups.map(b=>`
+      <div class="dash-task-row">
+        <span>${fmtWhen(b.ts)} <span class="faint" style="font-size:11px">— ${b.count} task${b.count===1?'':'s'}${b.by?' · '+esc(b.by):''}</span></span>
+        <button class="btn btn-sm btn-ghost" onclick="restoreTaskBackup(${b.ts})">Restore</button>
+      </div>`).join('')}</div>` : `<div class="faint" style="font-size:12px">No backups yet — one will be captured automatically the next time the task list changes.</div>`}
+  </div>`;
+
   return `<div class="faint" style="margin-bottom:14px">Visible to Supervisors only. "Needs Revision" is a running count of how many times a task assigned to this person has been sent back for revision — it doesn't reset if the task is later completed, so it reflects quality over time rather than current status.</div>
   ${table}
-  <div class="dash-2col" style="margin-top:14px"><div>${rateChart}</div><div>${completedChart}</div></div>`;
+  <div class="dash-2col" style="margin-top:14px"><div>${rateChart}</div><div>${completedChart}</div></div>
+  ${backupsSection}`;
 }
 
 /* ============================= PMS SUPPORT (forum: bugs + feature requests) ============================= */
