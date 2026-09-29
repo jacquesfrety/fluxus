@@ -4174,6 +4174,8 @@ async function savePinDraft(){
   pinDraft = null;
   state.pinAddMode = false;
   refreshPinsLayer(pin.driveFileId);
+  refreshDriveToolbar(pin.driveFileId); // the "Add pin" button was showing as active — sync it now that pin mode turned itself off
+  applyDriveCursor();
 }
 function openPinThread(id){
   openPinId = (openPinId === id) ? null : id;
@@ -4197,6 +4199,7 @@ async function togglePinResolved(id){
   const pin = state.annotations.find(a=>a.id===id); if(!pin) return;
   pin.resolved = !pin.resolved;
   await saveAnnotations();
+  openPinId = null; // close the comment thread popup after resolving/reopening
   refreshPinsLayer(pin.driveFileId);
 }
 async function deletePin(id){
