@@ -315,7 +315,7 @@
   .assignee-barwrap{flex:1;display:flex;align-items:center;gap:8px;min-width:0;}
   .assignee-bar{flex:1;display:flex;height:22px;border-radius:4px;overflow:hidden;background:var(--surface3);}
   .assignee-seg{display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;
-    color:#101317;white-space:nowrap;}
+    color:#101317;white-space:nowrap;overflow:visible;}
   .assignee-total{flex:0 0 26px;font-size:12px;font-weight:600;color:var(--ink-dim);text-align:right;}
   .assignee-axis{display:flex;margin-top:2px;}
   .assignee-axis-spacer{flex:0 0 132px;}
@@ -3301,7 +3301,7 @@ function renderDashboardView(){
       const segs = STATUSES.filter(s=>r.counts[s]>0).map(s=>{
         const c = r.counts[s];
         const widthPct = c/axisMax*100;
-        return `<div class="assignee-seg" style="width:${widthPct}%;background:${STATUS_HEX[s]}" title="${s}: ${c}">${widthPct>7?c:''}</div>`;
+        return `<div class="assignee-seg" style="width:${widthPct}%;background:${STATUS_HEX[s]}" title="${s}: ${c}">${c}</div>`;
       }).join('');
       const avatarName = r.name==='Unassigned' ? '' : r.name;
       return `<div class="assignee-row">
