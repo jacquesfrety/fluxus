@@ -882,6 +882,8 @@ let state = {
   taskLists: [],        // actual task-list containers, e.g. "Environment 1"
   tasks: [],
   taskBackups: [],     // rolling safety-net snapshots of the tasks list — see maybeBackupTasks()
+  activityLog: [],     // who changed what and when — see diffTasksForLog()/saveTasks()
+  lastSavedTasksSnapshot: [], // baseline for diffing state.tasks against on the next saveTasks()
   taskIdSeq: 0,        // ever-increasing counter for new task IDs — never reused, even after a task is deleted
   currentUser: "",
   view: "dashboard",
@@ -947,15 +949,16 @@ async function fsSet(key, value){
 }
 async function loadAll(){
   try{
-    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq, annotations, markups, assets, levels, taskBackups] = await Promise.all([
+    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq, annotations, markups, assets, levels, taskBackups, activityLog] = await Promise.all([
       fsGet('categories'), fsGet('taskLists'), fsGet('tasks'),
       fsGet('team'), fsGet('project'),
       fsGet('notifications'), fsGet('forumPosts'), fsGet('documents'), fsGet('taskIdSeq'), fsGet('annotations'), fsGet('markups'),
-      fsGet('assets'), fsGet('levels'), fsGet('taskBackups')
+      fsGet('assets'), fsGet('levels'), fsGet('taskBackups'), fsGet('activityLog')
     ]);
     state.team = team || [];
     state.tasks = tasks || [];
     state.taskBackups = taskBackups || [];
+    state.activityLog = activityLog || [];
     // never let the counter fall behind the highest task number already in use (covers projects
     // saved before this counter existed, and any stray gap) — it only ever moves forward
     const maxExistingTaskNum = state.tasks.reduce((max,t)=>{
@@ -1011,6 +1014,9 @@ async function loadAll(){
         statusChanged = true;
       }
     });
+    // baseline for the activity log's diff — set BEFORE the migration save below, so one-time
+    // structural migrations (old status names, missing fields) never show up as logged "changes"
+    state.lastSavedTasksSnapshot = JSON.parse(JSON.stringify(state.tasks));
     if(statusChanged) await saveTasks();
     syncCurrentUserFromAuth();
   }catch(e){
@@ -1129,9 +1135,78 @@ async function syncMemberEmails(){
 async function saveCategories(){ await fsSet('categories', state.categories); }
 async function saveTaskListGroups(){ await fsSet('taskLists', state.taskLists); }
 async function saveTasks(){
+  logTaskChanges(state.lastSavedTasksSnapshot, state.tasks);
+  state.lastSavedTasksSnapshot = JSON.parse(JSON.stringify(state.tasks));
   await fsSet('tasks', state.tasks);
   await fsSet('taskIdSeq', state.taskIdSeq);
   maybeBackupTasks(); // fire-and-forget safety net — never blocks or fails a normal task save
+}
+/* ---- activity log: an automatic "who changed what, when" trail, built by diffing tasks on every save ---- */
+const TASK_LOG_FIELDS = [
+  ['status','Status'], ['priority','Priority'], ['start','Start date'], ['due','Due date'],
+  ['duration','Estimation (days)'], ['pct','Progress'], ['category','Category'], ['taskList','Task list'], ['notes','Notes']
+];
+function logTaskChanges(oldTasks, newTasks){
+  oldTasks = oldTasks || []; newTasks = newTasks || [];
+  const ts = Date.now();
+  const by = state.currentUser || 'Unknown';
+  const oldById = {}; oldTasks.forEach(t=>oldById[t.id]=t);
+  const newById = {}; newTasks.forEach(t=>newById[t.id]=t);
+  const entries = [];
+  newTasks.forEach(t=>{
+    if(!oldById[t.id]) entries.push({ts, by, action:'created', taskId:t.id, taskName:t.name, detail:''});
+  });
+  oldTasks.forEach(t=>{
+    if(!newById[t.id]) entries.push({ts, by, action:'deleted', taskId:t.id, taskName:t.name, detail:''});
+  });
+  newTasks.forEach(t=>{
+    const o = oldById[t.id]; if(!o) return; // already logged as created, above
+    if(o.name!==t.name){
+      entries.push({ts, by, action:'renamed', taskId:t.id, taskName:t.name, detail:`"${o.name}" → "${t.name}"`});
+    }
+    TASK_LOG_FIELDS.forEach(([field,label])=>{
+      const a = (o[field]===undefined||o[field]===null||o[field]==='') ? null : o[field];
+      const b = (t[field]===undefined||t[field]===null||t[field]==='') ? null : t[field];
+      if(String(a)!==String(b)){
+        entries.push({ts, by, action:'changed', taskId:t.id, taskName:t.name, detail:`${label}: ${a===null?'—':a} → ${b===null?'—':b}`});
+      }
+    });
+    const oa = (o.assignees||[]).slice().sort();
+    const na = (t.assignees||[]).slice().sort();
+    if(oa.join(',')!==na.join(',')){
+      entries.push({ts, by, action:'changed', taskId:t.id, taskName:t.name, detail:`Assignees: ${oa.join(', ')||'—'} → ${na.join(', ')||'—'}`});
+    }
+  });
+  if(entries.length){
+    state.activityLog = [...state.activityLog, ...entries];
+    pruneActivityLog();
+    fsSet('activityLog', state.activityLog).catch(e=>console.error('activity log save failed', e));
+  }
+}
+const ACTIVITY_LOG_RETENTION_MS = 90*24*60*60*1000; // keep 90 days of history
+const ACTIVITY_LOG_HARD_CAP = 3000;
+function pruneActivityLog(){
+  const cutoff = Date.now() - ACTIVITY_LOG_RETENTION_MS;
+  state.activityLog = state.activityLog.filter(e=>e.ts>=cutoff);
+  if(state.activityLog.length>ACTIVITY_LOG_HARD_CAP) state.activityLog = state.activityLog.slice(-ACTIVITY_LOG_HARD_CAP);
+}
+function renderActivityView(){
+  if(state.activityLog.length===0){
+    return `<div class="empty-state"><div class="display">No activity yet</div>Every task created, edited or deleted from now on will show up here automatically, with who and when.</div>`;
+  }
+  const ACTION_LABEL = {created:'Created', deleted:'Deleted', renamed:'Renamed', changed:'Changed'};
+  const ACTION_COLOR = {created:'var(--green)', deleted:'var(--red)', renamed:'var(--gold)', changed:'var(--teal)'};
+  const rows = [...state.activityLog].reverse().map(e=>`
+    <tr>
+      <td class="faint" style="white-space:nowrap">${fmtWhen(e.ts)}</td>
+      <td><span class="tagpill" style="background:${ACTION_COLOR[e.action]}29;color:${ACTION_COLOR[e.action]};border:1px solid ${ACTION_COLOR[e.action]}66">${ACTION_LABEL[e.action]||e.action}</span></td>
+      <td>${esc(e.taskName||e.taskId||'—')}</td>
+      <td class="faint">${esc(e.detail||'')}</td>
+      <td>${esc(e.by||'—')}</td>
+    </tr>`).join('');
+  return `<div class="faint" style="margin-bottom:14px">An automatic log of task changes — covers the last 90 days. Not a full account of every click, but every create, delete, rename and field change is captured here with who made it and when.</div>
+  <table class="ttable"><thead><tr><th>Time</th><th>Action</th><th>Task</th><th>Detail</th><th>By</th></tr></thead>
+  <tbody>${rows}</tbody></table>`;
 }
 const TASK_BACKUP_MIN_GAP_MS = 15*60*1000;          // don't snapshot more than once every 15 minutes
 const TASK_BACKUP_RETENTION_MS = 30*24*60*60*1000;  // keep snapshots for 30 days
@@ -1274,6 +1349,7 @@ const NAV = [
   {id:'timeline', label:'Timeline', icon:'📅', group:'Project'},
   {id:'kanban', label:'Kanban', icon:'📊', group:'Project'},
   {id:'reports', label:'Reports', icon:'▣', supervisorOnly:true, group:'Project'},
+  {id:'activity', label:'Activity', icon:'🕒', group:'Project'},
   {id:'assets', label:'Assets', icon:'⬡', group:'Assets'},
   {id:'levels', label:'Levels', icon:'▥', group:'Assets'},
   {id:'documents', label:'Documents', icon:'📁', group:'Collaboration'},
@@ -1284,6 +1360,7 @@ const TITLES = {team:["Team","Everyone working on this project"], tasks:["Tasks"
   kanban:["Kanban","Drag a card, or use the status menu"], timeline:["Timeline","Gantt-style view across the project"],
   dashboard:["Dashboard","Where things stand right now"],
   reports:["Reports","Per-member stats — visible to Supervisors only"],
+  activity:["Activity","Who changed what, and when — an automatic log of task changes"],
   support:["PMS Support","Report bugs, request features, and see what's planned"],
   documents:["Documents","A library of files that live in the cloud (OneDrive, Drive…)"],
   assets:["Assets","3D assets — polygon and texture budget per item"],
@@ -1617,6 +1694,7 @@ function render(){
   else if(state.view==='timeline') v.innerHTML = renderTimelineView();
   else if(state.view==='dashboard') v.innerHTML = renderDashboardView();
   else if(state.view==='reports') v.innerHTML = renderReportsView();
+  else if(state.view==='activity') v.innerHTML = renderActivityView();
   else if(state.view==='support') v.innerHTML = renderSupportView();
   else if(state.view==='documents') v.innerHTML = renderDocumentsView();
   else if(state.view==='assets') v.innerHTML = renderAssetsView();
