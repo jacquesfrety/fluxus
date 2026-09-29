@@ -2812,6 +2812,18 @@ function addWorkdays(startISO, days){
   }
   return isoOf(d);
 }
+function workdaysBetween(startISO, dueISO){
+  // inverse of addWorkdays: how many working days (inclusive of the start day) startISO..dueISO spans
+  if(!startISO || !dueISO || dueISO<startISO) return null;
+  const d = new Date(startISO);
+  const end = new Date(dueISO);
+  let count = 1;
+  while(d < end){
+    d.setDate(d.getDate()+1);
+    if(isWorkday(d)) count++;
+  }
+  return count;
+}
 
 function progressGradient(pct, warn){
   if(warn) return 'var(--red)';
@@ -4799,6 +4811,13 @@ async function updateField(id, field, value){
   }
   if((field==='start' || field==='duration') && t.start && t.duration>0){
     t.due = addWorkdays(t.start, t.duration);
+  }
+  if(field==='due' && t.start && t.due){
+    // keep Estimation in sync with a manually-typed Due Date, so a later drag on the
+    // Timeline (which re-derives Due Date from Estimation) preserves this new span
+    // instead of silently reverting to whatever Estimation was set to before.
+    const span = workdaysBetween(t.start, t.due);
+    if(span!==null) t.duration = span;
   }
   await saveTasks();
   render();
