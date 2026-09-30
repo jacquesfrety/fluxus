@@ -883,6 +883,7 @@ let state = {
   tasks: [],
   taskBackups: [],     // rolling safety-net snapshots of the tasks list — see maybeBackupTasks()
   activityLog: [],     // who changed what and when — see diffTasksForLog()/saveTasks()
+  activityFilters: { action: "", taskId: "", by: "" },
   lastSavedTasksSnapshot: [], // baseline for diffing state.tasks against on the next saveTasks()
   taskIdSeq: 0,        // ever-increasing counter for new task IDs — never reused, even after a task is deleted
   currentUser: "",
@@ -1198,7 +1199,42 @@ function renderActivityView(){
   }
   const ACTION_LABEL = {created:'Created', deleted:'Deleted', renamed:'Renamed', changed:'Changed'};
   const ACTION_COLOR = {created:'var(--green)', deleted:'var(--red)', renamed:'var(--gold)', changed:'var(--teal)'};
-  const rows = [...state.activityLog].reverse().map(e=>`
+
+  // build filter option lists from the log itself (so a deleted task or a departed teammate
+  // still shows up as something you can filter by, even though it's no longer in state.tasks/state.team)
+  const taskNameById = {};
+  state.activityLog.forEach(e=>{ if(e.taskId) taskNameById[e.taskId] = e.taskName||e.taskId; }); // last-seen name wins (handles renames)
+  const taskOptions = Object.keys(taskNameById).sort((a,b)=> taskNameById[a].localeCompare(taskNameById[b]));
+  const byOptions = [...new Set(state.activityLog.map(e=>e.by).filter(Boolean))].sort();
+
+  const filterBar = `<div class="filterbar" style="margin-bottom:14px">
+    <select onchange="state.activityFilters.action=this.value;render()">
+      <option value="">All actions</option>
+      ${Object.keys(ACTION_LABEL).map(a=>`<option value="${a}" ${state.activityFilters.action===a?'selected':''}>${ACTION_LABEL[a]}</option>`).join('')}
+    </select>
+    <select onchange="state.activityFilters.taskId=this.value;render()">
+      <option value="">All tasks</option>
+      ${taskOptions.map(id=>`<option value="${esc(id)}" ${state.activityFilters.taskId===id?'selected':''}>${esc(taskNameById[id])}</option>`).join('')}
+    </select>
+    <select onchange="state.activityFilters.by=this.value;render()">
+      <option value="">Everyone</option>
+      ${byOptions.map(b=>`<option value="${esc(b)}" ${state.activityFilters.by===b?'selected':''}>${esc(b)}</option>`).join('')}
+    </select>
+    ${(state.activityFilters.action||state.activityFilters.taskId||state.activityFilters.by)?`<button class="btn btn-ghost btn-sm" onclick="state.activityFilters={action:'',taskId:'',by:''};render()">Clear filters</button>`:''}
+  </div>`;
+
+  const filtered = state.activityLog.filter(e=>
+    (!state.activityFilters.action || e.action===state.activityFilters.action) &&
+    (!state.activityFilters.taskId || e.taskId===state.activityFilters.taskId) &&
+    (!state.activityFilters.by || e.by===state.activityFilters.by)
+  );
+
+  if(filtered.length===0){
+    return `<div class="faint" style="margin-bottom:14px">An automatic log of task changes — covers the last 90 days.</div>
+    ${filterBar}<div class="empty-state"><div class="display">No matching activity</div>Try clearing a filter.</div>`;
+  }
+
+  const rows = [...filtered].reverse().map(e=>`
     <tr>
       <td class="faint" style="white-space:nowrap">${fmtWhen(e.ts)}</td>
       <td><span class="tagpill" style="background:${ACTION_COLOR[e.action]}29;color:${ACTION_COLOR[e.action]};border:1px solid ${ACTION_COLOR[e.action]}66">${ACTION_LABEL[e.action]||e.action}</span></td>
@@ -1207,6 +1243,7 @@ function renderActivityView(){
       <td>${esc(e.by||'—')}</td>
     </tr>`).join('');
   return `<div class="faint" style="margin-bottom:14px">An automatic log of task changes — covers the last 90 days. Not a full account of every click, but every create, delete, rename and field change is captured here with who made it and when.</div>
+  ${filterBar}
   <table class="ttable"><thead><tr><th>Time</th><th>Action</th><th>Task</th><th>Detail</th><th>By</th></tr></thead>
   <tbody>${rows}</tbody></table>`;
 }
