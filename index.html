@@ -2378,6 +2378,7 @@ function renderTasksView(){
     ${(state.filters.search||state.filters.category||state.filters.taskList||state.filters.assignee||state.filters.status)?`<button class="btn btn-ghost btn-sm" onclick="resetTaskFilters()">✕ Reset filters</button>`:''}
     <button class="btn btn-ghost btn-sm" onclick="openManageCategories()">Manage categories</button>
     <button class="btn btn-ghost btn-sm" onclick="openManageTaskLists()">Manage task lists</button>
+    <button class="btn btn-ghost btn-sm" id="export-xlsx-btn" onclick="exportTasksToExcel()" title="${(state.filters.search||state.filters.category||state.filters.taskList||state.filters.assignee||state.filters.status)?'Exports the '+tasks.length+' task(s) matching the current filters':'Exports all '+tasks.length+' task(s)'}">⬇ Export to Excel</button>
   </div>`;
 
   const selectedCount = state.selectedTaskIds.length;
@@ -2778,6 +2779,59 @@ function isHeicFile(file){
   const name = (file.name||'').toLowerCase();
   const mt = file.type || file.mimeType || '';
   return mt==='image/heic' || mt==='image/heif' || name.endsWith('.heic') || name.endsWith('.heif');
+}
+let xlsxLibLoadPromise = null;
+function loadXlsxLib(){
+  if(window.XLSX) return Promise.resolve();
+  if(xlsxLibLoadPromise) return xlsxLibLoadPromise;
+  xlsxLibLoadPromise = new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload = resolve;
+    s.onerror = ()=>reject(new Error('failed to load the Excel export library'));
+    document.head.appendChild(s);
+  });
+  return xlsxLibLoadPromise;
+}
+async function exportTasksToExcel(){
+  const btn = document.getElementById('export-xlsx-btn');
+  const tasks = filteredTasks();
+  if(tasks.length===0){ toast('No tasks to export'); return; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Preparing…'; }
+  try{
+    await loadXlsxLib();
+    const nameById = {}; state.tasks.forEach(t=>{ nameById[t.id] = t.name; });
+    const rows = tasks.map(t=>({
+      'ID': t.id,
+      'Name': t.name,
+      'Task list': t.taskList || '',
+      'Category': t.category || '',
+      'Status': t.status || '',
+      'Priority': t.priority || '',
+      'Assignees': (t.assignees||[]).join(', '),
+      'Start date': t.start || '',
+      'Due date': t.due || '',
+      'Estimation (days)': t.duration != null ? t.duration : '',
+      'Progress (%)': t.pct != null ? t.pct : '',
+      'Depends on': (t.dependsOn||[]).map(id=>nameById[id]?`${id} (${nameById[id]})`:id).join(', '),
+      'Notes': t.notes || ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const colKeys = rows.length ? Object.keys(rows[0]) : [];
+    ws['!cols'] = colKeys.map(k=>{
+      const maxLen = Math.max(k.length, ...rows.map(r=>String(r[k]??'').length));
+      return { wch: Math.min(Math.max(maxLen+2, 8), 50) };
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Tasks');
+    const stamp = todayISO();
+    XLSX.writeFile(wb, `${((state.project&&state.project.title)||'tasks').replace(/[^\w\-]+/g,'_')}_tasks_${stamp}.xlsx`);
+  }catch(err){
+    console.error('Excel export failed', err);
+    toast("Couldn't export to Excel — check your connection and try again");
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '⬇ Export to Excel'; }
+  }
 }
 let heic2anyLoadPromise = null;
 function loadHeic2Any(){
