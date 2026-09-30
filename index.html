@@ -232,6 +232,12 @@
     white-space:nowrap;}
   .tl-daynum{position:absolute;top:24px;font-size:10px;color:var(--chart-label);text-align:center;}
   .tl-headerband{height:44px;border-bottom:1px solid var(--line);position:relative;background:var(--surface3);}
+  .tl-milestone-band{position:absolute;left:0;right:0;background:var(--surface2);border-bottom:1px solid var(--line);z-index:5;}
+  .tl-milestone-marker{position:absolute;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:4px;
+    cursor:pointer;white-space:nowrap;font-size:10.5px;font-weight:600;color:var(--violet);z-index:6;}
+  .tl-milestone-marker .diamond{width:9px;height:9px;background:var(--violet);transform:rotate(45deg);flex:0 0 auto;}
+  .tl-milestone-marker:hover{filter:brightness(1.2);}
+  .tl-milestone-line{position:absolute;top:0;border-left:2px dashed var(--violet);opacity:.55;z-index:3;}
   .tl-cal-slider-row{position:sticky;left:0;top:0;height:20px;background:var(--surface3);
     border-bottom:1px solid var(--line);z-index:8;display:flex;align-items:center;padding:0;box-sizing:border-box;}
   .tl-cal-slider-row input[type=range]{width:100%;display:block;}
@@ -919,6 +925,7 @@ let state = {
   timelineFilters: { category: "", taskList: "", assignee: "" },
   sort: { key: null, dir: "asc" },
   selectedTaskIds: [], // Tasks page bulk-select (tick to move task list / set category / set assignee / delete)
+  milestones: [],       // key dates shown on the Timeline (e.g. "WIP Presentation") — no duration, no assignee, just a name + date
   groupTasksByList: lsGet('tasksGroupByList', false),
   collapsedTaskGroups: lsGet('tasksCollapsedGroups', []),
   annotations: [],
@@ -1002,11 +1009,11 @@ async function fsSet(key, value){
 }
 async function loadAll(){
   try{
-    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq, annotations, markups, assets, levels, taskBackups, activityLog] = await Promise.all([
+    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq, annotations, markups, assets, levels, taskBackups, activityLog, milestones] = await Promise.all([
       fsGet('categories'), fsGet('taskLists'), fsGet('tasks'),
       fsGet('team'), fsGet('project'),
       fsGet('notifications'), fsGet('forumPosts'), fsGet('documents'), fsGet('taskIdSeq'), fsGet('annotations'), fsGet('markups'),
-      fsGet('assets'), fsGet('levels'), fsGet('taskBackups'), fsGet('activityLog')
+      fsGet('assets'), fsGet('levels'), fsGet('taskBackups'), fsGet('activityLog'), fsGet('milestones')
     ]);
     state.team = team || [];
     state.tasks = tasks || [];
@@ -1026,6 +1033,7 @@ async function loadAll(){
     state.drawings = markups || [];
     state.assets = assets || [];
     state.levels = levels || [];
+    state.milestones = milestones || [];
     state.timelineLabelsWidth = lsGet('timelineLabelsWidth', 520);
     state.theme = lsGet('theme', 'dark');
     document.documentElement.setAttribute('data-theme', state.theme);
@@ -1201,9 +1209,70 @@ async function syncMemberEmails(){
 }
 async function saveCategories(){ await fsSet('categories', state.categories); }
 async function saveTaskListGroups(){ await fsSet('taskLists', state.taskLists); }
+/* Diffs two task-array snapshots down to exactly what changed: newly created tasks, deleted task
+   ids, and per-task field patches (any field that differs — not a fixed list — so this catches
+   everything from a status edit to a dependsOn change). Used by saveTasks() to merge only THIS
+   tab's own edits onto the latest server data, instead of overwriting the whole shared list. */
+function computeTaskDiff(oldTasks, newTasks){
+  oldTasks = oldTasks || []; newTasks = newTasks || [];
+  const oldById = {}; oldTasks.forEach(t=>oldById[t.id]=t);
+  const newById = {}; newTasks.forEach(t=>newById[t.id]=t);
+  const created = [], deletedIds = [], changed = [];
+  newTasks.forEach(t=>{ if(!oldById[t.id]) created.push(JSON.parse(JSON.stringify(t))); });
+  oldTasks.forEach(t=>{ if(!newById[t.id]) deletedIds.push(t.id); });
+  newTasks.forEach(t=>{
+    const o = oldById[t.id]; if(!o) return; // already captured as created, above
+    const patch = {};
+    Object.keys(t).forEach(k=>{
+      if(JSON.stringify(t[k]) !== JSON.stringify(o[k])) patch[k] = t[k];
+    });
+    if(Object.keys(patch).length) changed.push({id:t.id, patch: JSON.parse(JSON.stringify(patch))});
+  });
+  return {created, deletedIds, changed};
+}
 async function saveTasks(){
-  logTaskChanges(state.lastSavedTasksSnapshot, state.tasks);
-  state.lastSavedTasksSnapshot = JSON.parse(JSON.stringify(state.tasks));
+  logTaskChanges(state.lastSavedTasksSnapshot, state.tasks); // logs exactly this tab's own edits, computed against its own last-saved snapshot — unaffected by the merge below
+
+  // Merge-on-save: a save used to overwrite the ENTIRE shared task list with whatever this browser
+  // tab had in memory — so a tab left open a while (loaded before other tasks were added elsewhere)
+  // could silently wipe out everyone else's newer tasks the moment it saved anything at all, even an
+  // unrelated one-field edit. Now: fetch the latest server copy first, and apply only the changes
+  // THIS tab actually made (from the diff against its own last-saved snapshot) on top of that fresh
+  // copy — so a stale tab can no longer erase work it never even saw.
+  const diff = computeTaskDiff(state.lastSavedTasksSnapshot, state.tasks);
+  let merged = state.tasks; // fallback if the fresh fetch below fails — same as the old behavior, better than losing the edit entirely
+  const serverTasks = await fsGet('tasks');
+  if(Array.isArray(serverTasks)){
+    merged = serverTasks.map(t=>({...t}));
+    let maxIdNum = merged.reduce((m,t)=>Math.max(m, parseInt(String(t.id).replace(/\D/g,''),10)||0), 0);
+    const byId = {}; merged.forEach((t,i)=>{ byId[t.id]=i; });
+    diff.created.forEach(t=>{
+      if(byId[t.id]!==undefined){
+        // id collision — two tabs created a different task under the same id at the same time
+        // (their taskIdSeq counters both started from the same number). Reassign rather than drop it.
+        maxIdNum++;
+        const newId = "T"+String(maxIdNum).padStart(2,"0");
+        console.warn(`Task id collision on ${t.id} — reassigned the newly-created task to ${newId}`);
+        t = {...t, id:newId};
+      }
+      merged.push(t);
+      byId[t.id] = merged.length-1;
+    });
+    diff.deletedIds.forEach(id=>{
+      if(byId[id]!==undefined){
+        merged.splice(byId[id],1);
+        merged.forEach((t,i)=>{ byId[t.id]=i; }); // indices shifted by the splice — rebuild
+      }
+    });
+    diff.changed.forEach(({id,patch})=>{
+      const idx = byId[id];
+      if(idx!==undefined) Object.assign(merged[idx], patch); // if someone else deleted this task meanwhile, the edit is dropped rather than resurrecting it
+    });
+    state.taskIdSeq = Math.max(state.taskIdSeq, maxIdNum);
+  }
+
+  state.tasks = merged;
+  state.lastSavedTasksSnapshot = JSON.parse(JSON.stringify(merged));
   await fsSet('tasks', state.tasks);
   await fsSet('taskIdSeq', state.taskIdSeq);
   maybeBackupTasks(); // fire-and-forget safety net — never blocks or fails a normal task save
@@ -1347,6 +1416,54 @@ async function saveAnnotations(){ await fsSet('annotations', state.annotations);
 async function saveDrawings(){ await fsSet('markups', state.drawings); }
 async function saveAssets(){ await fsSet('assets', state.assets); }
 async function saveLevels(){ await fsSet('levels', state.levels); }
+async function saveMilestones(){ await fsSet('milestones', state.milestones); }
+/* ---- Timeline milestones: key dates (e.g. "WIP Presentation") shown as markers on the Timeline, separate from tasks ---- */
+function openMilestoneDrawer(id){
+  state.drawerTaskId = 'milestone:'+(id||'new');
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = renderMilestoneDrawerContent(id);
+}
+function renderMilestoneDrawerContent(id){
+  const m = id ? state.milestones.find(x=>x.id===id) : null;
+  const isNew = !m;
+  return `
+    <div class="drawer-head">
+      <div><h2 style="margin:0;font-size:17px">${isNew?'New milestone':'Edit milestone'}</h2></div>
+      <div class="row" style="gap:6px">
+        ${!isNew?`<button class="btn btn-sm btn-danger" onclick="deleteMilestone('${m.id}')">Delete</button>`:''}
+        <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
+      </div>
+    </div>
+    <div class="drawer-body">
+      <div class="field"><label>Name</label><input id="ms-name" placeholder="e.g. WIP Presentation" value="${esc(m?m.name:'')}"></div>
+      <div class="field"><label>Date</label><input id="ms-date" type="date" value="${esc(m?m.date:todayISO())}"></div>
+      <button class="btn btn-gold" onclick="saveMilestoneDrawer('${isNew?'':m.id}')">${isNew?'Add milestone':'Save'}</button>
+    </div>`;
+}
+async function saveMilestoneDrawer(id){
+  const name = document.getElementById('ms-name').value.trim();
+  const date = document.getElementById('ms-date').value;
+  if(!name){ toast('Name is required'); return; }
+  if(!date){ toast('Date is required'); return; }
+  if(id){
+    const m = state.milestones.find(x=>x.id===id); if(!m) return;
+    m.name = name; m.date = date;
+  } else {
+    state.milestones.push({id: uid('ms'), name, date});
+  }
+  await saveMilestones();
+  closeDrawer();
+  render();
+}
+async function deleteMilestone(id){
+  if(!(await confirmDialog('Delete this milestone?'))) return;
+  state.milestones = state.milestones.filter(m=>m.id!==id);
+  await saveMilestones();
+  closeDrawer();
+  render();
+}
 async function setTheme(t){
   state.theme = t;
   document.documentElement.setAttribute('data-theme', t);
@@ -3072,8 +3189,13 @@ function progressGradient(pct, warn){
   if(warn) return 'var(--red)';
   const p = Math.max(0, Math.min(100, pct||0));
   const spread = 16; // width of the soft fade, in percentage points
-  const fadeStart = Math.max(0, p - spread/2);
-  const fadeEnd = Math.min(100, p + spread/2);
+  // shrink the fade symmetrically as it nears either edge, instead of just clipping one side —
+  // clipping alone left a visible sliver of the "wrong" color right at 0% and 100% (e.g. a 100%
+  // task still showing a bit of gold at its tail). At the true edges the fade width goes to 0,
+  // so a 0% task is solid gold and a 100% task is solid green, with no fade at all.
+  const halfWidth = Math.min(spread/2, p, 100-p);
+  const fadeStart = p - halfWidth;
+  const fadeEnd = p + halfWidth;
   return `linear-gradient(90deg, var(--green) 0%, var(--green) ${fadeStart}%, var(--gold) ${fadeEnd}%, var(--gold) 100%)`;
 }
 
@@ -3104,20 +3226,23 @@ function renderTimelineView(){
       <input type="range" id="tl-zoom-input" min="8" max="60" step="2" value="${state.timelineZoom||26}" oninput="setZoom(parseInt(this.value))">
     </span>
     <button class="btn btn-sm btn-ghost" onclick="scrollToToday()">Today</button>
-    <span class="faint" style="font-size:11.5px">Gold line = today · gradient reflects progress · solid red / red arrow = dependency issue · ! = double-booked</span>
+    <button class="btn btn-sm btn-ghost" onclick="openMilestoneDrawer()">◆ Add milestone</button>
+    <span class="faint" style="font-size:11.5px">Gold line = today · violet ◆ = milestone · gradient reflects progress · solid red / red arrow = dependency issue · ! = double-booked</span>
   </div>`;
 
-  if(tasks.length===0){
-    return controlsBar + `<div class="empty-state"><div class="display">Nothing to plot</div>No tasks match these filters with both a start and due date — try clearing a filter above, or add a new task.</div>`;
+  if(tasks.length===0 && state.milestones.length===0){
+    return controlsBar + `<div class="empty-state"><div class="display">Nothing to plot</div>No tasks match these filters with both a start and due date — try clearing a filter above, add a new task, or add a milestone.</div>`;
   }
 
   const starts = tasks.map(t=>new Date(t.start)), dues = tasks.map(t=>new Date(t.due));
-  let min = addDays(new Date(Math.min(...starts)), -4);
-  let max = addDays(new Date(Math.max(...dues)), 4);
+  const milestoneDates = state.milestones.map(m=>new Date(m.date));
+  const allStarts = starts.concat(milestoneDates), allDues = dues.concat(milestoneDates);
+  let min = addDays(new Date(Math.min(...allStarts)), -4);
+  let max = addDays(new Date(Math.max(...allDues)), 4);
   const totalDays = Math.max(1, daysBetween(min,max));
   const zoom = state.timelineZoom || 26; // px per day
   const width = totalDays * zoom;
-  const rowH = 38, headH = 44;
+  const rowH = 38, milestoneRowH = state.milestones.length ? 24 : 0, headH = 44 + milestoneRowH;
   const totalH = headH + tasks.length*rowH;
 
   // day columns (gridlines, weekend/holiday shading, day numbers, month labels)
@@ -3143,6 +3268,23 @@ function renderTimelineView(){
   const todayOffset = daysBetween(min, todayISO());
   const todayLine = (todayOffset>=0 && todayOffset<=totalDays)
     ? `<div class="tl-today" style="left:${todayOffset*zoom}px;height:${totalH}px"></div>` : '';
+
+  // milestones: a violet dashed guideline down the full chart, plus a diamond+label marker in their
+  // own thin band just under the day-grid header — kept visually separate from task rows so a
+  // milestone (no duration, no assignee) never reads as if it were a task
+  const milestoneBand = milestoneRowH ? `<div class="tl-milestone-band" style="top:44px;height:${milestoneRowH}px;width:${width}px"></div>` : '';
+  const milestoneLines = state.milestones.map(m=>{
+    const offset = daysBetween(min, m.date);
+    if(offset<0 || offset>totalDays) return '';
+    return `<div class="tl-milestone-line" style="left:${offset*zoom}px;height:${totalH}px"></div>`;
+  }).join('');
+  const milestoneMarkers = state.milestones.map(m=>{
+    const offset = daysBetween(min, m.date);
+    if(offset<0 || offset>totalDays) return '';
+    return `<div class="tl-milestone-marker" style="left:${offset*zoom}px;top:${44+milestoneRowH/2}px" onclick="openMilestoneDrawer('${m.id}')" title="${esc(m.name)} — ${fmtDate(m.date)}">
+      <span class="diamond"></span><span>${esc(m.name)}</span>
+    </div>`;
+  }).join('');
 
   const rowBands = tasks.map((t,i)=>`<div class="tl-rowband" style="top:${headH+i*rowH}px"></div>`).join('');
 
@@ -3248,6 +3390,7 @@ function renderTimelineView(){
     <div class="tl-outer">
       <div class="tl-labels" id="tl-labels" style="flex:0 0 ${state.timelineLabelsWidth}px">
         ${labelsHead}
+        ${milestoneRowH ? `<div class="tl-labels-row" style="height:${milestoneRowH}px;background:var(--surface2);cursor:default"></div>` : ''}
         ${labelRows}
       </div>
       <div class="tl-resize-handle" id="tl-resize-handle" title="Drag to resize"></div>
@@ -3256,10 +3399,13 @@ function renderTimelineView(){
           ${weekendBands}
           ${dayCols}
           <div class="tl-headerband">${monthLabels}${dayNums}</div>
+          ${milestoneBand}
+          ${milestoneLines}
           ${rowBands}
           ${todayLine}
           ${bars}
           ${depArrowsSvg}
+          ${milestoneMarkers}
         </div>
       </div>
     </div>
