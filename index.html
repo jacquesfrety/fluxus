@@ -1330,8 +1330,8 @@ function renderActivityView(){
   if(state.activityLog.length===0){
     return `<div class="empty-state"><div class="display">No activity yet</div>Every task created, edited or deleted from now on will show up here automatically, with who and when.</div>`;
   }
-  const ACTION_LABEL = {created:'Created', deleted:'Deleted', renamed:'Renamed', changed:'Changed'};
-  const ACTION_COLOR = {created:'var(--green)', deleted:'var(--red)', renamed:'var(--gold)', changed:'var(--teal)'};
+  const ACTION_LABEL = {created:'Created', deleted:'Deleted', renamed:'Renamed', changed:'Changed', restored:'Restored'};
+  const ACTION_COLOR = {created:'var(--green)', deleted:'var(--red)', renamed:'var(--gold)', changed:'var(--teal)', restored:'var(--violet)'};
 
   // build filter option lists from the log itself (so a deleted task or a departed teammate
   // still shows up as something you can filter by, even though it's no longer in state.tasks/state.team)
@@ -1403,8 +1403,15 @@ async function restoreTaskBackup(ts){
   if(!isSupervisor()){ toast('Only Supervisors can restore a backup'); return; }
   const bkp = state.taskBackups.find(b=>b.ts===ts); if(!bkp) return;
   if(!(await confirmDialog(`Restore the task list to how it was on ${fmtWhen(ts)}? This replaces the current ${state.tasks.length} task(s) with the ${bkp.count} from that backup. The current list is backed up first, so this can be undone.`, {confirmLabel:'Restore', danger:false}))) return;
+  const beforeCount = state.tasks.length;
   state.tasks = JSON.parse(JSON.stringify(bkp.tasks));
-  await saveTasks();
+  await saveTasks(); // also logs each individual task-level create/delete/change caused by the restore, via the normal diff
+  state.activityLog = [...state.activityLog, {
+    ts: Date.now(), by: state.currentUser||'Unknown', action:'restored', taskId:'', taskName:'',
+    detail: `Restored the task list from the backup taken on ${fmtWhen(ts)} (${beforeCount} task(s) → ${bkp.count} task(s))`
+  }];
+  pruneActivityLog();
+  fsSet('activityLog', state.activityLog).catch(e=>console.error('activity log save failed', e));
   toast('Tasks restored from backup');
   render();
 }
