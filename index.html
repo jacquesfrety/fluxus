@@ -1109,6 +1109,10 @@ async function pollLiveAlerts(){
         state.notifications = freshNotifs;
         playNotificationDing();
         renderNotifBell();
+        // temporary diagnostic: show exactly what triggered the sound, so a report of "I hear it but
+        // see nothing new" can be pinned down to a real cause instead of guessed at again
+        const first = mineNew[0];
+        toast(`🔔 ding: ${first.type||'notification'} from ${first.fromUser||'someone'} — "${(first.taskName||'').slice(0,40)}"`);
       }
     }
     if(Array.isArray(freshTeam)){
@@ -1116,6 +1120,7 @@ async function pollLiveAlerts(){
         const prev = teamLastSeenById[fm.id];
         if(fm.name!==state.currentUser && fm.lastSeen && prev!==undefined && fm.lastSeen>prev){
           playLoginBell();
+          toast(`🔔 bell: "${fm.name}" just connected (lastSeen advanced)`);
         }
         teamLastSeenById[fm.id] = fm.lastSeen || teamLastSeenById[fm.id] || Date.now();
         const local = state.team.find(x=>x.id===fm.id);
@@ -3701,6 +3706,7 @@ function openPostDrawer(postId){
   const drawer = document.getElementById('drawer');
   drawer.classList.add('open');
   drawer.innerHTML = renderPostDrawerContent(postId);
+  wireMentionAutocomplete('post-comment-input');
 }
 function renderPostDrawerContent(postId){
   const p = state.forumPosts.find(x=>x.id===postId); if(!p) return '';
@@ -3743,17 +3749,21 @@ function renderPostDrawerContent(postId){
                   <div class="chat-meta"><b>${esc(c.author||'Someone')}</b> · ${fmtWhen(c.ts)}
                     ${(c.author===state.currentUser)?`<span class="chat-actions"><span class="chat-action-link" onclick="deleteForumComment('${p.id}','${c.id}')">Delete</span></span>`:''}
                   </div>
-                  ${c.text?`<div class="chat-text">${esc(c.text)}</div>`:''}
+                  ${c.text?`<div class="chat-text">${renderMentionText(c.text)}</div>`:''}
                   ${c.driveFile?.thumbnailLink?`<img class="chat-img" src="${esc(c.driveFile.thumbnailLink)}" data-post-id="${esc(p.id)}" data-comment-id="${esc(c.id)}" onclick="openMediaLightbox('${esc(c.driveFile.id)}','${esc(driveThumbLarge(c.driveFile.thumbnailLink,1600))}','${esc(c.driveFile.webViewLink||'')}')" onerror="forumImgError(this)">`:''}
                 </div>
               </div>
             </div>`).join('') : '<div class="chat-empty">No comments yet.</div>'}
         </div>
         <div class="chat-compose">
-          <textarea id="post-comment-input" placeholder="Add a comment…"></textarea>
+          <textarea id="post-comment-input" placeholder="Add a comment… type @ to tag someone"></textarea>
           <div id="post-comment-image-preview-wrap"></div>
-          <div class="chat-compose-foot">
-            <label class="btn btn-sm btn-ghost" style="margin:0">📎 Image<input type="file" accept="image/*" style="display:none" onchange="handlePostCommentImagePick(event)"></label>
+          <div class="chat-compose-foot" style="position:relative">
+            <div class="row" style="gap:6px">
+              <label class="btn btn-sm btn-ghost" style="margin:0">📎 Image<input type="file" accept="image/*" style="display:none" onchange="handlePostCommentImagePick(event)"></label>
+              <button class="btn btn-sm btn-ghost" onclick="toggleMentionPicker('post-mention-picker','post-comment-input')">@ Tag</button>
+              <div id="post-mention-picker"></div>
+            </div>
             <button class="btn btn-gold btn-sm" onclick="postForumComment('${p.id}')">Post</button>
           </div>
         </div>
@@ -3807,7 +3817,13 @@ async function postForumComment(postId){
   p.comments.push(comment);
   pendingPostCommentImageFile = null;
   await saveForumPosts();
+  const mentioned = extractMentions(text).filter(n=>n!==state.currentUser);
+  const snippet = text.slice(0,60) + (text.length>60?'…':'');
+  for(const name of mentioned){
+    await addNotification(name, 'tag', 'post:'+p.id, p.title, state.currentUser, snippet);
+  }
   document.getElementById('drawer').innerHTML = renderPostDrawerContent(postId);
+  wireMentionAutocomplete('post-comment-input');
   render();
 }
 async function forumImgError(img){
@@ -4882,7 +4898,7 @@ function renderDrawerContent(taskId){
             <div class="row" style="gap:6px">
               <button type="button" class="btn btn-sm btn-ghost" style="margin:0" onclick="handleImageButtonClick()">📎 Image</button>
               <input type="file" id="chat-image-input" accept="image/*" style="display:none" onchange="handleImagePick(event)">
-              <button class="btn btn-sm btn-ghost" onclick="toggleMentionPicker('${t.id}')">@ Tag</button>
+              <button class="btn btn-sm btn-ghost" onclick="toggleMentionPicker('mention-picker','chat-input')">@ Tag</button>
               <div id="mention-picker"></div>
             </div>
             <button class="btn btn-gold btn-sm" onclick="postMessage('${t.id}')">Post</button>
@@ -5238,26 +5254,28 @@ async function deleteMessage(taskId, msgId){
   await saveChat(taskId, msgs);
   await renderChat(taskId);
 }
-function toggleMentionPicker(taskId){
+function toggleMentionPicker(pickerId, targetId){
+  pickerId = pickerId || 'mention-picker'; targetId = targetId || 'chat-input';
   mentionPickerOpen = !mentionPickerOpen;
-  const el = document.getElementById('mention-picker');
+  const el = document.getElementById(pickerId);
   if(!el) return;
   if(!mentionPickerOpen){ el.innerHTML=''; return; }
   el.innerHTML = `<div class="mention-picker">${
     state.team.length ? state.team.map(m=>`
-      <div class="mention-picker-item" onclick="insertMention('${esc(m.name)}')">${avatarForMember(m,18)}<span>${esc(m.name)}</span></div>
+      <div class="mention-picker-item" onclick="insertMention('${esc(m.name)}','${targetId}','${pickerId}')">${avatarForMember(m,18)}<span>${esc(m.name)}</span></div>
     `).join('') : '<div class="faint" style="padding:6px 9px">No team members yet</div>'
   }</div>`;
 }
-function insertMention(name){
-  const input = document.getElementById('chat-input');
+function insertMention(name, targetId, pickerId){
+  targetId = targetId || 'chat-input'; pickerId = pickerId || 'mention-picker';
+  const input = document.getElementById(targetId);
   if(input){
     const sep = input.value && !input.value.endsWith(' ') && !input.value.endsWith('\n') ? ' ' : '';
     input.value += sep + '@' + name + ' ';
     input.focus();
   }
   mentionPickerOpen = false;
-  const el = document.getElementById('mention-picker'); if(el) el.innerHTML = '';
+  const el = document.getElementById(pickerId); if(el) el.innerHTML = '';
 }
 
 /* ---- @mention autocomplete: shows a filtered team-member dropdown as you type "@" into any
