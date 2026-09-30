@@ -1081,14 +1081,16 @@ function playLoginBell(){
   playTone(987.77, 0.4, 'triangle', 0.09, 0.07);
 }
 
-/* ---- live alerts: since data only loads once, poll for new notifications / teammates connecting ---- */
+/* ---- live alerts: since data only loads once, poll for new notifications / teammates connecting ----
+   Uses a strictly-increasing timestamp watermark rather than comparing id sets — simpler and immune
+   to any accidental re-triggering, since a timestamp can only ever move forward. */
 let liveAlertsTimer = null;
-let seenNotifIds = new Set();
+let lastSeenNotifTs = 0;
 let teamLastSeenById = {};
 function initLiveAlerts(){
-  seenNotifIds = new Set(state.notifications.map(n=>n.id));
+  lastSeenNotifTs = state.notifications.reduce((m,n)=>Math.max(m, n.ts||0), Date.now());
   teamLastSeenById = {};
-  state.team.forEach(m=>{ teamLastSeenById[m.id] = m.lastSeen || 0; });
+  state.team.forEach(m=>{ teamLastSeenById[m.id] = m.lastSeen || Date.now(); }); // seed with "now", not 0 — never ding for a sign-in that already happened before this session started watching
   if(liveAlertsTimer) clearInterval(liveAlertsTimer);
   liveAlertsTimer = setInterval(pollLiveAlerts, 20000);
 }
@@ -1100,8 +1102,8 @@ async function pollLiveAlerts(){
   try{
     const [freshNotifs, freshTeam] = await Promise.all([fsGet('notifications'), fsGet('team')]);
     if(Array.isArray(freshNotifs)){
-      const mineNew = freshNotifs.filter(n=>n.forUser===state.currentUser && !seenNotifIds.has(n.id));
-      seenNotifIds = new Set(freshNotifs.map(n=>n.id));
+      const mineNew = freshNotifs.filter(n=>n.forUser===state.currentUser && (n.ts||0)>lastSeenNotifTs);
+      lastSeenNotifTs = freshNotifs.reduce((m,n)=>Math.max(m, n.ts||0), lastSeenNotifTs);
       if(mineNew.length){
         state.notifications = freshNotifs;
         playNotificationDing();
@@ -1110,11 +1112,11 @@ async function pollLiveAlerts(){
     }
     if(Array.isArray(freshTeam)){
       freshTeam.forEach(fm=>{
-        const prev = teamLastSeenById[fm.id] || 0;
-        if(fm.name!==state.currentUser && fm.lastSeen && fm.lastSeen>prev){
+        const prev = teamLastSeenById[fm.id];
+        if(fm.name!==state.currentUser && fm.lastSeen && prev!==undefined && fm.lastSeen>prev){
           playLoginBell();
         }
-        teamLastSeenById[fm.id] = fm.lastSeen || 0;
+        teamLastSeenById[fm.id] = fm.lastSeen || teamLastSeenById[fm.id] || Date.now();
         const local = state.team.find(x=>x.id===fm.id);
         if(local) local.lastSeen = fm.lastSeen; // keep Team page's "Last seen" fresh without a full reload
       });
