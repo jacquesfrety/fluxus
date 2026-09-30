@@ -2224,6 +2224,10 @@ function setSort(key){
 function sortArrow(key){
   return state.sort.key===key ? (state.sort.dir==='asc' ? ' ▲' : ' ▼') : '';
 }
+function resetTaskFilters(){
+  state.filters = { category: "", taskList: "", assignee: "", status: "", search: "" };
+  render();
+}
 function renderTasksView(){
   const tasks = filteredTasks();
   if(state.sort.key) tasks.sort((a,b)=>compareTasks(a,b,state.sort.key,state.sort.dir));
@@ -2247,6 +2251,7 @@ function renderTasksView(){
       <option value="">All statuses</option>
       ${STATUSES.map(s=>`<option value="${s}" ${state.filters.status===s?'selected':''}>${s}</option>`).join('')}
     </select>
+    ${(state.filters.search||state.filters.category||state.filters.taskList||state.filters.assignee||state.filters.status)?`<button class="btn btn-ghost btn-sm" onclick="resetTaskFilters()">✕ Reset filters</button>`:''}
     <button class="btn btn-ghost btn-sm" onclick="openManageCategories()">Manage categories</button>
     <button class="btn btn-ghost btn-sm" onclick="openManageTaskLists()">Manage task lists</button>
   </div>`;
