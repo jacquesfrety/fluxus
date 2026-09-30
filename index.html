@@ -897,6 +897,7 @@ let state = {
   filters: { category: "", taskList: "", assignee: "", status: "", search: "" },
   timelineFilters: { category: "", taskList: "", assignee: "" },
   sort: { key: null, dir: "asc" },
+  selectedTaskIds: [], // Tasks page bulk-select (tick to move task list / set category / set assignee / delete)
   groupTasksByList: lsGet('tasksGroupByList', false),
   collapsedTaskGroups: lsGet('tasksCollapsedGroups', []),
   annotations: [],
@@ -2192,9 +2193,30 @@ function renderTasksView(){
     <button class="btn btn-ghost btn-sm" onclick="openManageTaskLists()">Manage task lists</button>
   </div>`;
 
+  const selectedCount = state.selectedTaskIds.length;
+  const bulkBar = selectedCount>0 ? `<div class="filterbar" style="background:${'var(--gold)'}14;border:1px solid var(--gold);border-radius:8px;padding:8px 10px;margin-top:8px;align-items:center">
+    <b>${selectedCount} selected</b>
+    <select onchange="if(this.value) bulkSetTaskList(this.value)">
+      <option value="">Move to task list…</option>
+      ${state.taskLists.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('')}
+    </select>
+    <select onchange="if(this.value) bulkSetCategory(this.value)">
+      <option value="">Set category…</option>
+      ${state.categories.map(c=>`<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('')}
+    </select>
+    <select onchange="if(this.value) bulkSetAssignee(this.value)">
+      <option value="">Set assignee…</option>
+      ${state.team.map(m=>`<option value="${esc(m.name)}">${esc(m.name)}</option>`).join('')}
+    </select>
+    <button class="btn btn-sm btn-danger" onclick="bulkDeleteTasks()">🗑 Delete selected</button>
+    <button class="btn btn-sm btn-ghost" onclick="clearTaskSelection()">Clear selection</button>
+  </div>` : '';
+
   if(tasks.length===0){
     return filterBar + `<div class="empty-state"><div class="display">No tasks match</div>Adjust the filters, or add a new task.</div>`;
   }
+
+  const allVisibleSelected = tasks.length>0 && tasks.every(t=>state.selectedTaskIds.includes(t.id));
 
   const taskRowHtml = (t)=>{
     const dep = dependencyStatus(t);
@@ -2202,6 +2224,7 @@ function renderTasksView(){
     const catColor = categoryColor(t.category);
     const catStyle = catColor ? `background:${catColor}22;color:${catColor};border-color:${catColor}66` : '';
     return `<tr class="taskrow">
+      <td onclick="event.stopPropagation()"><input type="checkbox" ${state.selectedTaskIds.includes(t.id)?'checked':''} onchange="toggleTaskSelect('${t.id}', this.checked)"></td>
       <td><span class="task-id mono">${t.id}</span><br/><span class="taskname" onclick="openDrawer('${t.id}')">${esc(t.name)}</span>
         ${dep.state==='warn'?`<div class="dep-warn">⚠ ${esc(dep.text)}</div>`:''}
         ${dep.state==='unknown'?`<div class="dep-warn">⚠ ${esc(dep.text)}</div>`:''}
@@ -2227,6 +2250,7 @@ function renderTasksView(){
   };
 
   const thead = `<thead><tr>
+    <th style="width:28px"><input type="checkbox" ${allVisibleSelected?'checked':''} onchange="toggleSelectAllTasks(this.checked)" title="Select all"></th>
     <th class="sortable" onclick="setSort('name')">Task${sortArrow('name')}</th>
     <th class="sortable" onclick="setSort('category')">Category${sortArrow('category')}</th>
     <th class="sortable" onclick="setSort('taskList')">Task list${sortArrow('taskList')}</th>
@@ -2239,7 +2263,7 @@ function renderTasksView(){
 
   if(!state.groupTasksByList){
     const rows = tasks.map(taskRowHtml).join('');
-    return filterBar + `<table class="ttable">${thead}<tbody>${rows}</tbody></table>`;
+    return filterBar + bulkBar + `<table class="ttable">${thead}<tbody>${rows}</tbody></table>`;
   }
 
   const groups = groupTasksByTaskList(tasks);
@@ -2248,7 +2272,7 @@ function renderTasksView(){
     const total = g.tasks.length;
     const avgPct = Math.round(g.tasks.reduce((s,t)=>s+(t.pct||0),0) / (total||1));
     const headerRow = `<tr class="task-group-row" onclick="toggleTaskGroupCollapse('${esc(g.key)}')">
-      <td colspan="8">
+      <td colspan="9">
         <span class="task-group-chevron">${collapsed?'▸':'▾'}</span>
         <span class="task-group-name">${esc(g.name)}</span>
         <span class="faint" style="font-size:12px;margin-left:6px">${total} task${total===1?'':'s'}</span>
@@ -2262,7 +2286,7 @@ function renderTasksView(){
     return headerRow + bodyRows;
   }).join('');
 
-  return filterBar + `<table class="ttable">${thead}<tbody>${groupBlocks}</tbody></table>`;
+  return filterBar + bulkBar + `<table class="ttable">${thead}<tbody>${groupBlocks}</tbody></table>`;
 }
 function openManageCategories(){
   document.getElementById('overlay').classList.add('open');
@@ -5083,6 +5107,55 @@ async function deleteTask(id){
   await saveTasks();
   await deleteChatFor(id); // also remove this task's chat history/images so they can never resurface under a later task
   closeDrawer(); render();
+}
+
+/* ---- Tasks page bulk actions: tick rows, then move task list / set category / set assignee / delete together ---- */
+function toggleTaskSelect(id, checked){
+  if(checked){ if(!state.selectedTaskIds.includes(id)) state.selectedTaskIds.push(id); }
+  else{ state.selectedTaskIds = state.selectedTaskIds.filter(x=>x!==id); }
+  render();
+}
+function toggleSelectAllTasks(checked){
+  const visibleIds = filteredTasks().map(t=>t.id);
+  if(checked){
+    state.selectedTaskIds = [...new Set([...state.selectedTaskIds, ...visibleIds])];
+  }else{
+    state.selectedTaskIds = state.selectedTaskIds.filter(id=>!visibleIds.includes(id));
+  }
+  render();
+}
+function clearTaskSelection(){ state.selectedTaskIds = []; render(); }
+async function bulkSetTaskList(value){
+  const ids = state.selectedTaskIds; if(!ids.length) return;
+  state.tasks.forEach(t=>{ if(ids.includes(t.id)) t.taskList = value; });
+  await saveTasks();
+  toast(`Moved ${ids.length} task${ids.length===1?'':'s'} to "${value}"`);
+  render();
+}
+async function bulkSetCategory(value){
+  const ids = state.selectedTaskIds; if(!ids.length) return;
+  state.tasks.forEach(t=>{ if(ids.includes(t.id)) t.category = value; });
+  await saveTasks();
+  toast(`Set category to "${value}" on ${ids.length} task${ids.length===1?'':'s'}`);
+  render();
+}
+async function bulkSetAssignee(value){
+  const ids = state.selectedTaskIds; if(!ids.length) return;
+  state.tasks.forEach(t=>{ if(ids.includes(t.id)) t.assignees = [value]; }); // replaces existing assignees on each selected task
+  await saveTasks();
+  toast(`Assigned ${ids.length} task${ids.length===1?'':'s'} to ${value}`);
+  render();
+}
+async function bulkDeleteTasks(){
+  const ids = state.selectedTaskIds.slice(); if(!ids.length) return;
+  if(!confirm(`Delete ${ids.length} selected task${ids.length===1?'':'s'}? This can't be undone.`)) return;
+  const idSet = new Set(ids);
+  state.tasks = state.tasks.filter(t=>!idSet.has(t.id));
+  state.tasks.forEach(t=>{ t.dependsOn = (t.dependsOn||[]).filter(d=>!idSet.has(d)); });
+  await saveTasks();
+  for(const id of ids) await deleteChatFor(id); // also clean up each deleted task's chat history/images
+  state.selectedTaskIds = [];
+  render();
 }
 async function deleteChatFor(taskId){
   delete state.chatCache[taskId];
