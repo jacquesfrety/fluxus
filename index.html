@@ -1553,7 +1553,10 @@ function dependencyStatus(task){
   if(preds.length !== task.dependsOn.length) return {state:"unknown", text:"References a task that no longer exists"};
   if(!task.start) return {state:"none"};
   const maxDue = preds.reduce((m,p)=> p.due && (!m || p.due>m) ? p.due : m, null);
-  if(maxDue && task.start < maxDue){
+  // The due date is itself a working day on the predecessor, so the dependent task must start
+  // AFTER it, not just not-before it — starting ON the same day the predecessor ends is still a
+  // 1-day overlap and should warn, not pass silently.
+  if(maxDue && task.start <= maxDue){
     return {state:"warn", text:`Starts before ${task.dependsOn.join(", ")} ${preds.length>1?'end':'ends'} (${fmtDate(maxDue)})`};
   }
   return {state:"ok"};
