@@ -1140,6 +1140,7 @@ function playLoginBell(){
 let liveAlertsTimer = null;
 let lastSeenNotifTs = 0;
 let teamLastSeenById = {};
+const LOGIN_BELL_MIN_GAP_MS = 5*60*1000; // a lastSeen bump under 5 minutes since we last saw it is just a refresh, not a real reconnect
 function initLiveAlerts(){
   lastSeenNotifTs = state.notifications.reduce((m,n)=>Math.max(m, n.ts||0), Date.now());
   teamLastSeenById = {};
@@ -1171,7 +1172,11 @@ async function pollLiveAlerts(){
     if(Array.isArray(freshTeam)){
       freshTeam.forEach(fm=>{
         const prev = teamLastSeenById[fm.id];
-        if(fm.name!==state.currentUser && fm.lastSeen && prev!==undefined && fm.lastSeen>prev){
+        // root cause found: recordLastSeen() stamps lastSeen on every page load, including a plain
+        // refresh (Ctrl+F5) — so without a gap check, a teammate simply reloading while already
+        // active rang the "just connected" bell every time. Only ring it for a real reconnect: their
+        // lastSeen must have advanced by more than LOGIN_BELL_MIN_GAP_MS since we last saw it.
+        if(fm.name!==state.currentUser && fm.lastSeen && prev!==undefined && fm.lastSeen>prev+LOGIN_BELL_MIN_GAP_MS){
           playLoginBell();
           console.log('[sound-alert] bell caused by', {member: fm.name, prevLastSeen: prev, newLastSeen: fm.lastSeen});
           toast(`🔔 bell: "${fm.name}" just connected (lastSeen advanced)`, 8000);
