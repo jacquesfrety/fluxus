@@ -3283,6 +3283,15 @@ function showConflictInfo(e, taskId){
   alert(`Double-booking on "${t.name}":\n\n${lines}`);
 }
 function renderTimelineView(){
+  // Clamp to the current allowed range — catches widths saved under the old (buggy, task-name-never-
+  // grew) version where dragging to the max just felt pointless, so people dragged it to the old max
+  // of 820 trying to get more room. Now that width actually goes to the task name, that same saved
+  // value renders far wider than anyone intended.
+  const clampedLabelsWidth = Math.max(300, Math.min(700, state.timelineLabelsWidth || 520));
+  if(clampedLabelsWidth !== state.timelineLabelsWidth){
+    state.timelineLabelsWidth = clampedLabelsWidth;
+    saveTimelineLabelsWidth().catch(e=>console.error('timeline width save failed', e));
+  }
   const tasks = filteredTasksForTimeline().filter(t=>t.start && t.due);
   const controlsBar = `<div class="tl-controls">
     <span class="tl-zoom">
@@ -3519,9 +3528,9 @@ function wireTimelineResize(){
     handle.classList.add('dragging');
     function onMove(ev){
       // 300 = the other-columns viewport (200px) plus a minimum usable task-name width (100px);
-      // below that there'd be no room left for the name at all. 1000 lets a long task name breathe
-      // without the panel swallowing the whole timeline.
-      currentWidth = Math.max(300, Math.min(1000, initialWidth + (ev.clientX - startX)));
+      // below that there'd be no room left for the name at all. 700 lets a long task name breathe
+      // without the panel swallowing the whole timeline (keep in sync with the clamp in renderTimelineView).
+      currentWidth = Math.max(300, Math.min(700, initialWidth + (ev.clientX - startX)));
       labels.style.flex = `0 0 ${currentWidth}px`;
     }
     async function onUp(){
