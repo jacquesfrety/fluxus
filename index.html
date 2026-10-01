@@ -191,7 +191,7 @@
   .tl-scrollctl{display:flex;align-items:center;gap:8px;margin-top:10px;}
   .tl-scrollctl input[type=range]{flex:1;}
   .tl-outer{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:flex;}
-  .tl-labels{flex:0 0 520px;min-width:200px;background:var(--surface);border-right:1px solid var(--line);}
+  .tl-labels{flex:0 0 520px;min-width:300px;background:var(--surface);border-right:1px solid var(--line);}
   .tl-resize-handle{flex:0 0 6px;cursor:col-resize;background:var(--surface3);position:relative;}
   .tl-resize-handle::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
     width:2px;height:26px;border-radius:2px;background:var(--ink-faint);}
@@ -203,7 +203,7 @@
   .tl-labels-row.head{height:44px;background:var(--surface3);font-size:11px;color:var(--ink-faint);
     text-transform:uppercase;letter-spacing:.4px;cursor:default;}
   .tl-labels-row.head select.inline-edit{max-width:100%;font-size:10.5px;text-transform:none;letter-spacing:0;}
-  .tl-col-task-fixed{flex:0 0 200px;padding:0 12px;display:flex;align-items:center;gap:6px;overflow:hidden;}
+  .tl-col-task-fixed{padding:0 12px;display:flex;align-items:center;gap:6px;overflow:hidden;} /* flex-basis set inline per-render, sized off state.timelineLabelsWidth */
   .tl-col-task-fixed .task-id{flex:0 0 auto;white-space:nowrap;}
   .tl-col-task-fixed span:last-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .tl-col-task-fixed>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -3410,9 +3410,16 @@ function renderTimelineView(){
     ${depArrows.join('')}
   </svg>`;
 
+  // The other columns (assignee/est/category/list) stay in a fixed-width horizontally-scrollable
+  // viewport; everything else dragged into the panel via the resize handle goes to the task name
+  // instead, so widening the panel actually gives long names more room (otherwise the name column
+  // never grew beyond 200px no matter how wide the panel got).
+  const OTHER_COLS_VIEWPORT = 200;
+  const taskColWidth = Math.max(100, state.timelineLabelsWidth - OTHER_COLS_VIEWPORT);
+
   const labelRows = tasks.map(t=>`
     <div class="tl-labels-row" onclick="openDrawer('${t.id}')">
-      <div class="tl-col-task-fixed"><span class="task-id mono">${t.id}</span><span>${esc(t.name)}</span></div>
+      <div class="tl-col-task-fixed" style="flex:0 0 ${taskColWidth}px"><span class="task-id mono">${t.id}</span><span>${esc(t.name)}</span></div>
       <div class="tl-cols-scroll-outer other-cols-scroll">
         <div class="tl-cols-scroll-inner">
           <span class="tl-col-assignee">${avatarsForNames(t.assignees,18)}<span>${esc(assigneeNamesLabel(t.assignees))}</span></span>
@@ -3424,7 +3431,7 @@ function renderTimelineView(){
     </div>`).join('');
 
   const labelsHead = `<div class="tl-labels-row head">
-    <div class="tl-col-task-fixed">Task</div>
+    <div class="tl-col-task-fixed" style="flex:0 0 ${taskColWidth}px">Task</div>
     <div class="tl-cols-scroll-outer other-cols-scroll">
       <div class="tl-cols-scroll-inner">
         <span class="tl-col-assignee" onclick="event.stopPropagation()">
@@ -3474,8 +3481,8 @@ function renderTimelineView(){
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:0;margin-top:10px">
-      <div style="flex:0 0 200px"></div>
-      <div style="flex:0 0 ${Math.max(0, state.timelineLabelsWidth-200)}px"><input type="range" id="tl-cols-slider" min="0" max="100" value="0" oninput="scrollOtherColsFromSlider(this.value)" style="width:100%"></div>
+      <div style="flex:0 0 ${taskColWidth}px"></div>
+      <div style="flex:0 0 ${OTHER_COLS_VIEWPORT}px"><input type="range" id="tl-cols-slider" min="0" max="100" value="0" oninput="scrollOtherColsFromSlider(this.value)" style="width:100%"></div>
       <div style="flex:0 0 6px"></div>
       <input type="range" id="tl-scroll-input" min="0" max="100" value="0" oninput="scrollFromSlider(this.value)" style="flex:1;min-width:0">
     </div>
@@ -3511,8 +3518,10 @@ function wireTimelineResize(){
     let currentWidth = initialWidth;
     handle.classList.add('dragging');
     function onMove(ev){
-      // 200 = the Task column's fixed width; below that there'd be no room left for it at all
-      currentWidth = Math.max(200, Math.min(820, initialWidth + (ev.clientX - startX)));
+      // 300 = the other-columns viewport (200px) plus a minimum usable task-name width (100px);
+      // below that there'd be no room left for the name at all. 1000 lets a long task name breathe
+      // without the panel swallowing the whole timeline.
+      currentWidth = Math.max(300, Math.min(1000, initialWidth + (ev.clientX - startX)));
       labels.style.flex = `0 0 ${currentWidth}px`;
     }
     async function onUp(){
