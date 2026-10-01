@@ -649,6 +649,10 @@ try{
 let authUser = null; // Firebase Auth user object; independent of which project is open
 const googleAuthProvider = auth ? new firebase.auth.GoogleAuthProvider() : null;
 if(googleAuthProvider) googleAuthProvider.setCustomParameters({ prompt: 'select_account' });
+let teamDataLoaded = false; // guards the warning below — this fn is also called from the auth callback
+  // BEFORE loadAll() has ever fetched state.team, when state.team is still its initial empty array;
+  // without this guard every admin sign-in would trigger a false "doesn't match any team member"
+  // warning for the split second before team data arrives, even when it ultimately matches fine
 function syncCurrentUserFromAuth(){
   if(!authUser){ state.currentUser = ''; return; }
   const email = (authUser.email||'').trim().toLowerCase();
@@ -657,13 +661,16 @@ function syncCurrentUserFromAuth(){
   // fallback identity ("Administrator") is a dead end for @mentions and notifications: nobody types
   // "@Administrator", and anything addressed to this person's actual team-member name will silently
   // never reach them while they're operating under this fallback. Surface it loudly rather than
-  // leaving it to look like a notification bug with no visible cause.
+  // leaving it to look like a notification bug with no visible cause — but only once team data has
+  // actually loaded, so this doesn't fire as a false alarm during the normal page-load sequence.
   if(match){
     state.currentUser = match.name;
   } else if(isAdmin()){
     state.currentUser = 'Administrator';
-    console.warn(`Signed in as ${authUser.email}, which doesn't match any team member's stored email — acting as "Administrator". @mentions of your team-member name won't reach you until your team profile's email matches this sign-in exactly.`);
-    toast(`⚠ "${authUser.email}" doesn't match any team member's email — you're acting as "Administrator", not your team profile. Tags/mentions of your team name won't reach you until the Team page email matches.`, 9000);
+    if(teamDataLoaded){
+      console.warn(`Signed in as ${authUser.email}, which doesn't match any team member's stored email — acting as "Administrator". @mentions of your team-member name won't reach you until your team profile's email matches this sign-in exactly.`);
+      toast(`⚠ "${authUser.email}" doesn't match any team member's email — you're acting as "Administrator", not your team profile. Tags/mentions of your team name won't reach you until the Team page email matches.`, 9000);
+    }
   } else {
     state.currentUser = '';
   }
@@ -1028,6 +1035,7 @@ async function loadAll(){
       fsGet('assets'), fsGet('levels'), fsGet('taskBackups'), fsGet('activityLog'), fsGet('milestones')
     ]);
     state.team = team || [];
+    teamDataLoaded = true;
     state.tasks = tasks || [];
     state.taskBackups = taskBackups || [];
     state.activityLog = activityLog || [];
@@ -4740,10 +4748,16 @@ async function deletePin(id){
 async function notifyPinMentions(text, fileId){
   const names = extractMentions(text);
   const file = (state.driveFiles||[]).find(x=>x.id===fileId);
+  const notified = [];
   for(const name of names){
-    if(name===state.currentUser) continue;
+    if(name===state.currentUser) continue; // tagging yourself never notifies — same rule everywhere
     await addNotification(name, 'pin', 'pin:'+fileId, file ? file.name : 'a file', state.currentUser, text.slice(0,60));
+    notified.push(name);
   }
+  // Immediate feedback for whoever wrote the @mention — without this there was no way to tell, from
+  // the tagging side, whether anything actually happened short of switching accounts and refreshing.
+  if(names.length && notified.length) toast(`🔔 Notified: ${notified.join(', ')}`, 4000);
+  else if(names.length && !notified.length) toast(`You tagged yourself — no notification sent (that's expected)`, 4000);
 }
 async function driveUploadFiles(fileList){
   const files = Array.from(fileList || []);
