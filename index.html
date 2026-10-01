@@ -5534,8 +5534,11 @@ function extractMentions(text){
   const names = state.team.map(m=>m.name).filter(Boolean).sort((a,b)=>b.length-a.length);
   const found = new Set();
   names.forEach(name=>{
-    const re = new RegExp('@'+escapeRegExp(name)+'(?![\\w])');
-    if(re.test(text)) found.add(name);
+    // case-insensitive: whoever typed the @mention freehand (not through the autocomplete dropdown,
+    // which always inserts the exact stored casing) may have typed a different case, and that
+    // shouldn't be the reason a tag silently sends no notification
+    const re = new RegExp('@'+escapeRegExp(name)+'(?![\\w])', 'i');
+    if(re.test(text)) found.add(name); // always add the canonical (team-stored) name, not whatever case was typed
   });
   return [...found];
 }
