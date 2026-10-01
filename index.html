@@ -609,7 +609,7 @@ const ROLES = ["Supervisor","Student Lead","Student","Lecturer"];
 // (e.g. a custom domain) can be an alias that Google still authenticates as its underlying
 // Gmail account — so we accept either, whichever one Firebase Auth actually reports back.
 const OWNER_EMAILS = ["nyp@frety.name", "nyp.frety@gmail.com"];
-function isOwnerEmail(email){ return OWNER_EMAILS.includes((email||'').toLowerCase()); }
+function isOwnerEmail(email){ return OWNER_EMAILS.includes((email||'').trim().toLowerCase()); }
 function isAdmin(){ return !!authUser && isOwnerEmail(authUser.email); }
 const DEFAULT_ROLE = "Student";
 const PROJECT_TYPES = ["Client","Internal","Students"];
@@ -651,10 +651,22 @@ const googleAuthProvider = auth ? new firebase.auth.GoogleAuthProvider() : null;
 if(googleAuthProvider) googleAuthProvider.setCustomParameters({ prompt: 'select_account' });
 function syncCurrentUserFromAuth(){
   if(!authUser){ state.currentUser = ''; return; }
-  const email = (authUser.email||'').toLowerCase();
-  const match = state.team.find(m => m.email && m.email.toLowerCase()===email);
-  // Admin always has a valid acting identity, even without a team profile in this project
-  state.currentUser = match ? match.name : (isAdmin() ? 'Administrator' : '');
+  const email = (authUser.email||'').trim().toLowerCase();
+  const match = state.team.find(m => m.email && m.email.trim().toLowerCase()===email);
+  // Admin always has a valid acting identity, even without a team profile in this project — but that
+  // fallback identity ("Administrator") is a dead end for @mentions and notifications: nobody types
+  // "@Administrator", and anything addressed to this person's actual team-member name will silently
+  // never reach them while they're operating under this fallback. Surface it loudly rather than
+  // leaving it to look like a notification bug with no visible cause.
+  if(match){
+    state.currentUser = match.name;
+  } else if(isAdmin()){
+    state.currentUser = 'Administrator';
+    console.warn(`Signed in as ${authUser.email}, which doesn't match any team member's stored email — acting as "Administrator". @mentions of your team-member name won't reach you until your team profile's email matches this sign-in exactly.`);
+    toast(`⚠ "${authUser.email}" doesn't match any team member's email — you're acting as "Administrator", not your team profile. Tags/mentions of your team name won't reach you until the Team page email matches.`, 9000);
+  } else {
+    state.currentUser = '';
+  }
 }
 async function signInApp(){
   if(!auth || !googleAuthProvider){ toast('Sign-in is still loading — try again in a moment'); return; }
@@ -5530,15 +5542,20 @@ function renderMentionText(text){
   });
   return html;
 }
+function stripDiacritics(s){
+  return (s||'').normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
 function extractMentions(text){
   const names = state.team.map(m=>m.name).filter(Boolean).sort((a,b)=>b.length-a.length);
   const found = new Set();
+  const plainText = stripDiacritics(text);
   names.forEach(name=>{
-    // case-insensitive: whoever typed the @mention freehand (not through the autocomplete dropdown,
-    // which always inserts the exact stored casing) may have typed a different case, and that
-    // shouldn't be the reason a tag silently sends no notification
-    const re = new RegExp('@'+escapeRegExp(name)+'(?![\\w])', 'i');
-    if(re.test(text)) found.add(name); // always add the canonical (team-stored) name, not whatever case was typed
+    // case- and accent-insensitive: whoever typed the @mention freehand (not through the autocomplete
+    // dropdown, which always inserts the exact stored spelling) may have typed a different case, or
+    // dropped an accent the stored name has (e.g. "@Frety" for "Fréty") — easy to do on a non-French
+    // keyboard — and that shouldn't be the reason a tag silently sends no notification
+    const re = new RegExp('@'+escapeRegExp(stripDiacritics(name))+'(?![\\w])', 'i');
+    if(re.test(plainText)) found.add(name); // always add the canonical (team-stored) name, not whatever was typed
   });
   return [...found];
 }
