@@ -5152,6 +5152,13 @@ async function deleteDocument(docId){
 async function openDrawer(taskId, focusName){
   state.drawerTaskId = taskId;
   replyingTo = null; editingMsgId = null; mentionPickerOpen = false; pendingImageFile = null;
+  // loadChat() caches per task for the rest of the session to avoid re-fetching on every re-render
+  // while this drawer stays open (e.g. while typing). But that means a drawer opened once earlier in
+  // the session — including by clicking a notification that exists BECAUSE someone just replied —
+  // would show whatever was cached from before that reply ever happened, with no way to tell short of
+  // a full page reload. A freshly-opened drawer should always show the latest chat, so drop the cache
+  // for this task here and let loadChat() re-fetch.
+  delete state.chatCache[taskId];
   document.getElementById('overlay').classList.add('open');
   const drawer = document.getElementById('drawer');
   drawer.classList.add('open');
