@@ -1240,36 +1240,56 @@ async function saveTasks(){
   // THIS tab actually made (from the diff against its own last-saved snapshot) on top of that fresh
   // copy — so a stale tab can no longer erase work it never even saw.
   const diff = computeTaskDiff(state.lastSavedTasksSnapshot, state.tasks);
-  let merged = state.tasks; // fallback if the fresh fetch below fails — same as the old behavior, better than losing the edit entirely
-  const serverTasks = await fsGet('tasks');
-  if(Array.isArray(serverTasks)){
-    merged = serverTasks.map(t=>({...t}));
-    let maxIdNum = merged.reduce((m,t)=>Math.max(m, parseInt(String(t.id).replace(/\D/g,''),10)||0), 0);
-    const byId = {}; merged.forEach((t,i)=>{ byId[t.id]=i; });
-    diff.created.forEach(t=>{
-      if(byId[t.id]!==undefined){
-        // id collision — two tabs created a different task under the same id at the same time
-        // (their taskIdSeq counters both started from the same number). Reassign rather than drop it.
-        maxIdNum++;
-        const newId = "T"+String(maxIdNum).padStart(2,"0");
-        console.warn(`Task id collision on ${t.id} — reassigned the newly-created task to ${newId}`);
-        t = {...t, id:newId};
-      }
-      merged.push(t);
-      byId[t.id] = merged.length-1;
-    });
-    diff.deletedIds.forEach(id=>{
-      if(byId[id]!==undefined){
-        merged.splice(byId[id],1);
-        merged.forEach((t,i)=>{ byId[t.id]=i; }); // indices shifted by the splice — rebuild
-      }
-    });
-    diff.changed.forEach(({id,patch})=>{
-      const idx = byId[id];
-      if(idx!==undefined) Object.assign(merged[idx], patch); // if someone else deleted this task meanwhile, the edit is dropped rather than resurrecting it
-    });
-    state.taskIdSeq = Math.max(state.taskIdSeq, maxIdNum);
+
+  // This merge is only safe if we actually get a trustworthy fresh copy of the server's task list to
+  // merge onto. Silently falling back to "just save whatever this tab has in memory" when the fetch
+  // fails is exactly the old bug — a tab that's missed updates from teammates would wipe them out the
+  // moment ITS OWN fetch had a network hiccup. So: retry a few times, and if it still fails, abort the
+  // save rather than risk a destructive overwrite. The edit stays in state.tasks either way (nothing is
+  // lost on this tab) and will be picked up by the next successful save.
+  let serverTasks = null;
+  for(let attempt=0; attempt<3 && !Array.isArray(serverTasks); attempt++){
+    if(attempt>0) await new Promise(r=>setTimeout(r, 600*attempt));
+    serverTasks = await fsGet('tasks');
   }
+  if(!Array.isArray(serverTasks)){
+    if(state.lastSavedTasksSnapshot.length===0){
+      // this tab has never seen any task history — plausibly a brand-new project where the tasks
+      // doc simply hasn't been created yet (not a fetch failure), so an empty list is safe to assume
+      serverTasks = [];
+    } else {
+      console.error('saveTasks: could not fetch the current server task list after retries — aborting to avoid overwriting teammates\' work');
+      toast('⚠ Could not save your task changes — check your connection and try again. Nothing was lost, but this edit is not saved yet.', 7000);
+      return;
+    }
+  }
+
+  let merged = serverTasks.map(t=>({...t}));
+  let maxIdNum = merged.reduce((m,t)=>Math.max(m, parseInt(String(t.id).replace(/\D/g,''),10)||0), 0);
+  const byId = {}; merged.forEach((t,i)=>{ byId[t.id]=i; });
+  diff.created.forEach(t=>{
+    if(byId[t.id]!==undefined){
+      // id collision — two tabs created a different task under the same id at the same time
+      // (their taskIdSeq counters both started from the same number). Reassign rather than drop it.
+      maxIdNum++;
+      const newId = "T"+String(maxIdNum).padStart(2,"0");
+      console.warn(`Task id collision on ${t.id} — reassigned the newly-created task to ${newId}`);
+      t = {...t, id:newId};
+    }
+    merged.push(t);
+    byId[t.id] = merged.length-1;
+  });
+  diff.deletedIds.forEach(id=>{
+    if(byId[id]!==undefined){
+      merged.splice(byId[id],1);
+      merged.forEach((t,i)=>{ byId[t.id]=i; }); // indices shifted by the splice — rebuild
+    }
+  });
+  diff.changed.forEach(({id,patch})=>{
+    const idx = byId[id];
+    if(idx!==undefined) Object.assign(merged[idx], patch); // if someone else deleted this task meanwhile, the edit is dropped rather than resurrecting it
+  });
+  state.taskIdSeq = Math.max(state.taskIdSeq, maxIdNum);
 
   state.tasks = merged;
   state.lastSavedTasksSnapshot = JSON.parse(JSON.stringify(merged));
