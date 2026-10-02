@@ -21,10 +21,10 @@
 <style>
   :root{
     --bg:#14171C; --surface:#1C2028; --surface2:#242A33; --surface3:#2C333E;
-    --line:#333B47; --ink:#EDEAE1; --ink-dim:#9BA3AE; --ink-faint:#5B6472;
+    --line:#333B47; --ink:#EDEAE1; --ink-dim:#B7BEC8; --ink-faint:#7D8696;
     --gold:#D9A441; --gold-dim:#B98A34; --teal:#4FB6AC; --blue:#3B82F6;
     --grey:#6B7280; --violet:#B08BE0; --green:#6FCF97; --red:#E5646A;
-    --chart-line:#333B47; --chart-label:#5B6472; --chart-value:#9BA3AE; --chart-value-strong:#0F1216;
+    --chart-line:#333B47; --chart-label:#7D8696; --chart-value:#B7BEC8; --chart-value-strong:#0F1216;
     --weekend-bg:rgba(255,255,255,.07); --holiday-bg:rgba(229,100,106,.16);
     --r:7px;
   }
@@ -3913,7 +3913,7 @@ function renderReportsView(){
 
   return `<div class="faint" style="margin-bottom:14px">Visible to Supervisors only. "Needs Revision" is a running count of how many times a task assigned to this person has been sent back for revision — it doesn't reset if the task is later completed, so it reflects quality over time rather than current status.</div>
   ${table}
-  <div class="dash-2col" style="margin-top:14px"><div>${rateChart}</div><div>${completedChart}</div></div>
+  <div class="dash-2col" style="margin-top:14px"><div>${completedChart}</div><div>${rateChart}</div></div>
   ${backupsSection}`;
 }
 
@@ -4001,7 +4001,7 @@ function openNewPostDrawer(){
         <div id="post-image-preview-wrap"></div>
         <label class="btn btn-sm">📎 Attach image<input type="file" accept="image/*" style="display:none" onchange="handlePostImagePick(event)"></label>
       </div>
-      <button class="btn btn-gold" onclick="createPost()">Post</button>
+      <button class="btn btn-gold" id="new-post-btn" onclick="createPost()">Post</button>
     </div>`;
 }
 let pendingPostImageFile = null;
@@ -4013,9 +4013,15 @@ function handlePostImagePick(e){
       `<div class="chat-preview"><img src="${dataUrl}"><button onclick="pendingPostImageFile=null;document.getElementById('post-image-preview-wrap').innerHTML=''">✕</button></div>`;
   });
 }
+let postingForumPost = false; // same double-click guard as postMessage() — see that function's comment
 async function createPost(){
+  if(postingForumPost) return;
   const title = document.getElementById('new-post-title').value.trim();
   if(!title){ toast('Title is required'); return; }
+  postingForumPost = true;
+  const btn = document.getElementById('new-post-btn');
+  if(btn){ btn.disabled = true; btn.textContent = pendingPostImageFile ? 'Uploading…' : 'Posting…'; }
+  try{
   const type = document.getElementById('new-post-type').value;
   const description = document.getElementById('new-post-desc').value.trim();
   const post = {
@@ -4052,6 +4058,11 @@ async function createPost(){
   }
   closeDrawer();
   render();
+  } finally {
+    postingForumPost = false;
+    const b = document.getElementById('new-post-btn');
+    if(b){ b.disabled = false; b.textContent = 'Post'; }
+  }
 }
 
 function openPostDrawer(postId){
@@ -4118,7 +4129,7 @@ function renderPostDrawerContent(postId){
               <button class="btn btn-sm btn-ghost" onclick="toggleMentionPicker('post-mention-picker','post-comment-input')">@ Tag</button>
               <div id="post-mention-picker"></div>
             </div>
-            <button class="btn btn-gold btn-sm" onclick="postForumComment('${p.id}')">Post</button>
+            <button class="btn btn-gold btn-sm" id="post-comment-btn" onclick="postForumComment('${p.id}')">Post</button>
           </div>
         </div>
       </div>
@@ -4140,45 +4151,56 @@ function handlePostCommentImagePick(e){
       `<div class="chat-preview"><img src="${dataUrl}"><button onclick="pendingPostCommentImageFile=null;document.getElementById('post-comment-image-preview-wrap').innerHTML=''">✕</button></div>`;
   });
 }
+let postingForumComment = false; // same double-click guard as postMessage() — see that function's comment
 async function postForumComment(postId){
+  if(postingForumComment) return;
   if(!state.currentUser){ toast('Sign in with Google first — top of the sidebar'); return; }
   const input = document.getElementById('post-comment-input');
   const text = input.value.trim();
   if(!text && !pendingPostCommentImageFile) return;
-  const p = state.forumPosts.find(x=>x.id===postId); if(!p) return;
-  const comment = {id:uid('c'), author: state.currentUser, text, ts: Date.now()};
-  if(pendingPostCommentImageFile){
-    if(!driveFolderId(state.project.driveUrl)){
-      toast('No team drive folder is set for this project yet — ask a Supervisor to add one in Project Settings');
-      return;
+  postingForumComment = true;
+  const btn = document.getElementById('post-comment-btn');
+  if(btn){ btn.disabled = true; btn.textContent = pendingPostCommentImageFile ? 'Uploading…' : 'Posting…'; }
+  try{
+    const p = state.forumPosts.find(x=>x.id===postId); if(!p) return;
+    const comment = {id:uid('c'), author: state.currentUser, text, ts: Date.now()};
+    if(pendingPostCommentImageFile){
+      if(!driveFolderId(state.project.driveUrl)){
+        toast('No team drive folder is set for this project yet — ask a Supervisor to add one in Project Settings');
+        return;
+      }
+      if(!state.driveSignedIn){
+        signInGoogleDrive();
+        toast('Signing in to Google Drive… once that finishes, click Post again');
+        return;
+      }
+      try{
+        const folderId = await ensureForumDriveFolder();
+        const uploaded = await driveApiUpload(pendingPostCommentImageFile, folderId);
+        comment.driveFile = { id: uploaded.id, name: uploaded.name, thumbnailLink: uploaded.thumbnailLink||'', webViewLink: uploaded.webViewLink||'' };
+      }catch(err){
+        console.error(err);
+        toast('Could not upload the image — comment not posted');
+        return;
+      }
     }
-    if(!state.driveSignedIn){
-      signInGoogleDrive();
-      toast('Signing in to Google Drive… once that finishes, click Post again');
-      return;
+    if(!p.comments) p.comments = [];
+    p.comments.push(comment);
+    pendingPostCommentImageFile = null;
+    await saveForumPosts();
+    const mentioned = extractMentions(text).filter(n=>n!==state.currentUser);
+    const snippet = text.slice(0,60) + (text.length>60?'…':'');
+    for(const name of mentioned){
+      await addNotification(name, 'tag', 'post:'+p.id, p.title, state.currentUser, snippet);
     }
-    try{
-      const folderId = await ensureForumDriveFolder();
-      const uploaded = await driveApiUpload(pendingPostCommentImageFile, folderId);
-      comment.driveFile = { id: uploaded.id, name: uploaded.name, thumbnailLink: uploaded.thumbnailLink||'', webViewLink: uploaded.webViewLink||'' };
-    }catch(err){
-      console.error(err);
-      toast('Could not upload the image — comment not posted');
-      return;
-    }
+    document.getElementById('drawer').innerHTML = renderPostDrawerContent(postId);
+    wireMentionAutocomplete('post-comment-input');
+    render();
+  } finally {
+    postingForumComment = false;
+    const b = document.getElementById('post-comment-btn');
+    if(b){ b.disabled = false; b.textContent = 'Post'; }
   }
-  if(!p.comments) p.comments = [];
-  p.comments.push(comment);
-  pendingPostCommentImageFile = null;
-  await saveForumPosts();
-  const mentioned = extractMentions(text).filter(n=>n!==state.currentUser);
-  const snippet = text.slice(0,60) + (text.length>60?'…':'');
-  for(const name of mentioned){
-    await addNotification(name, 'tag', 'post:'+p.id, p.title, state.currentUser, snippet);
-  }
-  document.getElementById('drawer').innerHTML = renderPostDrawerContent(postId);
-  wireMentionAutocomplete('post-comment-input');
-  render();
 }
 async function forumImgError(img){
   const postId = img.dataset.postId, commentId = img.dataset.commentId;
@@ -5268,7 +5290,7 @@ function renderDrawerContent(taskId){
               <button class="btn btn-sm btn-ghost" onclick="toggleMentionPicker('mention-picker','chat-input')">@ Tag</button>
               <div id="mention-picker"></div>
             </div>
-            <button class="btn btn-gold btn-sm" onclick="postMessage('${t.id}')">Post</button>
+            <button class="btn btn-gold btn-sm" id="chat-post-btn" onclick="postMessage('${t.id}')">Post</button>
           </div>
         </div>
       </div>
@@ -5764,52 +5786,68 @@ function closeMentionAutocomplete(){
   if(pop) pop.innerHTML = '';
 }
 
+let postingMessage = false; // guards against a double "Post" click (or an impatient double-click while
+  // a photo upload is in flight) re-entering this function before the first call finishes — without
+  // this, a second click fired its own full upload of the same pending image, landing it twice in the
+  // task's Drive folder and posting the message twice
 async function postMessage(taskId){
+  if(postingMessage) return;
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
   if(!text && !pendingImageFile) return;
   if(!state.currentUser){ toast("Sign in with Google first — top of the sidebar"); return; }
-  const msg = {id:uid('m'), author: state.currentUser, text, ts: Date.now()};
-  if(pendingImageFile){
-    if(!state.driveSignedIn){
-      toast('Sign in with Google (Documents page) to attach a photo');
-      return;
+  postingMessage = true;
+  const postBtn = document.getElementById('chat-post-btn');
+  if(postBtn){ postBtn.disabled = true; postBtn.textContent = pendingImageFile ? 'Uploading…' : 'Posting…'; }
+  try{
+    const msg = {id:uid('m'), author: state.currentUser, text, ts: Date.now()};
+    if(pendingImageFile){
+      if(!state.driveSignedIn){
+        toast('Sign in with Google (Documents page) to attach a photo');
+        return;
+      }
+      if(!driveFolderId(state.project.driveUrl)){
+        toast('No team drive folder is set for this project yet — ask a Supervisor to add one in Project Settings');
+        return;
+      }
+      const task = state.tasks.find(x=>x.id===taskId);
+      try{
+        const folderId = await ensureTaskDriveFolder(task);
+        const uploaded = await driveApiUpload(pendingImageFile, folderId);
+        msg.driveFile = { id: uploaded.id, name: uploaded.name, thumbnailLink: uploaded.thumbnailLink||'', webViewLink: uploaded.webViewLink||'' };
+      }catch(err){
+        console.error(err);
+        toast('Could not upload the photo — message not sent');
+        return;
+      }
     }
-    if(!driveFolderId(state.project.driveUrl)){
-      toast('No team drive folder is set for this project yet — ask a Supervisor to add one in Project Settings');
-      return;
-    }
+    const msgs = await loadChat(taskId);
+    if(replyingTo) msg.replyTo = {id:replyingTo.id, author:replyingTo.author, snippet:replyingTo.snippet};
+    msgs.push(msg);
+    await saveChat(taskId, msgs);
+
     const task = state.tasks.find(x=>x.id===taskId);
-    try{
-      const folderId = await ensureTaskDriveFolder(task);
-      const uploaded = await driveApiUpload(pendingImageFile, folderId);
-      msg.driveFile = { id: uploaded.id, name: uploaded.name, thumbnailLink: uploaded.thumbnailLink||'', webViewLink: uploaded.webViewLink||'' };
-    }catch(err){
-      console.error(err);
-      toast('Could not upload the photo — message not sent');
-      return;
+    const taskName = task ? task.name : taskId;
+    const snippet = (text||'(photo)').slice(0,60) + (text.length>60?'…':'');
+
+    if(replyingTo && replyingTo.author && replyingTo.author!==state.currentUser){
+      await addNotification(replyingTo.author, 'reply', taskId, taskName, state.currentUser, snippet);
     }
-  }
-  const msgs = await loadChat(taskId);
-  if(replyingTo) msg.replyTo = {id:replyingTo.id, author:replyingTo.author, snippet:replyingTo.snippet};
-  msgs.push(msg);
-  await saveChat(taskId, msgs);
+    const mentioned = extractMentions(text).filter(n=>n!==state.currentUser);
+    for(const name of mentioned){
+      await addNotification(name, 'tag', taskId, taskName, state.currentUser, snippet);
+    }
 
-  const task = state.tasks.find(x=>x.id===taskId);
-  const taskName = task ? task.name : taskId;
-  const snippet = (text||'(photo)').slice(0,60) + (text.length>60?'…':'');
-
-  if(replyingTo && replyingTo.author && replyingTo.author!==state.currentUser){
-    await addNotification(replyingTo.author, 'reply', taskId, taskName, state.currentUser, snippet);
+    input.value = ''; pendingImageFile = null; replyingTo = null;
+    document.getElementById('chat-preview-wrap').innerHTML = '';
+    await renderChat(taskId);
+  } finally {
+    postingMessage = false;
+    // renderChat() rebuilds the drawer's chat area including this button, but only on the success
+    // path — on an early return (e.g. upload failure) the original button is still live, so restore it
+    const btn = document.getElementById('chat-post-btn');
+    if(btn){ btn.disabled = false; btn.textContent = 'Post'; }
   }
-  const mentioned = extractMentions(text).filter(n=>n!==state.currentUser);
-  for(const name of mentioned){
-    await addNotification(name, 'tag', taskId, taskName, state.currentUser, snippet);
-  }
-
-  input.value = ''; pendingImageFile = null; replyingTo = null;
-  document.getElementById('chat-preview-wrap').innerHTML = '';
-  await renderChat(taskId);
 }
 function wireImageZoom(img){
   let scale=1, tx=0, ty=0, dragging=false, startX=0, startY=0, startTx=0, startTy=0;
