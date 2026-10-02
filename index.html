@@ -390,6 +390,8 @@
   .chat-text{font-size:13px;line-height:1.45;white-space:pre-wrap;}
   .chat-text .mention{color:var(--gold);font-weight:600;}
   .chat-img{margin-top:7px;max-width:100%;border-radius:6px;display:block;cursor:zoom-in;border:1px solid var(--line);}
+  .chat-img-grid{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;}
+  .chat-img-grid .chat-img{margin-top:0;max-width:160px;max-height:160px;width:auto;height:auto;object-fit:cover;}
   .chat-empty{color:var(--ink-faint);font-size:12.5px;padding:10px 2px;}
   .chat-reply-quote{font-size:11px;color:var(--ink-faint);border-left:2px solid var(--line);padding-left:7px;
     margin-bottom:5px;}
@@ -399,6 +401,7 @@
   .chat-compose textarea{width:100%;border:none;background:none;resize:vertical;min-height:52px;padding:2px;}
   .chat-compose textarea:focus{outline:none;}
   .chat-compose-foot{display:flex;justify-content:space-between;align-items:center;margin-top:6px;}
+  #chat-preview-wrap{display:flex;flex-wrap:wrap;gap:8px;}
   .chat-preview{position:relative;display:inline-block;margin-top:8px;}
   .chat-preview img{max-height:90px;border-radius:6px;border:1px solid var(--line);display:block;}
   .chat-preview button{position:absolute;top:-7px;right:-7px;width:19px;height:19px;border-radius:50%;
@@ -854,13 +857,17 @@ function driveThumbLarge(thumbnailLink, size){
   return /=s\d+$/.test(thumbnailLink) ? thumbnailLink.replace(/=s\d+$/, '=s'+(size||1600)) : thumbnailLink;
 }
 async function chatImgError(img){
-  const taskId = img.dataset.taskId, msgId = img.dataset.msgId;
+  const taskId = img.dataset.taskId, msgId = img.dataset.msgId, fileId = img.dataset.fileId;
   const msgs = state.chatCache[taskId] || [];
   const msg = msgs.find(x=>x.id===msgId);
-  if(!msg || !msg.driveFile) return;
+  if(!msg) return;
+  // messages saved before multi-image support only have msg.driveFile (singular); newer ones have
+  // msg.driveFiles (array) — find whichever entry this particular <img> is showing
+  const entry = (msg.driveFiles && msg.driveFiles.find(df=>df.id===fileId)) || (msg.driveFile && msg.driveFile.id===fileId ? msg.driveFile : null);
+  if(!entry) return;
   const fallbackLink = (label)=>{
     const a = document.createElement('a');
-    a.href = msg.driveFile.webViewLink || '#';
+    a.href = entry.webViewLink || '#';
     a.target = '_blank'; a.rel = 'noopener noreferrer';
     a.className = 'chat-action-link';
     a.textContent = label;
@@ -870,13 +877,13 @@ async function chatImgError(img){
   img.dataset.retried = '1';
   if(!state.driveSignedIn){ fallbackLink('🖼 Photo (sign in to Google, then reload, to preview here)'); return; }
   try{
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${msg.driveFile.id}?fields=thumbnailLink,webViewLink`, { headers: driveHeaders() });
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${entry.id}?fields=thumbnailLink,webViewLink`, { headers: driveHeaders() });
     if(!res.ok) throw new Error('refresh failed: '+res.status);
     const data = await res.json();
-    msg.driveFile.thumbnailLink = data.thumbnailLink || msg.driveFile.thumbnailLink;
-    msg.driveFile.webViewLink = data.webViewLink || msg.driveFile.webViewLink;
-    img.src = msg.driveFile.thumbnailLink;
-    img.onclick = () => openMediaLightbox(msg.driveFile.id, driveThumbLarge(msg.driveFile.thumbnailLink, 1600), msg.driveFile.webViewLink||'');
+    entry.thumbnailLink = data.thumbnailLink || entry.thumbnailLink;
+    entry.webViewLink = data.webViewLink || entry.webViewLink;
+    img.src = entry.thumbnailLink;
+    img.onclick = () => openMediaLightbox(entry.id, driveThumbLarge(entry.thumbnailLink, 1600), entry.webViewLink||'');
     await saveChat(taskId, msgs); // persist the refreshed link so it's fast next time
   }catch(e){
     console.error(e);
@@ -5173,7 +5180,7 @@ async function deleteDocument(docId){
 /* ============================= DRAWER (task detail + chat) ============================= */
 async function openDrawer(taskId, focusName){
   state.drawerTaskId = taskId;
-  replyingTo = null; editingMsgId = null; mentionPickerOpen = false; pendingImageFile = null;
+  replyingTo = null; editingMsgId = null; mentionPickerOpen = false; pendingImageFiles = [];
   // loadChat() caches per task for the rest of the session to avoid re-fetching on every re-render
   // while this drawer stays open (e.g. while typing). But that means a drawer opened once earlier in
   // the session — including by clicking a notification that exists BECAUSE someone just replied —
@@ -5286,7 +5293,7 @@ function renderDrawerContent(taskId){
           <div class="chat-compose-foot" style="position:relative">
             <div class="row" style="gap:6px">
               <button type="button" class="btn btn-sm btn-ghost" style="margin:0" onclick="handleImageButtonClick()">📎 Image</button>
-              <input type="file" id="chat-image-input" accept="image/*" style="display:none" onchange="handleImagePick(event)">
+              <input type="file" id="chat-image-input" accept="image/*" multiple style="display:none" onchange="handleImagePick(event)">
               <button class="btn btn-sm btn-ghost" onclick="toggleMentionPicker('mention-picker','chat-input')">@ Tag</button>
               <div id="mention-picker"></div>
             </div>
@@ -5530,7 +5537,7 @@ async function deleteChatFor(taskId){
 }
 
 /* ---- chat ---- */
-let pendingImageFile = null;
+let pendingImageFiles = []; // array now — lets one message carry several photos instead of one message per photo
 function handleImageButtonClick(){
   if(!driveFolderId(state.project.driveUrl)){
     toast('No team drive folder is set for this project yet — ask a Supervisor to add one in Project Settings');
@@ -5544,11 +5551,23 @@ function handleImageButtonClick(){
   document.getElementById('chat-image-input').click();
 }
 function handleImagePick(e){
-  const file = e.target.files[0]; if(!file) return;
-  pendingImageFile = file;
-  resizeImage(file, 300, 0.7).then(dataUrl=>{
-    document.getElementById('chat-preview-wrap').innerHTML =
-      `<div class="chat-preview"><img src="${dataUrl}"><button onclick="pendingImageFile=null;document.getElementById('chat-preview-wrap').innerHTML=''">✕</button></div>`;
+  const files = Array.from(e.target.files||[]); if(!files.length) return;
+  pendingImageFiles.push(...files);
+  renderChatImagePreviews();
+  e.target.value = ''; // clear so picking the same file again (after removing it) still fires onchange
+}
+function removePendingImageFile(idx){
+  pendingImageFiles.splice(idx,1);
+  renderChatImagePreviews();
+}
+function renderChatImagePreviews(){
+  const wrap = document.getElementById('chat-preview-wrap');
+  if(!wrap) return;
+  if(!pendingImageFiles.length){ wrap.innerHTML = ''; return; }
+  Promise.all(pendingImageFiles.map(f=>resizeImage(f, 300, 0.7))).then(dataUrls=>{
+    wrap.innerHTML = dataUrls.map((dataUrl,idx)=>
+      `<div class="chat-preview"><img src="${dataUrl}"><button onclick="removePendingImageFile(${idx})">✕</button></div>`
+    ).join('');
   });
 }
 function resizeImage(file, maxDim, quality){
@@ -5656,9 +5675,13 @@ async function renderChat(taskId){
           </div>
           ${m.replyTo?`<div class="chat-reply-quote">↩ ${esc(m.replyTo.author)}: ${esc(m.replyTo.snippet)}</div>`:''}
           ${m.text?`<div class="chat-text">${renderMentionText(m.text)}</div>`:''}
-          ${m.driveFile && m.driveFile.thumbnailLink
-            ? `<img class="chat-img" src="${esc(m.driveFile.thumbnailLink)}" data-task-id="${esc(taskId)}" data-msg-id="${esc(m.id)}" onclick="openMediaLightbox('${esc(m.driveFile.id)}','${esc(driveThumbLarge(m.driveFile.thumbnailLink,1600))}','${esc(m.driveFile.webViewLink||'')}')" onerror="chatImgError(this)">`
-            : (m.image?`<img class="chat-img" src="${m.image}" onclick="openLightbox('${m.image}')">`:'')}
+          ${m.driveFiles && m.driveFiles.length
+            ? `<div class="chat-img-grid">${m.driveFiles.map(df => df.thumbnailLink
+                ? `<img class="chat-img" src="${esc(df.thumbnailLink)}" data-task-id="${esc(taskId)}" data-msg-id="${esc(m.id)}" data-file-id="${esc(df.id)}" onclick="openMediaLightbox('${esc(df.id)}','${esc(driveThumbLarge(df.thumbnailLink,1600))}','${esc(df.webViewLink||'')}')" onerror="chatImgError(this)">`
+                : '').join('')}</div>`
+            : (m.driveFile && m.driveFile.thumbnailLink
+              ? `<img class="chat-img" src="${esc(m.driveFile.thumbnailLink)}" data-task-id="${esc(taskId)}" data-msg-id="${esc(m.id)}" data-file-id="${esc(m.driveFile.id)}" onclick="openMediaLightbox('${esc(m.driveFile.id)}','${esc(driveThumbLarge(m.driveFile.thumbnailLink,1600))}','${esc(m.driveFile.webViewLink||'')}')" onerror="chatImgError(this)">`
+              : (m.image?`<img class="chat-img" src="${m.image}" onclick="openLightbox('${m.image}')">`:''))}
         </div>
       </div>
     </div>`;
@@ -5794,14 +5817,14 @@ async function postMessage(taskId){
   if(postingMessage) return;
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
-  if(!text && !pendingImageFile) return;
+  if(!text && !pendingImageFiles.length) return;
   if(!state.currentUser){ toast("Sign in with Google first — top of the sidebar"); return; }
   postingMessage = true;
   const postBtn = document.getElementById('chat-post-btn');
-  if(postBtn){ postBtn.disabled = true; postBtn.textContent = pendingImageFile ? 'Uploading…' : 'Posting…'; }
+  if(postBtn){ postBtn.disabled = true; postBtn.textContent = pendingImageFiles.length ? 'Uploading…' : 'Posting…'; }
   try{
     const msg = {id:uid('m'), author: state.currentUser, text, ts: Date.now()};
-    if(pendingImageFile){
+    if(pendingImageFiles.length){
       if(!state.driveSignedIn){
         toast('Sign in with Google (Documents page) to attach a photo');
         return;
@@ -5813,8 +5836,14 @@ async function postMessage(taskId){
       const task = state.tasks.find(x=>x.id===taskId);
       try{
         const folderId = await ensureTaskDriveFolder(task);
-        const uploaded = await driveApiUpload(pendingImageFile, folderId);
-        msg.driveFile = { id: uploaded.id, name: uploaded.name, thumbnailLink: uploaded.thumbnailLink||'', webViewLink: uploaded.webViewLink||'' };
+        // uploaded sequentially rather than via Promise.all — keeps us well under Drive's per-second
+        // upload rate limit when someone attaches a handful of photos at once
+        const uploads = [];
+        for(const file of pendingImageFiles){
+          const uploaded = await driveApiUpload(file, folderId);
+          uploads.push({ id: uploaded.id, name: uploaded.name, thumbnailLink: uploaded.thumbnailLink||'', webViewLink: uploaded.webViewLink||'' });
+        }
+        msg.driveFiles = uploads;
       }catch(err){
         console.error(err);
         toast('Could not upload the photo — message not sent');
@@ -5828,7 +5857,7 @@ async function postMessage(taskId){
 
     const task = state.tasks.find(x=>x.id===taskId);
     const taskName = task ? task.name : taskId;
-    const snippet = (text||'(photo)').slice(0,60) + (text.length>60?'…':'');
+    const snippet = (text||(pendingImageFiles.length>1?'(photos)':'(photo)')).slice(0,60) + (text.length>60?'…':'');
 
     if(replyingTo && replyingTo.author && replyingTo.author!==state.currentUser){
       await addNotification(replyingTo.author, 'reply', taskId, taskName, state.currentUser, snippet);
@@ -5838,7 +5867,7 @@ async function postMessage(taskId){
       await addNotification(name, 'tag', taskId, taskName, state.currentUser, snippet);
     }
 
-    input.value = ''; pendingImageFile = null; replyingTo = null;
+    input.value = ''; pendingImageFiles = []; replyingTo = null;
     document.getElementById('chat-preview-wrap').innerHTML = '';
     await renderChat(taskId);
   } finally {
