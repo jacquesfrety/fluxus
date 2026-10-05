@@ -1202,7 +1202,33 @@ function stopLiveAlerts(){
 async function pollLiveAlerts(){
   if(!db || !state.projectId || !state.currentUser) return;
   try{
-    const [freshNotifs, freshTeam] = await Promise.all([fsGet('notifications'), fsGet('team')]);
+    const [freshNotifs, freshTeam, freshTasks] = await Promise.all([fsGet('notifications'), fsGet('team'), fsGet('tasks')]);
+    // pick up teammates' task changes (status, assignees, new tasks…) without a manual refresh —
+    // data otherwise loads only once. Skipped whenever this tab has unsaved edits of its own, or the
+    // user is mid-typing, so a background sync can never clobber or interrupt what they're doing.
+    if(Array.isArray(freshTasks) && Array.isArray(state.lastSavedTasksSnapshot)){
+      const freshJson = JSON.stringify(freshTasks);
+      const localUnsaved = JSON.stringify(state.tasks) !== JSON.stringify(state.lastSavedTasksSnapshot);
+      if(!localUnsaved && freshJson !== JSON.stringify(state.lastSavedTasksSnapshot)){
+        const ae = document.activeElement;
+        const typing = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+        const chatDraft = (document.getElementById('chat-input')||{}).value;
+        if(!typing){
+          state.tasks = freshTasks;
+          state.lastSavedTasksSnapshot = JSON.parse(freshJson);
+          render();
+          if(state.drawerTaskId && !chatDraft && state.tasks.some(t=>t.id===state.drawerTaskId) && typeof renderDrawerContent==='function'){
+            const drawerEl = document.getElementById('drawer');
+            const scrollY = document.querySelector('.drawer-body')?.scrollTop || 0;
+            if(drawerEl && drawerEl.classList.contains('open')){
+              drawerEl.innerHTML = renderDrawerContent(state.drawerTaskId);
+              renderChat(state.drawerTaskId);
+              const db2 = document.querySelector('.drawer-body'); if(db2) db2.scrollTop = scrollY;
+            }
+          }
+        }
+      }
+    }
     if(Array.isArray(freshNotifs)){
       const mineNew = freshNotifs.filter(n=>n.forUser===state.currentUser && (n.ts||0)>lastSeenNotifTs);
       lastSeenNotifTs = freshNotifs.reduce((m,n)=>Math.max(m, n.ts||0), lastSeenNotifTs);
