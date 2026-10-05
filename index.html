@@ -23,7 +23,7 @@
     --bg:#14171C; --surface:#1C2028; --surface2:#242A33; --surface3:#2C333E;
     --line:#333B47; --ink:#EDEAE1; --ink-dim:#B7BEC8; --ink-faint:#7D8696;
     --gold:#D9A441; --gold-dim:#B98A34; --teal:#4FB6AC; --blue:#3B82F6;
-    --grey:#6B7280; --violet:#B08BE0; --green:#6FCF97; --red:#E5646A;
+    --grey:#6B7280; --violet:#B08BE0; --green:#6FCF97; --red:#E5646A; --orange:#F5A524;
     --chart-line:#333B47; --chart-label:#7D8696; --chart-value:#B7BEC8; --chart-value-strong:#0F1216;
     --weekend-bg:rgba(255,255,255,.07); --holiday-bg:rgba(229,100,106,.16);
     --r:7px;
@@ -602,8 +602,8 @@
 <script>
 /* ============================= constants ============================= */
 const STATUSES = ["Not Started","In Progress","In Review","Completed","Needs Revision","On Hold"];
-const STATUS_COLOR = {"Not Started":"var(--grey)","In Progress":"var(--blue)","In Review":"var(--violet)","Completed":"var(--green)","Needs Revision":"var(--teal)","On Hold":"var(--red)"};
-const STATUS_HEX = {"Not Started":"#6B7280","In Progress":"#3B82F6","In Review":"#B08BE0","Completed":"#6FCF97","Needs Revision":"#4FB6AC","On Hold":"#E5646A"};
+const STATUS_COLOR = {"Not Started":"var(--grey)","In Progress":"var(--blue)","In Review":"var(--violet)","Completed":"var(--green)","Needs Revision":"var(--orange)","On Hold":"var(--red)"};
+const STATUS_HEX = {"Not Started":"#6B7280","In Progress":"#3B82F6","In Review":"#B08BE0","Completed":"#6FCF97","Needs Revision":"#F5A524","On Hold":"#E5646A"};
 const PRIORITIES = ["Low","Medium","High"];
 const PRIORITY_COLOR = {"Low":"var(--green)","Medium":"var(--gold)","High":"var(--red)"};
 const PRIORITY_HEX = {"Low":"#6FCF97","Medium":"#D9A441","High":"#E5646A"};
@@ -1865,6 +1865,27 @@ async function addNotification(forUser, type, taskId, taskName, fromUser, snippe
   await saveNotifications();
   renderNotifBell();
 }
+function supervisorNotificationTargets(){
+  // every team Supervisor, plus the Administrator account (who acts as a supervisor everywhere)
+  return [...new Set([...state.team.filter(m=>m.role==='Supervisor').map(m=>m.name), ...adminNotificationTargets()])];
+}
+// Called from updateField() whenever a task's status actually changes:
+//  - → In Review: every supervisor is told there's something to review
+//  - → Completed / Needs Revision, set by a supervisor: the task's assignees are told the verdict
+// The person making the change is never notified about their own action.
+async function notifyStatusChange(t, oldStatus, newStatus){
+  if(!t || oldStatus===newStatus || !state.currentUser) return;
+  const snippet = `${oldStatus} → ${newStatus}`;
+  if(newStatus==='In Review'){
+    for(const name of supervisorNotificationTargets()){
+      if(name!==state.currentUser) await addNotification(name, 'review', t.id, t.name, state.currentUser, snippet);
+    }
+  } else if((newStatus==='Completed' || newStatus==='Needs Revision') && isSupervisor()){
+    for(const name of (t.assignees||[])){
+      if(name!==state.currentUser) await addNotification(name, 'status', t.id, t.name, state.currentUser, snippet);
+    }
+  }
+}
 function adminNotificationTargets(){
   // the Administrator identity isn't a fixed name — it's whoever's Google account matches
   // OWNER_EMAILS, which may or may not also have a team profile in this project (see
@@ -1890,9 +1911,9 @@ function renderNotifBell(){
     </div>
     ${mine.length ? mine.slice(0,40).map(n=>`
       <div class="notif-item ${n.read?'':'unread'}" onclick="openNotification('${n.id}')">
-        <div class="notif-icon">${n.type==='tag'?'@':n.type==='newpost'?'📣':n.type==='pin'?'📍':'↩'}</div>
+        <div class="notif-icon">${({tag:'@',newpost:'📣',pin:'📍',review:'👀',status:'🔔',taskpost:'💬'})[n.type]||'↩'}</div>
         <div class="notif-text">
-          <b>${esc(n.fromUser)}</b> ${n.type==='tag'?'tagged you in':n.type==='newpost'?'posted a new topic:':n.type==='pin'?'tagged you in a pin on:':'replied to you in'} <b>${esc(n.taskName)}</b>
+          <b>${esc(n.fromUser)}</b> ${({tag:'tagged you in',newpost:'posted a new topic:',pin:'tagged you in a pin on:',review:'sent for review:',status:'updated the status of',taskpost:'posted in your task'})[n.type]||'replied to you in'} <b>${esc(n.taskName)}</b>
           <div class="faint">${esc(n.snippet||'')}</div>
           <div class="notif-time">${fmtWhen(n.ts)}</div>
         </div>
@@ -3271,7 +3292,9 @@ function wireKanbanDnD(){
       e.preventDefault(); col.classList.remove('dragover');
       const id = e.dataTransfer.getData('text/plain');
       const t = state.tasks.find(x=>x.id===id);
-      if(t){ t.status = col.dataset.status; await saveTasks(); render(); }
+      // go through updateField so a Kanban drag gets the same side effects as the dropdown
+      // (revision count, completed date, notifications) instead of just overwriting the status
+      if(t && t.status!==col.dataset.status) await updateField(id, 'status', col.dataset.status);
     });
   });
 }
@@ -5430,6 +5453,7 @@ async function updateField(id, field, value){
     if(span!==null) t.duration = span;
   }
   await saveTasks();
+  if(field==='status') await notifyStatusChange(t, oldStatus, value);
   render();
   if(state.drawerTaskId===id){
     const scrollY = document.querySelector('.drawer-body')?.scrollTop || 0;
@@ -5897,6 +5921,13 @@ async function postMessage(taskId){
     const mentioned = extractMentions(text).filter(n=>n!==state.currentUser);
     for(const name of mentioned){
       await addNotification(name, 'tag', taskId, taskName, state.currentUser, snippet);
+    }
+    // tell the task's assignees about the post — skipping the author, and anyone who already got a
+    // more specific reply/tag notification for this very message so nobody is notified twice
+    const alreadyTold = new Set([...mentioned, ...(replyingTo && replyingTo.author ? [replyingTo.author] : [])]);
+    for(const name of ((task && task.assignees) || [])){
+      if(name===state.currentUser || alreadyTold.has(name)) continue;
+      await addNotification(name, 'taskpost', taskId, taskName, state.currentUser, snippet);
     }
 
     input.value = ''; pendingImageFiles = []; replyingTo = null;
