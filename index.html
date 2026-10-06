@@ -1922,24 +1922,13 @@ function adminNotificationTargets(){
 function myNotifications(){
   return state.notifications.filter(n=>n.forUser===state.currentUser).sort((a,b)=>b.ts-a.ts);
 }
-/* ---- browser-tab badge: unread count drawn onto the favicon (red dot + number) and prefixed to the
-   page title, so it's visible even when Fluxus is a background tab — like Zoho's tab counter ---- */
+/* ---- browser-tab unread count: just a "(n) " prefix on the page title. Browsers like Vivaldi turn that
+   into their own badge on the tab icon (same trick Zoho uses); an extra count drawn on the favicon
+   itself ended up doubling it — two overlapping icons — so the favicon is left untouched. ---- */
 const BASE_PAGE_TITLE = document.title;
-let baseFaviconHref = null;
 function updateTabBadge(n){
-  try{
-    document.title = (n>0 ? `(${n>99?'99+':n}) ` : '') + BASE_PAGE_TITLE;
-    const link = document.getElementById('app-favicon'); if(!link) return;
-    if(baseFaviconHref===null) baseFaviconHref = link.getAttribute('href');
-    if(!(n>0)){ link.setAttribute('href', baseFaviconHref); return; }
-    const label = n>99 ? '99+' : String(n);
-    const svg = decodeURIComponent(baseFaviconHref.replace(/^data:image\/svg\+xml,/, ''));
-    const fs = label.length>=3 ? 11 : label.length===2 ? 14 : 17;
-    const badge = `<circle cx='21' cy='11' r='11' fill='#E5334B' stroke='#fff' stroke-width='1.5'/>`
-      + `<text x='21' y='${11+fs*0.36}' text-anchor='middle' font-family='Arial,sans-serif' font-weight='700' font-size='${fs}' fill='#fff'>${label}</text>`;
-    const out = svg.replace('</svg>', badge + '</svg>');
-    link.setAttribute('href', 'data:image/svg+xml,' + encodeURIComponent(out));
-  }catch(e){ console.warn('tab badge failed', e); }
+  try{ document.title = (n>0 ? `(${n>99?'99+':n}) ` : '') + BASE_PAGE_TITLE; }
+  catch(e){ console.warn('tab badge failed', e); }
 }
 function renderNotifBell(){
   const badge = document.getElementById('notif-badge');
