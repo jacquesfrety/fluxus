@@ -3942,7 +3942,12 @@ function renderReportsView(){
   if(state.team.length===0){
     return `<div class="empty-state"><div class="display">No team members yet</div>Add people on the Team tab first.</div>`;
   }
-  const rows = state.team.map((m,i)=>({m, s: memberReportStats(m.name), color: TAG_PALETTE[i % TAG_PALETTE.length]}));
+  // supervisors review the work rather than being assessed by it, so they're left out of the member stats
+  const reportMembers = state.team.filter(m=>m.role!=='Supervisor');
+  if(reportMembers.length===0){
+    return `<div class="empty-state"><div class="display">No members to report on yet</div>Only Supervisors are on the team so far — add other members on the Team tab.</div>`;
+  }
+  const rows = reportMembers.map((m,i)=>({m, s: memberReportStats(m.name), color: TAG_PALETTE[i % TAG_PALETTE.length]}));
   const table = `<table class="ttable"><thead><tr>
     <th>Member</th><th>Role</th><th>Tasks</th><th>Completed</th><th>Completed late</th><th>Needs revision (all-time)</th><th>Revision rate</th>
   </tr></thead><tbody>
