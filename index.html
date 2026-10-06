@@ -23,7 +23,7 @@
     --bg:#14171C; --surface:#1C2028; --surface2:#242A33; --surface3:#2C333E;
     --line:#333B47; --ink:#EDEAE1; --ink-dim:#B7BEC8; --ink-faint:#7D8696;
     --gold:#D9A441; --gold-dim:#B98A34; --teal:#4FB6AC; --blue:#3B82F6;
-    --grey:#6B7280; --violet:#B08BE0; --green:#6FCF97; --red:#E5646A; --orange:#D2A056;
+    --grey:#6B7280; --violet:#B08BE0; --green:#6FCF97; --red:#E5646A; --orange:#D2A056; --pink:#D08AC8;
     --chart-line:#333B47; --chart-label:#7D8696; --chart-value:#B7BEC8; --chart-value-strong:#0F1216;
     --weekend-bg:rgba(255,255,255,.07); --holiday-bg:rgba(229,100,106,.16);
     --r:7px;
@@ -602,8 +602,8 @@
 <script>
 /* ============================= constants ============================= */
 const STATUSES = ["Not Started","In Progress","In Review","Completed","Needs Revision","On Hold"];
-const STATUS_COLOR = {"Not Started":"var(--grey)","In Progress":"var(--blue)","In Review":"var(--violet)","Completed":"var(--green)","Needs Revision":"var(--orange)","On Hold":"var(--red)"};
-const STATUS_HEX = {"Not Started":"#6B7280","In Progress":"#3B82F6","In Review":"#B08BE0","Completed":"#6FCF97","Needs Revision":"#D2A056","On Hold":"#E5646A"};
+const STATUS_COLOR = {"Not Started":"var(--grey)","In Progress":"var(--blue)","In Review":"var(--pink)","Completed":"var(--green)","Needs Revision":"var(--orange)","On Hold":"var(--red)"};
+const STATUS_HEX = {"Not Started":"#6B7280","In Progress":"#3B82F6","In Review":"#D08AC8","Completed":"#6FCF97","Needs Revision":"#D2A056","On Hold":"#E5646A"};
 const PRIORITIES = ["Low","Medium","High"];
 const PRIORITY_COLOR = {"Low":"var(--green)","Medium":"var(--gold)","High":"var(--red)"};
 const PRIORITY_HEX = {"Low":"#6FCF97","Medium":"#D9A441","High":"#E5646A"};
