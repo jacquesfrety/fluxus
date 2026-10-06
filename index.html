@@ -1230,10 +1230,14 @@ async function pollLiveAlerts(){
       }
     }
     if(Array.isArray(freshNotifs)){
+      const unreadBefore = myNotifications().filter(n=>!n.read).length;
+      const mergedNow = mergeNotifications(freshNotifs, state.notifications);
+      state.notifications = mergedNow;
+      if(myNotifications().filter(n=>!n.read).length !== unreadBefore) renderNotifBell();
       const mineNew = freshNotifs.filter(n=>n.forUser===state.currentUser && (n.ts||0)>lastSeenNotifTs);
       lastSeenNotifTs = freshNotifs.reduce((m,n)=>Math.max(m, n.ts||0), lastSeenNotifTs);
       if(mineNew.length){
-        state.notifications = freshNotifs;
+        state.notifications = mergeNotifications(freshNotifs, state.notifications);
         playNotificationDing();
         renderNotifBell();
         // temporary diagnostic: show exactly what triggered the sound, so a report of "I hear it but
@@ -1574,7 +1578,32 @@ async function syncProjectName(){
     await db.collection('projects').doc(state.projectId).set({name}, {merge:true});
   }catch(e){ console.error('project name sync failed', e); }
 }
-async function saveNotifications(){ await fsSet('notifications', state.notifications); }
+/* All users' notifications live in ONE shared Firestore array. Saving used to overwrite that whole
+   array with this tab's copy — so whenever someone else triggered a notification (their tab pushes onto
+   ITS stale copy, where your notifications were still unread, and writes it back), every "read" mark
+   you had made was silently reverted, and a notification you hadn't loaded yet could even be lost.
+   Now every save first re-fetches the server list and merges: union by id, and a notification stays
+   read once ANY copy has it read (read-ness only ever goes false → true). */
+function mergeNotifications(serverArr, localArr){
+  const byId = new Map();
+  (serverArr||[]).forEach(n=>byId.set(n.id, {...n}));
+  (localArr||[]).forEach(n=>{
+    const cur = byId.get(n.id);
+    if(!cur) byId.set(n.id, {...n});
+    else cur.read = !!(cur.read || n.read);
+  });
+  const merged = [...byId.values()].sort((a,b)=>(a.ts||0)-(b.ts||0));
+  return merged.length>300 ? merged.slice(-300) : merged;
+}
+async function saveNotifications(){
+  let server = null;
+  for(let attempt=0; attempt<3 && !Array.isArray(server); attempt++){
+    if(attempt>0) await new Promise(r=>setTimeout(r, 400*attempt));
+    try{ server = await fsGet('notifications'); }catch(e){ server = null; }
+  }
+  if(Array.isArray(server)) state.notifications = mergeNotifications(server, state.notifications);
+  await fsSet('notifications', state.notifications);
+}
 async function loadChat(taskId){
   if(state.chatCache[taskId]) return state.chatCache[taskId];
   if(!db || !state.projectId){ state.chatCache[taskId] = []; return []; }
