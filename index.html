@@ -1977,9 +1977,9 @@ function renderNotifBell(){
     </div>
     ${mine.length ? mine.slice(0,40).map(n=>`
       <div class="notif-item ${n.read?'':'unread'}" onclick="openNotification('${n.id}')">
-        <div class="notif-icon">${({tag:'@',newpost:'📣',pin:'📍',review:'👀',status:'🔔',taskpost:'💬'})[n.type]||'↩'}</div>
+        <div class="notif-icon">${({tag:'@',newpost:'📣',pin:'📍',review:'👀',status:'🔔',taskpost:'💬',forumcomment:'🗨️'})[n.type]||'↩'}</div>
         <div class="notif-text">
-          <b>${esc(n.fromUser)}</b> ${({tag:'tagged you in',newpost:'posted a new topic:',pin:'tagged you in a pin on:',review:'sent for review:',status:'updated the status of',taskpost:'posted in your task'})[n.type]||'replied to you in'} <b>${esc(n.taskName)}</b>
+          <b>${esc(n.fromUser)}</b> ${({tag:'tagged you in',newpost:'posted a new topic:',pin:'tagged you in a pin on:',review:'sent for review:',status:'updated the status of',taskpost:'posted in your task',forumcomment:'commented on the support topic:'})[n.type]||'replied to you in'} <b>${esc(n.taskName)}</b>
           <div class="faint">${esc(n.snippet||'')}</div>
           <div class="notif-time">${fmtWhen(n.ts)}</div>
         </div>
@@ -4306,6 +4306,13 @@ async function postForumComment(postId){
     const snippet = text.slice(0,60) + (text.length>60?'…':'');
     for(const name of mentioned){
       await addNotification(name, 'tag', 'post:'+p.id, p.title, state.currentUser, snippet);
+    }
+    // the Administrator is told about every reply on the Support page (unless they wrote it, or were
+    // already notified because the comment tagged them)
+    const commentSnippet = (text||'(image)').slice(0,60) + (text.length>60?'…':'');
+    for(const name of adminNotificationTargets()){
+      if(name===state.currentUser || mentioned.includes(name)) continue;
+      await addNotification(name, 'forumcomment', 'post:'+p.id, p.title, state.currentUser, commentSnippet);
     }
     document.getElementById('drawer').innerHTML = renderPostDrawerContent(postId);
     wireMentionAutocomplete('post-comment-input');
