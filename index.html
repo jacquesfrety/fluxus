@@ -389,6 +389,8 @@
   .chat-action-link:hover{color:var(--teal);text-decoration:underline;}
   .chat-text{font-size:13px;line-height:1.45;white-space:pre-wrap;}
   .chat-text .mention{color:var(--gold);font-weight:600;}
+  .chat-link{color:var(--teal);text-decoration:underline;word-break:break-all;}
+  .chat-link:hover{color:var(--gold);}
   .chat-img{margin-top:7px;max-width:100%;border-radius:6px;display:block;cursor:zoom-in;border:1px solid var(--line);}
   .chat-img-grid{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;}
   .chat-img-grid .chat-img{margin-top:0;max-width:160px;max-height:160px;width:auto;height:auto;object-fit:cover;}
@@ -4205,7 +4207,7 @@ function renderPostDrawerContent(postId){
       </div>
     </div>
     <div class="drawer-body">
-      ${p.description?`<div class="chat-text" style="margin-bottom:14px">${esc(p.description)}</div>`:''}
+      ${p.description?`<div class="chat-text" style="margin-bottom:14px">${renderMentionText(p.description)}</div>`:''}
       ${p.driveFile?.thumbnailLink?`<img class="chat-img" src="${esc(p.driveFile.thumbnailLink)}" data-post-id="${esc(p.id)}" onclick="openMediaLightbox('${esc(p.driveFile.id)}','${esc(driveThumbLarge(p.driveFile.thumbnailLink,1600))}','${esc(p.driveFile.webViewLink||'')}')" onerror="forumImgError(this)" style="margin-bottom:14px">`:''}
       <div class="row" style="gap:10px;margin-bottom:16px">
         <button class="forum-vote-btn ${voted?'voted':''}" onclick="toggleVote('${p.id}')">▲ ${votes.length} vote${votes.length===1?'':'s'}</button>
@@ -5720,14 +5722,38 @@ let editingMsgId = null; // id of message currently being edited
 let mentionPickerOpen = false;
 
 function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+// Renders chat/forum/pin text as safe HTML: everything is escaped first, then pasted http(s)/www links
+// become clickable (opening in a new tab) and @team-member mentions are highlighted. Only http(s) URLs
+// are ever linked, so nothing like javascript: can slip through.
 function renderMentionText(text){
-  let html = esc(text);
   const names = state.team.map(m=>m.name).filter(Boolean).sort((a,b)=>b.length-a.length);
-  names.forEach(name=>{
-    const re = new RegExp('@'+escapeRegExp(esc(name))+'(?![\\w])', 'g');
-    html = html.replace(re, `<span class="mention">@${esc(name)}</span>`);
-  });
-  return html;
+  const highlightMentions = (html)=>{
+    names.forEach(name=>{
+      const re = new RegExp('@'+escapeRegExp(esc(name))+'(?![\\w])', 'g');
+      html = html.replace(re, `<span class="mention">@${esc(name)}</span>`);
+    });
+    return html;
+  };
+  const escaped = esc(text);
+  const urlRe = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
+  let out = '', last = 0, m;
+  while((m = urlRe.exec(escaped))){
+    let url = m[0], trail = '';
+    // peel off punctuation that's almost certainly part of the sentence, not the link (incl. escaped quotes)
+    const trailRe = /(?:[.,;:!?)\]]|&quot;|&#39;|&gt;)$/;
+    let t;
+    while((t = url.match(trailRe))){
+      // keep a closing ")" if the URL has a matching "(" (e.g. wikipedia links)
+      if(t[0]===')' && (url.match(/\(/g)||[]).length >= (url.match(/\)/g)||[]).length) break;
+      trail = t[0] + trail; url = url.slice(0, -t[0].length);
+    }
+    out += highlightMentions(escaped.slice(last, m.index));
+    const href = /^www\./i.test(url) ? 'https://'+url : url;
+    out += `<a class="chat-link" href="${href}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${url}</a>${trail}`;
+    last = m.index + m[0].length;
+  }
+  out += highlightMentions(escaped.slice(last));
+  return out;
 }
 function stripDiacritics(s){
   return (s||'').normalize('NFD').replace(/[̀-ͯ]/g, '');
