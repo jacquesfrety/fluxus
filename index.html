@@ -2303,7 +2303,7 @@ function renderTeamView(){
       ${m.phone?`<div class="tcard-field">☎ ${esc(m.phone)}</div>`:''}
       ${m.notes?`<div class="tcard-field faint">${esc(m.notes)}</div>`:''}
       ${canSeeLastSeen?`<div class="tcard-field faint">🕐 ${m.lastSeen?('Last seen '+fmtWhen(m.lastSeen)):'Never connected'}</div>`:''}
-      ${isSupervisor() ? renderMCSection(m) : ''}
+      ${renderMCSection(m)}
       ${canEdit ? `<div class="tcard-actions">
         <button class="btn btn-sm" onclick="openTeamDrawer('${m.id}')">Edit</button>
         <button class="btn btn-sm btn-danger" onclick="deleteTeamMember('${m.id}')">Remove</button>
@@ -2354,7 +2354,7 @@ function renderMCSection(m){
     <div style="font-weight:600;margin-bottom:3px">🩺 MC ${current?`<span class="tagpill" style="background:#E5646A29;color:var(--red);border:1px solid #E5646A66;margin-left:4px">On MC now</span>`:''}</div>
     ${mc.map(r=>`<div class="row" style="justify-content:space-between;gap:6px;margin-bottom:2px">
         <span class="faint">${esc(fmtISODate(r.start))}${r.end!==r.start?` → ${esc(fmtISODate(r.end))}`:''}</span>
-        <span class="chat-action-link" title="Remove this MC" onclick="removeMC('${esc(m.id)}','${esc(r.id)}')">✕</span>
+        ${isSupervisor()?`<span class="chat-action-link" title="Remove this MC" onclick="removeMC('${esc(m.id)}','${esc(r.id)}')">✕</span>`:''}
       </div>`).join('')}
   </div>`;
 }
