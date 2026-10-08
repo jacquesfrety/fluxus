@@ -2308,7 +2308,7 @@ function renderTeamView(){
         <button class="btn btn-sm" onclick="openTeamDrawer('${m.id}')">Edit</button>
         <button class="btn btn-sm btn-danger" onclick="deleteTeamMember('${m.id}')">Remove</button>
       </div>` : ''}
-    </div>`).join('')}</div>`;
+    </div>`).join('')}</div>${isSupervisor() ? renderAddMCBar() : ''}`;
 }
 /* ---- MC (medical certificate) periods: dated ranges stored on each team member (m.mc = [{id,start,end}]).
    Only Admin/Supervisors can see or edit them, and no reason is recorded. The Reports page uses them so
@@ -2344,19 +2344,30 @@ function shiftWorkdays(iso, n){
   return isoOf(d);
 }
 function renderMCSection(m){
+  // on each card: only the recorded MC periods (nothing at all if there are none); adding is done from
+  // the single "Add MC" bar under the cards (renderAddMCBar)
   const mc = [...(m.mc||[])].sort((a,b)=>a.start.localeCompare(b.start));
+  if(!mc.length) return '';
   const today = todayISO();
   const current = mc.find(r=> today>=r.start && today<=r.end);
-  return `<div class="tcard-field" style="border-top:1px solid var(--line);padding-top:8px;margin-top:6px">
-    <div style="font-weight:600;font-size:12px;margin-bottom:5px">🩺 MC ${current?`<span class="tagpill" style="background:#E5646A29;color:var(--red);border:1px solid #E5646A66;margin-left:4px">On MC until ${esc(fmtISODate(current.end))}</span>`:''}</div>
-    ${mc.length ? mc.map(r=>`<div class="row" style="justify-content:space-between;gap:6px;font-size:12px;margin-bottom:3px">
-        <span>${esc(fmtISODate(r.start))}${r.end!==r.start?` → ${esc(fmtISODate(r.end))}`:''}</span>
+  return `<div class="tcard-field" style="font-size:12px">
+    <div style="font-weight:600;margin-bottom:3px">🩺 MC ${current?`<span class="tagpill" style="background:#E5646A29;color:var(--red);border:1px solid #E5646A66;margin-left:4px">On MC now</span>`:''}</div>
+    ${mc.map(r=>`<div class="row" style="justify-content:space-between;gap:6px;margin-bottom:2px">
+        <span class="faint">${esc(fmtISODate(r.start))}${r.end!==r.start?` → ${esc(fmtISODate(r.end))}`:''}</span>
         <span class="chat-action-link" title="Remove this MC" onclick="removeMC('${esc(m.id)}','${esc(r.id)}')">✕</span>
-      </div>`).join('') : `<div class="faint" style="font-size:11.5px;margin-bottom:4px">No MC recorded</div>`}
-    <div class="row" style="gap:5px;margin-top:5px;flex-wrap:wrap">
-      <input type="date" id="mc-start-${esc(m.id)}" style="width:128px;font-size:11.5px" title="First day">
-      <input type="date" id="mc-end-${esc(m.id)}" style="width:128px;font-size:11.5px" title="Last day (leave empty for a single day)">
-      <button class="btn btn-sm" onclick="addMC('${esc(m.id)}')">Add MC</button>
+      </div>`).join('')}
+  </div>`;
+}
+function renderAddMCBar(){
+  const members = [...state.team].sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  return `<div class="card" style="margin-top:18px;padding:14px 16px">
+    <div style="font-weight:600;margin-bottom:8px">🩺 Add MC</div>
+    <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div class="field" style="margin:0"><label>Who</label>
+        <select id="mc-add-member"><option value="">Select a member…</option>${members.map(m=>`<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('')}</select></div>
+      <div class="field" style="margin:0"><label>First day</label><input type="date" id="mc-add-start"></div>
+      <div class="field" style="margin:0"><label>Last day <span class="faint" style="text-transform:none;font-weight:400">(empty = one day)</span></label><input type="date" id="mc-add-end"></div>
+      <button class="btn btn-gold" onclick="addMC()">Add MC</button>
     </div>
   </div>`;
 }
@@ -2375,14 +2386,19 @@ async function mutateMemberMC(memberId, fn){
   render();
   return true;
 }
-async function addMC(memberId){
-  const start = (document.getElementById('mc-start-'+memberId)||{}).value;
-  let end = (document.getElementById('mc-end-'+memberId)||{}).value;
+async function addMC(){
+  const memberId = (document.getElementById('mc-add-member')||{}).value;
+  const start = (document.getElementById('mc-add-start')||{}).value;
+  let end = (document.getElementById('mc-add-end')||{}).value;
+  if(!memberId){ toast('Pick who the MC is for'); return; }
   if(!start){ toast('Pick the first day of the MC'); return; }
   if(!end) end = start;
   if(end < start){ toast('The last day is before the first day'); return; }
   const ok = await mutateMemberMC(memberId, list=>[...list, {id:uid('mc'), start, end}]);
-  if(ok) toast('MC added');
+  if(ok){
+    const who = state.team.find(x=>x.id===memberId);
+    toast(`MC added for ${who?who.name:'member'}`);
+  }
 }
 async function removeMC(memberId, mcId){
   if(!(await confirmDialog('Remove this MC period?', {confirmLabel:'Remove'}))) return;
