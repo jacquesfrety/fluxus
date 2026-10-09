@@ -3618,7 +3618,7 @@ function renderTimelineView(){
   // Clamp to the current allowed range — catches widths saved under an older version of this slider
   // (the task-name column used to be a fixed 200px regardless of this value, or the allowed range used
   // to go much higher), so a stale stored value doesn't render the panel wider than intended.
-  const clampedLabelsWidth = Math.max(260, Math.min(560, state.timelineLabelsWidth || 420));
+  const clampedLabelsWidth = Math.max(260, Math.min(TL_LABELS_MAX, state.timelineLabelsWidth || 420));
   if(clampedLabelsWidth !== state.timelineLabelsWidth){
     state.timelineLabelsWidth = clampedLabelsWidth;
     saveTimelineLabelsWidth().catch(e=>console.error('timeline width save failed', e));
@@ -3770,7 +3770,8 @@ function renderTimelineView(){
   // viewport; everything else dragged into the panel via the resize handle goes to the task name
   // instead, so widening the panel actually gives long names more room (otherwise the name column
   // never grew beyond 200px no matter how wide the panel got).
-  const OTHER_COLS_VIEWPORT = 200;
+  // Up to width 560 the viewport stays 200px (unchanged); extra width beyond that goes to the other columns until they all fit (~410px).
+  const OTHER_COLS_VIEWPORT = Math.max(200, Math.min(410, state.timelineLabelsWidth - 360));
   const taskColWidth = Math.max(100, state.timelineLabelsWidth - OTHER_COLS_VIEWPORT);
 
   const labelRows = tasks.map(t=>`
@@ -3862,6 +3863,7 @@ function handleBarClick(e, taskId){
   if(ganttDragMoved){ ganttDragMoved = false; return; }
   openDrawer(taskId);
 }
+const TL_LABELS_MAX = 780; // min stays 260; beyond 560 the extra width reveals the other columns
 function wireTimelineResize(){
   const handle = document.getElementById('tl-resize-handle');
   const labels = document.getElementById('tl-labels');
@@ -3877,7 +3879,7 @@ function wireTimelineResize(){
       // 260 = the other-columns viewport (200px) plus a minimum usable task-name width (60px);
       // below that there'd be no room left for the name at all. 560 lets a long task name breathe
       // without the panel swallowing the whole timeline (keep in sync with the clamp in renderTimelineView).
-      currentWidth = Math.max(260, Math.min(560, initialWidth + (ev.clientX - startX)));
+      currentWidth = Math.max(260, Math.min(TL_LABELS_MAX, initialWidth + (ev.clientX - startX)));
       labels.style.flex = `0 0 ${currentWidth}px`;
     }
     async function onUp(){
