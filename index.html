@@ -1070,6 +1070,7 @@ async function loadAll(){
     state.project = Object.assign({title:"Untitled Project", icon:"", type:"Students", period:"", notes:"", nonWorkingDays:[], driveUrl:""}, project||{});
     state.notifications = notifications || [];
     state.forumPosts = forumPosts || [];
+    lastSavedForumSnapshot = JSON.parse(JSON.stringify(state.forumPosts));
     state.documents = documents || [];
     state.annotations = annotations || [];
     state.drawings = markups || [];
@@ -1204,7 +1205,7 @@ function stopLiveAlerts(){
 async function pollLiveAlerts(){
   if(!db || !state.projectId || !state.currentUser) return;
   try{
-    const [freshNotifs, freshTeam, freshTasks] = await Promise.all([fsGet('notifications'), fsGet('team'), fsGet('tasks')]);
+    const [freshNotifs, freshTeam, freshTasks, freshPosts] = await Promise.all([fsGet('notifications'), fsGet('team'), fsGet('tasks'), fsGet('forumPosts')]);
     // pick up teammates' task changes (status, assignees, new tasks…) without a manual refresh —
     // data otherwise loads only once. Skipped whenever this tab has unsaved edits of its own, or the
     // user is mid-typing, so a background sync can never clobber or interrupt what they're doing.
@@ -1227,6 +1228,30 @@ async function pollLiveAlerts(){
               renderChat(state.drawerTaskId);
               const db2 = document.querySelector('.drawer-body'); if(db2) db2.scrollTop = scrollY;
             }
+          }
+        }
+      }
+    }
+    // Support-page topics: pick up other people's replies / status changes live, under the same safety
+    // rules as tasks (nothing unsaved locally, not mid-typing, no half-written comment)
+    if(Array.isArray(freshPosts)){
+      const freshJson = JSON.stringify(freshPosts);
+      const localUnsaved = JSON.stringify(state.forumPosts) !== JSON.stringify(lastSavedForumSnapshot);
+      if(!localUnsaved && freshJson !== JSON.stringify(lastSavedForumSnapshot)){
+        const ae = document.activeElement;
+        const typing = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+        const commentDraft = (document.getElementById('post-comment-input')||{}).value;
+        if(!typing){
+          state.forumPosts = freshPosts;
+          lastSavedForumSnapshot = JSON.parse(freshJson);
+          render();
+          const openId = (typeof state.drawerTaskId==='string' && state.drawerTaskId.startsWith('post:')) ? state.drawerTaskId.slice(5) : null;
+          const drawerEl = document.getElementById('drawer');
+          if(openId && !commentDraft && drawerEl && drawerEl.classList.contains('open') && state.forumPosts.some(x=>x.id===openId)){
+            const scrollY = document.querySelector('.drawer-body')?.scrollTop || 0;
+            drawerEl.innerHTML = renderPostDrawerContent(openId);
+            wireMentionAutocomplete('post-comment-input');
+            const db3 = document.querySelector('.drawer-body'); if(db3) db3.scrollTop = scrollY;
           }
         }
       }
@@ -1509,7 +1534,66 @@ async function restoreTaskBackup(ts){
 }
 async function saveTimelineLabelsWidth(){ lsSet('timelineLabelsWidth', state.timelineLabelsWidth); }
 async function saveTheme(){ lsSet('theme', state.theme); }
-async function saveForumPosts(){ await fsSet('forumPosts', state.forumPosts); }
+/* Support-page topics live in ONE shared Firestore array, and saving used to overwrite all of it from the
+   saving tab's copy — so a user commenting/voting from a stale tab could silently erase a Supervisor's status
+   change (or anyone's new topic/comment). Now every save re-fetches the server copy and applies only THIS
+   tab's own changes on top of it (changes measured against lastSavedForumSnapshot): new/deleted topics,
+   changed fields, comments added/removed, votes added/removed. */
+let lastSavedForumSnapshot = [];
+function mergeForumPosts(fresh, local, snap){
+  const clone = x=>JSON.parse(JSON.stringify(x));
+  const snapById = {}; (snap||[]).forEach(p=>{ snapById[p.id]=p; });
+  const localById = {}; (local||[]).forEach(p=>{ localById[p.id]=p; });
+  let out = (fresh||[]).map(clone);
+  const outById = {}; out.forEach(p=>{ outById[p.id]=p; });
+  (local||[]).forEach(lp=>{ if(!snapById[lp.id] && !outById[lp.id]){ const c=clone(lp); out.push(c); outById[c.id]=c; } });
+  (snap||[]).forEach(sp=>{ if(!localById[sp.id] && outById[sp.id]){ out = out.filter(x=>x.id!==sp.id); delete outById[sp.id]; } });
+  (local||[]).forEach(lp=>{
+    const sp = snapById[lp.id], op = outById[lp.id];
+    if(!sp || !op) return;
+    Object.keys(lp).forEach(k=>{
+      if(k==='comments' || k==='votes') return;
+      if(JSON.stringify(lp[k]) !== JSON.stringify(sp[k])) op[k] = clone(lp[k]);
+    });
+    const sComments = sp.comments||[], lComments = lp.comments||[];
+    const sIds = new Set(sComments.map(c=>c.id)), lIds = new Set(lComments.map(c=>c.id));
+    let cm = op.comments||[];
+    lComments.forEach(c=>{
+      const existing = cm.find(x=>x.id===c.id);
+      if(!sIds.has(c.id)){ if(!existing) cm.push(clone(c)); }
+      else if(existing){
+        const sc = sComments.find(x=>x.id===c.id);
+        if(sc && JSON.stringify(c.driveFile)!==JSON.stringify(sc.driveFile)) existing.driveFile = clone(c.driveFile);
+      }
+    });
+    cm = cm.filter(c=> !(sIds.has(c.id) && !lIds.has(c.id))).sort((a,b)=>(a.ts||0)-(b.ts||0));
+    op.comments = cm;
+    const sv = new Set(sp.votes||[]), lv = new Set(lp.votes||[]);
+    let votes = [...(op.votes||[])];
+    lv.forEach(v=>{ if(!sv.has(v) && !votes.includes(v)) votes.push(v); });
+    op.votes = votes.filter(v=> !(sv.has(v) && !lv.has(v)));
+  });
+  return out;
+}
+async function saveForumPosts(){
+  let fresh = null;
+  for(let attempt=0; attempt<3 && !Array.isArray(fresh); attempt++){
+    if(attempt>0) await new Promise(r=>setTimeout(r, 500*attempt));
+    try{ fresh = await fsGet('forumPosts'); }catch(e){ fresh = null; }
+  }
+  if(!Array.isArray(fresh)){
+    if(lastSavedForumSnapshot.length===0){ fresh = []; } // nothing ever stored/seen yet — a brand-new project
+    else{
+      console.error('saveForumPosts: could not fetch the current server copy — aborting to avoid overwriting others\' changes');
+      toast('⚠ Could not save — check your connection and try again. Nothing was lost, but this change is not saved yet.', 7000);
+      return false;
+    }
+  }
+  state.forumPosts = mergeForumPosts(fresh, state.forumPosts, lastSavedForumSnapshot);
+  lastSavedForumSnapshot = JSON.parse(JSON.stringify(state.forumPosts));
+  await fsSet('forumPosts', state.forumPosts);
+  return true;
+}
 async function saveDocuments(){ await fsSet('documents', state.documents); }
 async function saveAnnotations(){ await fsSet('annotations', state.annotations); }
 async function saveDrawings(){ await fsSet('markups', state.drawings); }
@@ -1977,9 +2061,9 @@ function renderNotifBell(){
     </div>
     ${mine.length ? mine.slice(0,40).map(n=>`
       <div class="notif-item ${n.read?'':'unread'}" onclick="openNotification('${n.id}')">
-        <div class="notif-icon">${({tag:'@',newpost:'📣',pin:'📍',review:'👀',status:'🔔',taskpost:'💬',forumcomment:'🗨️'})[n.type]||'↩'}</div>
+        <div class="notif-icon">${({tag:'@',newpost:'📣',pin:'📍',review:'👀',status:'🔔',taskpost:'💬',forumcomment:'🗨️',forumreply:'💬',forumstatus:'🔄'})[n.type]||'↩'}</div>
         <div class="notif-text">
-          <b>${esc(n.fromUser)}</b> ${({tag:'tagged you in',newpost:'posted a new topic:',pin:'tagged you in a pin on:',review:'sent for review:',status:'updated the status of',taskpost:'posted in your task',forumcomment:'commented on the support topic:'})[n.type]||'replied to you in'} <b>${esc(n.taskName)}</b>
+          <b>${esc(n.fromUser)}</b> ${({tag:'tagged you in',newpost:'posted a new topic:',pin:'tagged you in a pin on:',review:'sent for review:',status:'updated the status of',taskpost:'posted in your task',forumcomment:'commented on the support topic:',forumreply:'replied to your support topic:',forumstatus:'changed the status of your support topic:'})[n.type]||'replied to you in'} <b>${esc(n.taskName)}</b>
           <div class="faint">${esc(n.snippet||'')}</div>
           <div class="notif-time">${fmtWhen(n.ts)}</div>
         </div>
@@ -4355,8 +4439,14 @@ function renderPostDrawerContent(postId){
 async function setPostStatus(postId, status){
   if(!isSupervisor()){ toast('Only Supervisors can change status'); return; }
   const p = state.forumPosts.find(x=>x.id===postId); if(!p) return;
+  const oldStatus = p.status;
+  if(oldStatus===status) return;
   p.status = status;
   await saveForumPosts();
+  // tell the person who wrote the topic (unless they changed it themselves)
+  if(p.author && p.author!==state.currentUser){
+    await addNotification(p.author, 'forumstatus', 'post:'+p.id, p.title, state.currentUser, `${oldStatus} → ${status}`);
+  }
   render();
 }
 let pendingPostCommentImageFile = null;
@@ -4413,8 +4503,15 @@ async function postForumComment(postId){
     // the Administrator is told about every reply on the Support page (unless they wrote it, or were
     // already notified because the comment tagged them)
     const commentSnippet = (text||'(image)').slice(0,60) + (text.length>60?'…':'');
+    const told = new Set([...mentioned, state.currentUser]);
+    // the person who wrote the topic hears about every reply
+    if(p.author && !told.has(p.author)){
+      told.add(p.author);
+      await addNotification(p.author, 'forumreply', 'post:'+p.id, p.title, state.currentUser, commentSnippet);
+    }
     for(const name of adminNotificationTargets()){
-      if(name===state.currentUser || mentioned.includes(name)) continue;
+      if(told.has(name)) continue;
+      told.add(name);
       await addNotification(name, 'forumcomment', 'post:'+p.id, p.title, state.currentUser, commentSnippet);
     }
     document.getElementById('drawer').innerHTML = renderPostDrawerContent(postId);
