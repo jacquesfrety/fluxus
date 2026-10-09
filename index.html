@@ -3729,8 +3729,23 @@ function renderTimelineView(){
       const warn = dependencyStatus(t).state==='warn' || dependencyStatus(t).state==='unknown';
       const stroke = warn ? 'var(--red)' : 'var(--ink-faint)';
       const marker = warn ? 'url(#tl-arrow-warn)' : 'url(#tl-arrow)';
-      const midX = pred.right + 10;
-      const d = `M ${pred.right} ${pred.midY} L ${midX} ${pred.midY} L ${midX} ${succ.midY} L ${succ.left-2} ${succ.midY}`;
+      // Finish-to-start connector: leave the predecessor's right end, run right, then drop straight onto
+      // the successor bar and end with the arrowhead touching its edge — top edge if the successor is on a
+      // lower row, bottom edge if it's higher. The landing point sits a little inside the successor bar
+      // (never left of its start, never past its end), so it stays readable even when the successor
+      // starts the very next day, where an arrow pointing into the bar's left end had no room to show.
+      const BAR_HALF_H = 12; // bars are 24px tall (midY = top + 12)
+      let d;
+      if(succ.midY === pred.midY){
+        d = `M ${pred.right} ${pred.midY} L ${succ.left-2} ${succ.midY}`;
+      } else {
+        let tx = Math.max(pred.right + 14, succ.left + 8);
+        tx = Math.min(tx, succ.right - 6);
+        tx = Math.max(tx, succ.left + 4);
+        const goingDown = succ.midY > pred.midY;
+        const ty = goingDown ? succ.midY - BAR_HALF_H - 1 : succ.midY + BAR_HALF_H + 1;
+        d = `M ${pred.right} ${pred.midY} L ${tx} ${pred.midY} L ${tx} ${ty}`;
+      }
       depArrows.push(`<path d="${d}" style="stroke:${stroke}" stroke-width="1.6" fill="none" marker-end="${marker}"/>`);
     });
   });
