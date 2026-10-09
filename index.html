@@ -3610,6 +3610,10 @@ function showConflictInfo(e, taskId){
   }).join('\n');
   alert(`Double-booking on "${t.name}":\n\n${lines}`);
 }
+function resetTimelineFilters(){
+  state.timelineFilters = { category: "", taskList: "", assignee: "" };
+  render();
+}
 function renderTimelineView(){
   // Clamp to the current allowed range — catches widths saved under an older version of this slider
   // (the task-name column used to be a fixed 200px regardless of this value, or the allowed range used
@@ -3627,6 +3631,7 @@ function renderTimelineView(){
     </span>
     <button class="btn btn-sm btn-ghost" onclick="scrollToToday()">Today</button>
     <button class="btn btn-sm btn-ghost" onclick="openMilestoneDrawer()">◆ Add milestone</button>
+    ${(state.timelineFilters.category||state.timelineFilters.taskList||state.timelineFilters.assignee)?`<button class="btn btn-sm btn-ghost" onclick="resetTimelineFilters()">✕ Reset filters</button>`:''}
     <span class="faint" style="font-size:11.5px">Gold line = today · violet ◆ = milestone · gradient reflects progress · solid red / red arrow = dependency issue · ! = double-booked</span>
   </div>`;
 
