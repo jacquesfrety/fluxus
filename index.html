@@ -177,6 +177,16 @@
   .task-group-chevron{display:inline-block;width:14px;color:var(--gold);}
   .task-group-name{letter-spacing:.2px;}
 
+  .gallery-day{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink-faint);margin:22px 0 10px;font-weight:600;}
+  .gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;}
+  .gallery-item{position:relative;aspect-ratio:4/3;border-radius:var(--r);overflow:hidden;background:var(--surface2);cursor:pointer;border:1px solid var(--surface3);}
+  .gallery-item img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .2s;}
+  .gallery-item:hover img{transform:scale(1.04);}
+  .gallery-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:30px;}
+  .gallery-cap{position:absolute;left:0;right:0;bottom:0;padding:18px 9px 6px;font-size:11px;color:#EDEAE1;
+    background:linear-gradient(transparent,rgba(0,0,0,.7));opacity:0;transition:opacity .15s;display:flex;gap:4px;align-items:baseline;}
+  .gallery-item:hover .gallery-cap{opacity:1;}
+  .gallery-when{margin-left:auto;opacity:.75;}
   /* ---- kanban ---- */
   .kanban{display:flex;gap:14px;align-items:flex-start;overflow-x:auto;padding-bottom:10px;}
   .kanban-slider-wrap{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
@@ -1797,6 +1807,7 @@ const NAV = [
   {id:'assets', label:'Assets', icon:'⬡', group:'Assets'},
   {id:'levels', label:'Levels', icon:'▥', group:'Assets'},
   {id:'documents', label:'Documents', icon:'📁', group:'Collaboration'},
+  {id:'gallery', label:'Gallery', icon:'🖼', group:'Collaboration'},
   {id:'team', label:'Team', icon:'🧑', group:'Collaboration'},
   {id:'support', label:'PMS Support', icon:'🎧', group:'Collaboration'},
 ];
@@ -1807,6 +1818,7 @@ const TITLES = {team:["Team","Everyone working on this project"], tasks:["Tasks"
   activity:["Activity","Who changed what, and when — an automatic log of task changes"],
   support:["PMS Support","Report bugs, request features, and see what's planned"],
   documents:["Documents","A library of files that live in the cloud (OneDrive, Drive…)"],
+  gallery:["Gallery","The latest photos and videos posted across the project"],
   assets:["Assets","3D assets — polygon and texture budget per item"],
   levels:["Levels","Which assets go in each level, and the running budget total"]};
 
@@ -2133,7 +2145,7 @@ document.addEventListener('click', (e)=>{
     mentionPickerOpen = false; mp.innerHTML = '';
   }
 });
-function setView(v){ state.view = v; state.drawerTaskId=null; lsSet('lastView', v); render(); }
+function setView(v){ if(v==='gallery' && state.gallery) state.gallery.loaded = false; state.view = v; state.drawerTaskId=null; lsSet('lastView', v); render(); }
 function filterTasksByStatus(status){
   state.filters = { category: "", taskList: "", assignee: "", status: status, search: "" };
   setView('tasks');
@@ -2171,6 +2183,7 @@ function render(){
   else if(state.view==='activity') v.innerHTML = renderActivityView();
   else if(state.view==='support') v.innerHTML = renderSupportView();
   else if(state.view==='documents') v.innerHTML = renderDocumentsView();
+  else if(state.view==='gallery') v.innerHTML = renderGalleryView();
   else if(state.view==='assets') v.innerHTML = renderAssetsView();
   else if(state.view==='levels') v.innerHTML = renderLevelsView();
 
@@ -3510,6 +3523,128 @@ async function createTask(){
   await saveTasks();
   state.view='tasks'; render();
   openDrawer(id, true);
+}
+
+/* ============================= GALLERY VIEW =============================
+   One place to browse every photo/video that was posted in a task chat or uploaded as a document,
+   newest first. Chats live one-doc-per-task in Firestore, so we read the whole 'chats' collection
+   once when the page opens (and again via the Refresh button), instead of loading task by task. */
+const GALLERY_PAGE = 60;
+const GALLERY_VIDEO_RE = /\.(mp4|mov|m4v|webm|avi|mkv)$/i;
+function galleryState(){
+  if(!state.gallery) state.gallery = {items:[], loaded:false, loading:false, error:'', kind:'all', task:'', who:'', limit:GALLERY_PAGE, visible:[]};
+  return state.gallery;
+}
+async function loadGallery(){
+  const G = galleryState();
+  if(G.loading) return;
+  G.loading = true; G.error = '';
+  try{
+    const items = [];
+    const seen = new Set();
+    const add = it=>{ if(!it.id || seen.has(it.id) || !it.thumbnailLink) return; seen.add(it.id); items.push(it); };
+    if(db && state.projectId){
+      const snap = await db.collection('projects').doc(state.projectId).collection('chats').get();
+      snap.forEach(doc=>{
+        let msgs = [];
+        try{ msgs = JSON.parse(doc.data().value) || []; }catch(e){}
+        state.chatCache[doc.id] = state.chatCache[doc.id] || msgs;
+        msgs.forEach(m=>{
+          const files = (m.driveFiles && m.driveFiles.length) ? m.driveFiles : (m.driveFile ? [m.driveFile] : []);
+          files.forEach(df=>add({id:df.id, name:df.name||'', thumbnailLink:df.thumbnailLink, webViewLink:df.webViewLink||'',
+            ts:m.ts||0, author:m.author||'', taskId:doc.id, text:m.text||'', video:GALLERY_VIDEO_RE.test(df.name||''), src:'chat'}));
+        });
+      });
+    }
+    state.documents.forEach(d=>{
+      if((d.type!=='Image' && d.type!=='Video') || !d.thumbnail) return;
+      add({id:d.driveFileId||d.id, name:d.name||'', thumbnailLink:d.thumbnail, webViewLink:d.url||'',
+        ts:d.ts||0, author:d.uploadedBy||'', taskId:d.taskId||'', text:'', video:d.type==='Video', src:'doc'});
+    });
+    items.sort((a,b)=>b.ts-a.ts);
+    G.items = items; G.loaded = true;
+  }catch(e){ console.error(e); G.error = 'Could not load the gallery.'; G.loaded = true; }
+  G.loading = false;
+  if(state.view==='gallery') render();
+}
+function galleryDayLabel(ts){
+  if(!ts) return 'Earlier';
+  const d = new Date(ts), t = new Date();
+  const k = x=>x.toDateString();
+  const y = new Date(t); y.setDate(t.getDate()-1);
+  if(k(d)===k(t)) return 'Today';
+  if(k(d)===k(y)) return 'Yesterday';
+  return d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
+}
+function renderGalleryView(){
+  const G = galleryState();
+  if(!G.loaded && !G.loading) setTimeout(loadGallery, 0);
+  const authors = [...new Set(G.items.map(i=>i.author).filter(Boolean))].sort();
+  const taskIds = [...new Set(G.items.map(i=>i.taskId).filter(Boolean))];
+  const list = G.items.filter(i=>
+    (G.kind==='all' || (G.kind==='video')===i.video) &&
+    (!G.task || i.taskId===G.task) && (!G.who || i.author===G.who));
+  G.visible = list.filter(i=>!i.video);
+  const shown = list.slice(0, G.limit);
+  const kindBtn = (k,l)=>`<button class="btn btn-sm ${G.kind===k?'btn-gold':'btn-ghost'}" onclick="galleryState().kind='${k}';galleryState().limit=GALLERY_PAGE;render()">${l}</button>`;
+  const bar = `<div class="filterbar" style="align-items:center">
+    ${kindBtn('all','All')}${kindBtn('image','🖼 Photos')}${kindBtn('video','🎬 Videos')}
+    <select onchange="galleryState().task=this.value;galleryState().limit=GALLERY_PAGE;render()">
+      <option value="">All tasks</option>
+      ${taskIds.map(id=>{ const t=state.tasks.find(x=>x.id===id); return `<option value="${esc(id)}" ${G.task===id?'selected':''}>${esc(id)}${t?' · '+esc(t.name):''}</option>`; }).join('')}
+    </select>
+    <select onchange="galleryState().who=this.value;galleryState().limit=GALLERY_PAGE;render()">
+      <option value="">Everyone</option>
+      ${authors.map(a=>`<option value="${esc(a)}" ${G.who===a?'selected':''}>${esc(a)}</option>`).join('')}
+    </select>
+    <button class="btn btn-sm btn-ghost" onclick="galleryState().loaded=false;loadGallery()">${G.loading?'Loading…':'↻ Refresh'}</button>
+    <span class="faint" style="font-size:12px">${list.length} item${list.length===1?'':'s'}</span>
+  </div>`;
+  if(G.loading && !G.items.length) return bar + `<div class="empty-state"><div class="display">Loading…</div>Collecting the latest photos and videos.</div>`;
+  if(G.error) return bar + `<div class="empty-state"><div class="display">Oops</div>${esc(G.error)}</div>`;
+  if(!shown.length) return bar + `<div class="empty-state"><div class="display">Nothing here yet</div>Photos and videos posted in task chats, or uploaded to a task, will appear here.</div>`;
+  let html = '', lastDay = null;
+  shown.forEach(it=>{
+    const day = galleryDayLabel(it.ts);
+    if(day!==lastDay){
+      html += `${lastDay!==null?'</div>':''}<h3 class="gallery-day">${esc(day)}</h3><div class="gallery-grid">`;
+      lastDay = day;
+    }
+    const t = it.taskId ? state.tasks.find(x=>x.id===it.taskId) : null;
+    const gi = G.visible.indexOf(it);
+    html += `<div class="gallery-item" onclick="${it.video?`galleryOpenVideo(${G.items.indexOf(it)})`:`galleryOpen(${gi})`}">
+      <img src="${esc(driveThumbLarge(it.thumbnailLink,480))}" loading="lazy" data-gi="${G.items.indexOf(it)}" onerror="galleryImgError(this)">
+      ${it.video?'<span class="doc-thumb-play">▶</span>':''}
+      <div class="gallery-cap"><b>${esc(it.author||'Someone')}</b>${t?` · <span title="${esc(t.name)}">${esc(t.id)}</span>`:''}<span class="gallery-when">${fmtWhen(it.ts)}</span></div>
+    </div>`;
+  });
+  html += '</div>';
+  if(list.length>shown.length) html += `<div style="text-align:center;margin:18px 0"><button class="btn btn-ghost" onclick="galleryState().limit+=GALLERY_PAGE;render()">Show more (${list.length-shown.length})</button></div>`;
+  return bar + html;
+}
+function galleryOpen(idx){
+  const G = galleryState();
+  const it = G.visible[idx]; if(!it) return;
+  openMediaLightbox(it.id, driveThumbLarge(it.thumbnailLink,1600), it.webViewLink, G.visible, idx);
+}
+function galleryOpenVideo(i){
+  const it = galleryState().items[i]; if(!it) return;
+  if(it.webViewLink) window.open(it.webViewLink, '_blank', 'noopener');
+}
+async function galleryImgError(img){
+  // Drive thumbnail links expire — refresh once if signed in, otherwise show a plain placeholder
+  const it = galleryState().items[+img.dataset.gi];
+  if(it && state.driveSignedIn && !img.dataset.retried){
+    img.dataset.retried = '1';
+    try{
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${it.id}?fields=thumbnailLink`, { headers: driveHeaders() });
+      const data = await res.json();
+      if(data.thumbnailLink){ it.thumbnailLink = data.thumbnailLink; img.src = driveThumbLarge(data.thumbnailLink,480); return; }
+    }catch(e){}
+  }
+  const ph = document.createElement('div');
+  ph.className = 'gallery-ph'; ph.textContent = it && it.video ? '🎬' : '🖼';
+  img.replaceWith(ph);
 }
 
 /* ============================= KANBAN VIEW ============================= */
