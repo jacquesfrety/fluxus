@@ -1807,7 +1807,7 @@ const NAV = [
   {id:'assets', label:'Assets', icon:'⬡', group:'Assets'},
   {id:'levels', label:'Levels', icon:'▥', group:'Assets'},
   {id:'documents', label:'Documents', icon:'📁', group:'Collaboration'},
-  {id:'gallery', label:'Gallery', icon:'🖼', group:'Collaboration'},
+  {id:'gallery', label:'Gallery', icon:'🎨', group:'Collaboration'},
   {id:'team', label:'Team', icon:'🧑', group:'Collaboration'},
   {id:'support', label:'PMS Support', icon:'🎧', group:'Collaboration'},
 ];
@@ -3535,6 +3535,16 @@ function galleryState(){
   if(!state.gallery) state.gallery = {items:[], loaded:false, loading:false, error:'', kind:'all', task:'', who:'', limit:GALLERY_PAGE, visible:[]};
   return state.gallery;
 }
+function galleryOwnerName(o){
+  // map a Drive owner to the team member with the same email, so names match the Team page
+  if(!o) return '';
+  const email = (o.emailAddress||'').trim().toLowerCase();
+  const m = email && state.team.find(x=>x.email && x.email.trim().toLowerCase()===email);
+  if(m) return m.name;
+  const norm = x=>(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+  const byName = state.team.find(x=>norm(x.name)===norm(o.displayName));
+  return byName ? byName.name : (o.displayName||'');
+}
 async function loadGallery(){
   const G = galleryState();
   if(G.loading) return;
@@ -3572,7 +3582,7 @@ async function loadGallery(){
           let pageToken = '';
           do{
             const q = encodeURIComponent(`'${folder}' in parents and trashed=false`);
-            const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType,webViewLink,thumbnailLink,createdTime,owners(displayName))');
+            const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType,webViewLink,thumbnailLink,createdTime,owners(displayName,emailAddress))');
             const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=${fields}&pageSize=500${pageToken?'&pageToken='+pageToken:''}`, { headers: driveHeaders() });
             if(!res.ok) throw new Error('list failed: '+res.status);
             const data = await res.json();
@@ -3581,7 +3591,7 @@ async function loadGallery(){
               const kind = driveMediaKind(f);
               if(kind!=='image' && kind!=='video') return;
               add({id:f.id, name:f.name, thumbnailLink:f.thumbnailLink, webViewLink:f.webViewLink||'', ts:Date.parse(f.createdTime)||0,
-                author:(f.owners&&f.owners[0]&&f.owners[0].displayName)||'', taskId:'', text:'', video:kind==='video', src:'drive'});
+                author:galleryOwnerName(f.owners&&f.owners[0]) , taskId:'', text:'', video:kind==='video', src:'drive'});
             });
             pageToken = data.nextPageToken || '';
           }while(pageToken);
@@ -3606,7 +3616,8 @@ function galleryDayLabel(ts){
 function renderGalleryView(){
   const G = galleryState();
   if((!G.loaded || (G.needsSignIn && state.driveSignedIn)) && !G.loading) setTimeout(loadGallery, 0);
-  const authors = [...new Set(G.items.map(i=>i.author).filter(Boolean))].sort();
+  const teamNames = state.team.map(m=>m.name);
+  const authors = [...new Set(G.items.map(i=>i.author).filter(a=>a && teamNames.includes(a)))].sort();
   const taskIds = [...new Set(G.items.map(i=>i.taskId).filter(Boolean))];
   const list = G.items.filter(i=>
     (G.kind==='all' || (G.kind==='video')===i.video) &&
@@ -3615,7 +3626,7 @@ function renderGalleryView(){
   const shown = list.slice(0, G.limit);
   const kindBtn = (k,l)=>`<button class="btn btn-sm ${G.kind===k?'btn-gold':'btn-ghost'}" onclick="galleryState().kind='${k}';galleryState().limit=GALLERY_PAGE;render()">${l}</button>`;
   const bar = `<div class="filterbar" style="align-items:center">
-    ${kindBtn('all','All')}${kindBtn('image','🖼 Photos')}${kindBtn('video','🎬 Videos')}
+    ${kindBtn('all','All')}${kindBtn('image','📷 Photos')}${kindBtn('video','🎬 Videos')}
     <select onchange="galleryState().task=this.value;galleryState().limit=GALLERY_PAGE;render()">
       <option value="">All tasks</option>
       ${taskIds.map(id=>{ const t=state.tasks.find(x=>x.id===id); return `<option value="${esc(id)}" ${G.task===id?'selected':''}>${esc(id)}${t?' · '+esc(t.name):''}</option>`; }).join('')}
