@@ -3590,58 +3590,75 @@ function galleryOwnerName(o){
 async function loadGallery(){
   const G = galleryState();
   if(G.loading) return;
+  // not ready yet (page was restored on startup before Firestore/project finished loading): don't
+  // mark as loaded, the next render retries
+  if(!db || !state.projectId){ return; }
   G.loading = true; G.error = '';
+  const items = [];
+  const seen = new Set();
+  const add = it=>{ if(!it.id || seen.has(it.id) || !it.thumbnailLink) return; seen.add(it.id); items.push(it); };
+  const rootId = driveFolderId(state.project && state.project.driveUrl);
+  const withDrive = !!(rootId && state.driveSignedIn);
   try{
-    const items = [];
-    const seen = new Set();
-    const add = it=>{ if(!it.id || seen.has(it.id) || !it.thumbnailLink) return; seen.add(it.id); items.push(it); };
-    if(db && state.projectId){
+    // chats (Firestore) and the Drive folder tree are fetched in parallel
+    const chatsP = (async()=>{
       const snap = await db.collection('projects').doc(state.projectId).collection('chats').get();
+      const out = [];
       snap.forEach(doc=>{
         let msgs = [];
         try{ msgs = JSON.parse(doc.data().value) || []; }catch(e){}
         state.chatCache[doc.id] = state.chatCache[doc.id] || msgs;
         msgs.forEach(m=>{
           const files = (m.driveFiles && m.driveFiles.length) ? m.driveFiles : (m.driveFile ? [m.driveFile] : []);
-          files.forEach(df=>add({id:df.id, name:df.name||'', thumbnailLink:df.thumbnailLink, webViewLink:df.webViewLink||'',
+          files.forEach(df=>out.push({id:df.id, name:df.name||'', thumbnailLink:df.thumbnailLink, webViewLink:df.webViewLink||'',
             ts:m.ts||0, author:m.author||'', taskId:doc.id, text:m.text||'', video:GALLERY_VIDEO_RE.test(df.name||''), src:'chat'}));
         });
       });
-    }
-    state.documents.forEach(d=>{
-      if((d.type!=='Image' && d.type!=='Video') || !d.thumbnail) return;
-      add({id:d.driveFileId||d.id, name:d.name||'', thumbnailLink:d.thumbnail, webViewLink:d.url||'',
-        ts:d.ts||0, author:d.uploadedBy||'', taskId:d.taskId||'', text:'', video:d.type==='Video', src:'doc'});
-    });
-    // files dropped straight into the team Drive (Documents page), including sub-folders
-    const rootId = driveFolderId(state.project.driveUrl);
-    G.needsSignIn = !!rootId && !state.driveSignedIn;
-    if(rootId && state.driveSignedIn){
-      try{
-        const queue = [rootId]; let n = 0;
-        while(queue.length && n++ < 80){
-          const folder = queue.shift();
-          let pageToken = '';
+      return out;
+    })();
+    const driveP = (async()=>{
+      const out = [];
+      if(!withDrive) return out;
+      let level = [rootId], visited = 0;
+      while(level.length && visited < 120){
+        visited += level.length;
+        // list every folder of this depth at the same time
+        const results = await Promise.all(level.map(async folder=>{
+          const files = []; let pageToken = '';
           do{
             const q = encodeURIComponent(`'${folder}' in parents and trashed=false`);
             const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType,webViewLink,thumbnailLink,createdTime,owners(displayName,emailAddress))');
             const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=${fields}&pageSize=500${pageToken?'&pageToken='+pageToken:''}`, { headers: driveHeaders() });
             if(!res.ok) throw new Error('list failed: '+res.status);
             const data = await res.json();
-            (data.files||[]).forEach(f=>{
-              if(f.mimeType==='application/vnd.google-apps.folder'){ queue.push(f.id); return; }
-              const kind = driveMediaKind(f);
-              if(kind!=='image' && kind!=='video') return;
-              add({id:f.id, name:f.name, thumbnailLink:f.thumbnailLink, webViewLink:f.webViewLink||'', ts:Date.parse(f.createdTime)||0,
-                author:galleryOwnerName(f.owners&&f.owners[0]) , taskId:'', text:'', video:kind==='video', src:'drive'});
-            });
+            files.push(...(data.files||[]));
             pageToken = data.nextPageToken || '';
           }while(pageToken);
-        }
-      }catch(e){ console.error('gallery drive scan failed', e); }
-    }
+          return files;
+        }));
+        const next = [];
+        results.flat().forEach(f=>{
+          if(f.mimeType==='application/vnd.google-apps.folder'){ next.push(f.id); return; }
+          const kind = driveMediaKind(f);
+          if(kind!=='image' && kind!=='video') return;
+          out.push({id:f.id, name:f.name, thumbnailLink:f.thumbnailLink, webViewLink:f.webViewLink||'', ts:Date.parse(f.createdTime)||0,
+            author:galleryOwnerName(f.owners&&f.owners[0]), taskId:'', text:'', video:kind==='video', src:'drive'});
+        });
+        level = next;
+      }
+      return out;
+    })().catch(e=>{ console.error('gallery drive scan failed', e); return []; });
+    const [chatItems, driveItems] = await Promise.all([chatsP, driveP]);
+    chatItems.forEach(add);
+    state.documents.forEach(d=>{
+      if((d.type!=='Image' && d.type!=='Video') || !d.thumbnail) return;
+      add({id:d.driveFileId||d.id, name:d.name||'', thumbnailLink:d.thumbnail, webViewLink:d.url||'',
+        ts:d.ts||0, author:d.uploadedBy||'', taskId:d.taskId||'', text:'', video:d.type==='Video', src:'doc'});
+    });
+    driveItems.forEach(add);
     items.sort((a,b)=>b.ts-a.ts);
-    G.items = items; G.loaded = true;
+    G.items = items; G.loaded = true; G.loadedWithDrive = withDrive;
+    G.needsSignIn = !!rootId && !state.driveSignedIn;
   }catch(e){ console.error(e); G.error = 'Could not load the gallery.'; G.loaded = true; }
   G.loading = false;
   if(state.view==='gallery') render();
@@ -3657,7 +3674,8 @@ function galleryDayLabel(ts){
 }
 function renderGalleryView(){
   const G = galleryState();
-  if((!G.loaded || (G.needsSignIn && state.driveSignedIn)) && !G.loading) setTimeout(loadGallery, 0);
+  // (re)load when: never loaded, or Drive became available since the last load, or the first attempt ran before the app was ready
+  if((!G.loaded || (state.driveSignedIn && driveFolderId(state.project && state.project.driveUrl) && !G.loadedWithDrive)) && !G.loading) setTimeout(loadGallery, 0);
   const teamNames = state.team.map(m=>m.name);
   const authors = [...new Set(G.items.map(i=>i.author).filter(a=>a && teamNames.includes(a)))].sort();
   const taskIds = [...new Set(G.items.map(i=>i.taskId).filter(Boolean))];
@@ -3680,7 +3698,7 @@ function renderGalleryView(){
     <button class="btn btn-sm btn-ghost" onclick="galleryState().loaded=false;loadGallery()">${G.loading?'Loading…':'↻ Refresh'}</button>
     <span class="faint" style="font-size:12px">${list.length} item${list.length===1?'':'s'}</span>
   </div>`;
-  if(G.loading && !G.items.length) return bar + `<div class="empty-state"><div class="display">Loading…</div>Collecting the latest photos and videos.</div>`;
+  if((G.loading || !G.loaded) && !G.items.length) return bar + `<div class="empty-state"><div class="display">Loading…</div>Collecting the latest photos and videos.</div>`;
   if(G.error) return bar + `<div class="empty-state"><div class="display">Oops</div>${esc(G.error)}</div>`;
   const signHint = G.needsSignIn ? `<div class="faint" style="margin:8px 0;font-size:12px">Files in the team Drive are only included when you are signed in. <span class="chat-action-link" onclick="signInGoogleDrive()">Sign in with Google</span></div>` : '';
   if(!shown.length) return bar + signHint + `<div class="empty-state"><div class="display">Nothing here yet</div>Photos and videos posted in task chats, or uploaded to a task, will appear here.</div>`;
