@@ -187,6 +187,7 @@
     background:linear-gradient(transparent,rgba(0,0,0,.7));opacity:0;transition:opacity .15s;display:flex;gap:4px;align-items:baseline;}
   .gallery-item:hover .gallery-cap{opacity:1;}
   .gallery-when{margin-left:auto;opacity:.75;}
+  .drive-banner{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;margin:0 0 14px;padding:10px 14px;border-radius:var(--r);background:var(--surface2);border:1px solid var(--gold);font-size:13px;}
   /* ---- kanban ---- */
   .kanban{display:flex;gap:14px;align-items:flex-start;overflow-x:auto;padding-bottom:10px;}
   .kanban-slider-wrap{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
@@ -588,6 +589,7 @@
         <div class="notif-panel" id="notif-panel"></div>
       </div>
     </div>
+    <div id="drive-banner"></div>
     <div id="view"></div>
   </main>
 </div>
@@ -734,6 +736,7 @@ const GOOGLE_CLIENT_ID = '335855484636-f30688quamr1366ejqnqeo1fgev0o3vu.apps.goo
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 const DRIVE_TOKEN_SESSION_KEY = 'fluxus_drive_token';
 let driveAccessToken = null;
+let driveTokenExpiresAt = 0;
 let driveTokenClient = null;
 function saveDriveTokenToSession(token, expiresInSeconds){
   try{
@@ -748,6 +751,7 @@ function loadDriveTokenFromSession(){
     if(!raw) return null;
     const data = JSON.parse(raw);
     if(!data.token || !data.expiresAt || data.expiresAt <= Date.now() + 30000) return null; // expired (or about to)
+    driveTokenExpiresAt = data.expiresAt;
     return data.token;
   }catch(e){ return null; }
 }
@@ -760,6 +764,7 @@ function initDriveAuth(){
   driveTokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
     scope: DRIVE_SCOPE,
+    error_callback: ()=>{ driveAutoAttemptInProgress = false; driveAuthFailed(); },
     callback: (resp)=>{
       const wasAuto = driveAutoAttemptInProgress;
       driveAutoAttemptInProgress = false;
@@ -767,11 +772,14 @@ function initDriveAuth(){
         // a background auto-connect attempt failing is normal (e.g. first-ever consent needs a
         // click) — only complain when the person explicitly clicked "Sign in with Google" themselves
         if(!wasAuto) toast('Google sign-in failed');
+        driveAuthFailed();
         return;
       }
       driveAccessToken = resp.access_token;
+      driveTokenExpiresAt = Date.now() + (resp.expires_in||3500)*1000;
       saveDriveTokenToSession(resp.access_token, resp.expires_in);
       state.driveSignedIn = true;
+      state.driveNeedsReconnect = false;
       const rootId = driveFolderId(state.project.driveUrl);
       state.driveBreadcrumb = restoredDriveBreadcrumb(rootId);
       state.driveCurrentFolderId = state.driveBreadcrumb[state.driveBreadcrumb.length-1].id;
@@ -781,6 +789,39 @@ function initDriveAuth(){
     }
   });
 }
+// ---- Google session keepalive: Drive tokens last ~1h. Refresh silently shortly before expiry; if that
+// can't go through, show a "Reconnect" banner on whatever page the person is on (no need to go back to Documents) ----
+function driveAuthFailed(){
+  state.driveNeedsReconnect = true;
+  if(driveTokenExpiresAt && Date.now() >= driveTokenExpiresAt - 5000){
+    state.driveSignedIn = false; driveAccessToken = null; clearDriveTokenSession();
+    if(state.view==='gallery' || state.view==='documents') render();
+  }
+  renderDriveBanner();
+}
+function renderDriveBanner(){
+  const el = document.getElementById('drive-banner'); if(!el) return;
+  const need = authUser && state.project && driveFolderId(state.project.driveUrl) && !state.driveSignedIn && state.driveNeedsReconnect;
+  el.innerHTML = need ? `<div class="drive-banner"><span>🔌 Google Drive is disconnected — photos, videos and files can't load.</span><button class="btn btn-sm btn-gold" onclick="reconnectDrive()">Reconnect</button></div>` : '';
+}
+function reconnectDrive(){
+  initDriveAuth();
+  if(!driveTokenClient){ toast('Google sign-in is still loading — try again in a moment'); return; }
+  driveAutoAttemptInProgress = false;
+  const opts = { prompt: '' };
+  if(authUser && authUser.email) opts.hint = authUser.email;
+  driveTokenClient.requestAccessToken(opts);
+}
+function driveKeepAliveCheck(){
+  if(!authUser || !driveTokenClient || !driveTokenExpiresAt) return;
+  const left = driveTokenExpiresAt - Date.now();
+  if(left > 3*60*1000 || driveAutoAttemptInProgress || state.driveNeedsReconnect) return; // after a failed silent refresh, wait for the person to click Reconnect
+  driveAutoAttemptInProgress = true;
+  try{ driveTokenClient.requestAccessToken({ prompt:'', hint: authUser.email }); }
+  catch(e){ driveAutoAttemptInProgress = false; driveAuthFailed(); }
+}
+setInterval(driveKeepAliveCheck, 30000);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ if(driveTokenExpiresAt && Date.now()>=driveTokenExpiresAt) state.driveNeedsReconnect=false; driveKeepAliveCheck(); } });
 function signInGoogleDrive(){
   initDriveAuth();
   if(!driveTokenClient){ toast('Google sign-in is still loading — try again in a moment'); return; }
@@ -2152,6 +2193,7 @@ function filterTasksByStatus(status){
 }
 
 function render(){
+  renderDriveBanner();
   // preserve focus/cursor position across re-render (e.g. typing in a search box)
   const active = document.activeElement;
   const focusInfo = (active && active.id && (active.tagName==='INPUT' || active.tagName==='TEXTAREA'))
@@ -5440,7 +5482,7 @@ async function driveCompleteMove(){
   }catch(err){ console.error(err); toast('Could not move that file'); }
 }
 function driveSignOut(){
-  driveAccessToken = null;
+  driveAccessToken = null; driveTokenExpiresAt = 0; state.driveNeedsReconnect = false;
   state.driveSignedIn = false;
   state.driveFiles = null;
   state.driveMovePending = null;
