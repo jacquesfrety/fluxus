@@ -3561,6 +3561,33 @@ async function loadGallery(){
       add({id:d.driveFileId||d.id, name:d.name||'', thumbnailLink:d.thumbnail, webViewLink:d.url||'',
         ts:d.ts||0, author:d.uploadedBy||'', taskId:d.taskId||'', text:'', video:d.type==='Video', src:'doc'});
     });
+    // files dropped straight into the team Drive (Documents page), including sub-folders
+    const rootId = driveFolderId(state.project.driveUrl);
+    G.needsSignIn = !!rootId && !state.driveSignedIn;
+    if(rootId && state.driveSignedIn){
+      try{
+        const queue = [rootId]; let n = 0;
+        while(queue.length && n++ < 80){
+          const folder = queue.shift();
+          let pageToken = '';
+          do{
+            const q = encodeURIComponent(`'${folder}' in parents and trashed=false`);
+            const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType,webViewLink,thumbnailLink,createdTime,owners(displayName))');
+            const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=${fields}&pageSize=500${pageToken?'&pageToken='+pageToken:''}`, { headers: driveHeaders() });
+            if(!res.ok) throw new Error('list failed: '+res.status);
+            const data = await res.json();
+            (data.files||[]).forEach(f=>{
+              if(f.mimeType==='application/vnd.google-apps.folder'){ queue.push(f.id); return; }
+              const kind = driveMediaKind(f);
+              if(kind!=='image' && kind!=='video') return;
+              add({id:f.id, name:f.name, thumbnailLink:f.thumbnailLink, webViewLink:f.webViewLink||'', ts:Date.parse(f.createdTime)||0,
+                author:(f.owners&&f.owners[0]&&f.owners[0].displayName)||'', taskId:'', text:'', video:kind==='video', src:'drive'});
+            });
+            pageToken = data.nextPageToken || '';
+          }while(pageToken);
+        }
+      }catch(e){ console.error('gallery drive scan failed', e); }
+    }
     items.sort((a,b)=>b.ts-a.ts);
     G.items = items; G.loaded = true;
   }catch(e){ console.error(e); G.error = 'Could not load the gallery.'; G.loaded = true; }
@@ -3578,7 +3605,7 @@ function galleryDayLabel(ts){
 }
 function renderGalleryView(){
   const G = galleryState();
-  if(!G.loaded && !G.loading) setTimeout(loadGallery, 0);
+  if((!G.loaded || (G.needsSignIn && state.driveSignedIn)) && !G.loading) setTimeout(loadGallery, 0);
   const authors = [...new Set(G.items.map(i=>i.author).filter(Boolean))].sort();
   const taskIds = [...new Set(G.items.map(i=>i.taskId).filter(Boolean))];
   const list = G.items.filter(i=>
@@ -3602,8 +3629,9 @@ function renderGalleryView(){
   </div>`;
   if(G.loading && !G.items.length) return bar + `<div class="empty-state"><div class="display">Loading…</div>Collecting the latest photos and videos.</div>`;
   if(G.error) return bar + `<div class="empty-state"><div class="display">Oops</div>${esc(G.error)}</div>`;
-  if(!shown.length) return bar + `<div class="empty-state"><div class="display">Nothing here yet</div>Photos and videos posted in task chats, or uploaded to a task, will appear here.</div>`;
-  let html = '', lastDay = null;
+  const signHint = G.needsSignIn ? `<div class="faint" style="margin:8px 0;font-size:12px">Files in the team Drive are only included when you are signed in. <span class="chat-action-link" onclick="signInGoogleDrive()">Sign in with Google</span></div>` : '';
+  if(!shown.length) return bar + signHint + `<div class="empty-state"><div class="display">Nothing here yet</div>Photos and videos posted in task chats, or uploaded to a task, will appear here.</div>`;
+  let html = signHint, lastDay = null;
   shown.forEach(it=>{
     const day = galleryDayLabel(it.ts);
     if(day!==lastDay){
