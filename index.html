@@ -3716,8 +3716,10 @@ async function deleteLevel(id){
    Preview images (shots and levels) are small JPEGs stored one-per-document under the 'preview_<id>' key,
    loaded lazily, so they never push the main shots/levels documents past Firestore's 1MB limit. */
 const SHOT_STAGES = [['layout','Layout'],['animation','Animation'],['lighting','Lighting'],['render','Render']];
-const STAGE_STATES = ['Not started','In progress','Review','Done'];
-const STAGE_COLOR = {'Not started':'#6B7280','In progress':'#3B82F6','Review':'#D08AC8','Done':'#6FCF97'};
+// Each stage (Layout…) is a mini task and uses the SAME statuses as general tasks. Older shots stored
+// 'Not started / In progress / Review / Done' — map those across when reading.
+const STAGE_LEGACY = {'Not started':'Not Started','In progress':'In Progress','Review':'In Review','Done':'Completed'};
+function stageValue(v){ return STAGE_LEGACY[v] || v || 'Not Started'; }
 async function saveSequences(){ await fsSet('sequences', state.sequences); }
 async function saveShots(){ await fsSet('shots', state.shots); }
 state.previews = state.previews || {};
@@ -3797,7 +3799,7 @@ function previewTile(id, icon, h){
 function shotsOf(seqId){ return state.shots.filter(s=>s.seqId===seqId); }
 function shotProgress(s){
   const st = s.stages||{};
-  return Math.round(SHOT_STAGES.filter(([k])=>st[k]==='Done').length / SHOT_STAGES.length * 100);
+  return Math.round(SHOT_STAGES.filter(([k])=>stageValue(st[k])==='Completed').length / SHOT_STAGES.length * 100);
 }
 function seqProgress(seqId){
   const list = shotsOf(seqId); if(!list.length) return 0;
@@ -3818,30 +3820,27 @@ function shotFrames(s){
 function seqNumber(q){ if(q.number) return q.number; return Math.max(1, state.sequences.indexOf(q)+1); }
 function seqCode(q){ return 'SQ'+String(seqNumber(q)).padStart(3,'0'); }
 function shotPrefix(seqId){ const q = state.sequences.find(x=>x.id===seqId); return q ? seqCode(q)+'_SH' : 'SH'; }
-// A shot's status follows its linked tasks automatically: In progress while any task is actively being
-// worked on (In Progress / In Review / Needs Revision), Completed once every task is Completed, otherwise
-// Open (nothing under way right now — not started, or waiting between tasks). On Hold tasks are ignored.
-// With no linked task it can be set by hand.
+// A shot's status is automatic. Its "tasks" are its stages (Layout, Animation, Lighting, Render) plus any
+// task linked to it, all using the general task statuses: In progress while any of them is In Progress /
+// In Review / Needs Revision, Completed once all of them are Completed, otherwise Open (nothing under way
+// right now). On Hold items are ignored.
 const SHOT_STATUSES = ['Open','In Progress','Completed'];
-function shotAutoStatus(shotId){
-  const ts = shotLinkedTasks(shotId).filter(t=>t.status!=='On Hold');
-  if(!ts.length) return null;
-  if(ts.every(t=>t.status==='Completed')) return 'Completed';
-  if(ts.some(t=>t.status==='In Progress' || t.status==='In Review' || t.status==='Needs Revision')) return 'In Progress';
-  return 'Open';
+function shotItemStatuses(s){
+  const st = s.stages || {};
+  return [...SHOT_STAGES.map(([k])=>stageValue(st[k])), ...shotLinkedTasks(s.id).map(t=>t.status)].filter(v=>v!=='On Hold');
 }
 function shotStatusValue(s){
-  const auto = shotAutoStatus(s.id);
-  if(auto) return auto;
-  if(s.status==='Completed') return 'Completed';
-  if(s.status==='In Progress' || s.status==='In Review' || s.status==='Needs Revision') return 'In Progress';
+  const items = shotItemStatuses(s);
+  if(!items.length) return 'Open';
+  if(items.every(v=>v==='Completed')) return 'Completed';
+  if(items.some(v=>v==='In Progress' || v==='In Review' || v==='Needs Revision')) return 'In Progress';
   return 'Open';
 }
 function shotStageDots(s){
   const st = s.stages||{};
   return `<span class="row" style="gap:3px">${SHOT_STAGES.map(([k,l])=>{
-    const v = st[k]||'Not started';
-    return `<span title="${l}: ${v}" style="width:14px;height:14px;border-radius:4px;background:${STAGE_COLOR[v]}${v==='Not started'?'66':''};display:inline-block"></span>`;
+    const v = stageValue(st[k]);
+    return `<span title="${l}: ${v}" style="width:14px;height:14px;border-radius:4px;background:${STATUS_HEX[v]}${v==='Not Started'?'66':''};display:inline-block"></span>`;
   }).join('')}</span>`;
 }
 function shotStatusPill(s){
@@ -4007,13 +4006,13 @@ function renderShotDrawerContent(id, seqIdDefault){
       </div>
       <div class="field"><label>Camera notes</label><textarea id="shot-cam" rows="2" placeholder="Lens, movement, framing…">${esc(s?.camera||'')}</textarea></div>
       <div class="field"><label>Status</label>
-        <select id="shot-status" ${s&&shotAutoStatus(s.id)?'disabled':''}>${SHOT_STATUSES.map(x=>`<option value="${x}" ${(s?shotStatusValue(s):'Open')===x?'selected':''}>${x==='In Progress'?'In progress':x}</option>`).join('')}</select>
-        <div class="faint" style="font-size:11.5px;margin-top:4px">${s&&shotAutoStatus(s.id)?'Automatic — follows the tasks linked to this shot (a task in progress, in review or needing revision → In progress; all tasks completed → Completed; otherwise Open).':'No task linked yet, so you can set it by hand. Once a task is linked, it becomes automatic.'}</div>
+        <div>${s?shotStatusPill(s):'<span class="statuspill" style="background:#6B728030;color:#9AA3AF">Open</span>'}</div>
+        <div class="faint" style="font-size:11.5px;margin-top:4px">Automatic — In progress while a stage or linked task is in progress, in review or needs revision; Completed when all of them are completed; otherwise Open. Updates when you save.</div>
       </div>
       <div class="field"><label>Stages</label>
         <div class="field-row" style="grid-template-columns:1fr 1fr">${SHOT_STAGES.map(([k,l])=>`
           <div class="field" style="margin-bottom:6px"><label style="font-size:11px">${l}</label>
-            <select data-stage="${k}">${STAGE_STATES.map(v=>`<option ${(st[k]||'Not started')===v?'selected':''}>${v}</option>`).join('')}</select></div>`).join('')}</div>
+            <select data-stage="${k}">${STATUSES.map(v=>`<option ${stageValue(st[k])===v?'selected':''}>${v}</option>`).join('')}</select></div>`).join('')}</div>
       </div>
       ${previewFieldHtml(s?s.id:null)}
       <div class="field"><label>Playblast link ${link(s?.playblast)}</label><input id="shot-playblast" value="${esc(s?.playblast||'')}" placeholder="Paste a Drive / YouTube link"></div>
@@ -4049,7 +4048,6 @@ async function saveShotForm(id){
     assetIds: [...document.querySelectorAll('#drawer [data-shot-asset].on')].map(el=>el.dataset.shotAsset),
     notes: document.getElementById('shot-notes').value.trim()
   };
-  { const stEl = document.getElementById('shot-status'); if(stEl && !stEl.disabled) fields.status = stEl.value; }
   if(pendingPreview!==undefined){ fields.previewTs = Date.now(); }
   let sid = id;
   if(id){ const s = state.shots.find(x=>x.id===id); if(s) Object.assign(s, fields); }
