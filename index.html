@@ -1394,6 +1394,27 @@ async function pollLiveAlerts(){
         }
       }
     }
+    // Shots / sequences / levels: only worth fetching while one of those pages is open
+    if(state.view==='shots' || state.view==='levels'){
+      const [fSeq, fShots, fLevels] = await Promise.all([fsGet('sequences'), fsGet('shots'), fsGet('levels')]);
+      const ae = document.activeElement;
+      const typing = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+      const drawerOpen = document.getElementById('drawer')?.classList.contains('open');
+      if(!typing && !drawerOpen){
+        let changed = false;
+        const upd = (key, fresh)=>{
+          if(Array.isArray(fresh) && JSON.stringify(fresh)!==JSON.stringify(state[key])){ state[key] = fresh; changed = true; }
+        };
+        upd('sequences', fSeq); upd('shots', fShots); upd('levels', fLevels);
+        if(changed){
+          // a teammate changed a preview image → forget our cached copy so it is fetched again
+          [...state.shots, ...state.levels].forEach(it=>{
+            if(it.previewTs && state.previewTsSeen[it.id]!==it.previewTs){ if(state.previewTsSeen[it.id]!==undefined) delete state.previews[it.id]; state.previewTsSeen[it.id] = it.previewTs; }
+          });
+          render();
+        }
+      }
+    }
     if(Array.isArray(freshNotifs)){
       const unreadBefore = myNotifications().filter(n=>!n.read).length;
       const mergedNow = mergeNotifications(freshNotifs, state.notifications);
@@ -2058,6 +2079,8 @@ function renderProjectDrawerContent(){
           ${PROJECT_TYPES.map(t=>`<option value="${t}" ${p.type===t?'selected':''}>${t}</option>`).join('')}
         </select>
       </div>
+      <div class="field"><label>Frame rate (FPS) <span class="faint" style="text-transform:none;font-weight:400">— used to convert shot frames into seconds</span></label>
+        <select id="proj-fps">${[24,25,30,50,60].map(f=>`<option value="${f}" ${projectFps()===f?'selected':''}>${f} fps</option>`).join('')}</select></div>
       <div class="field"><label>Period</label><input id="proj-period" value="${esc(p.period)}" placeholder="e.g. Aug – Dec 2026"></div>
       <div class="field"><label>Team drive folder <span class="faint" style="text-transform:none;font-weight:400">— a Google Drive folder link, shared as "Anyone with the link can view". The Documents page will show it directly.</span></label>
         <input id="proj-drive-url" value="${esc(p.driveUrl||'')}" placeholder="https://drive.google.com/drive/folders/…"></div>
@@ -2096,6 +2119,7 @@ async function saveProjectDetails(){
   state.project.title = document.getElementById('proj-title').value.trim() || 'Untitled Project';
   state.project.type = document.getElementById('proj-type').value;
   state.project.period = document.getElementById('proj-period').value;
+  state.project.fps = parseInt(document.getElementById('proj-fps').value) || 24;
   state.project.driveUrl = document.getElementById('proj-drive-url').value.trim();
   state.project.notes = document.getElementById('proj-notes').value;
   if(pendingProjectIcon) state.project.icon = pendingProjectIcon;
@@ -3627,6 +3651,7 @@ async function saveLevelForm(editingId){
     budgetDrawCalls: parseInt(document.getElementById('level-budget-drawcalls').value)||null,
     assetUsage
   };
+  if(pendingPreview!==undefined){ fields.previewTs = Date.now(); }
   let lvId = editingId;
   if(editingId){
     const l = state.levels.find(x=>x.id===editingId);
@@ -3669,6 +3694,7 @@ const STAGE_COLOR = {'Not started':'#6B7280','In progress':'#3B82F6','Review':'#
 async function saveSequences(){ await fsSet('sequences', state.sequences); }
 async function saveShots(){ await fsSet('shots', state.shots); }
 state.previews = state.previews || {};
+state.previewTsSeen = state.previewTsSeen || {};
 let previewsLoading = false;
 let pendingPreview; // undefined = unchanged, null = removed, dataURL = new image
 async function ensurePreviewsLoaded(ids){
@@ -3686,6 +3712,8 @@ async function ensurePreviewsLoaded(ids){
 async function savePreviewFor(id){
   if(pendingPreview===undefined) return;
   state.previews[id] = pendingPreview || '';
+  const it = state.shots.find(x=>x.id===id) || state.levels.find(x=>x.id===id);
+  if(it && it.previewTs) state.previewTsSeen[id] = it.previewTs;
   await fsSet('preview_'+id, pendingPreview || '');
   pendingPreview = undefined;
 }
@@ -3748,12 +3776,34 @@ function seqProgress(seqId){
   const list = shotsOf(seqId); if(!list.length) return 0;
   return Math.round(list.reduce((a,s)=>a+shotProgress(s),0)/list.length);
 }
+function projectFps(){ return parseInt(state.project && state.project.fps) || 24; }
+function shotFrameCount(s){
+  if(s.frames!==undefined && s.frames!==null && s.frames!=='') return parseInt(s.frames)||0;
+  const a = parseInt(s.frameStart), b = parseInt(s.frameEnd); // shots saved before the "number of frames" field
+  return (!isNaN(a) && !isNaN(b)) ? Math.max(0,b-a+1) : 0;
+}
 function shotFrames(s){
-  const a = parseInt(s.frameStart), b = parseInt(s.frameEnd);
-  if(isNaN(a) && isNaN(b)) return '';
-  if(isNaN(b)) return `${a}`;
-  if(isNaN(a)) return `${b}`;
-  return `${a}–${b} (${Math.max(0,b-a+1)}f)`;
+  const n = shotFrameCount(s);
+  return n ? `${n}f · ${(n/projectFps()).toFixed(1)}s` : '';
+}
+function seqNumber(q){ if(q.number) return q.number; return Math.max(1, state.sequences.indexOf(q)+1); }
+function seqCode(q){ return 'SQ'+String(seqNumber(q)).padStart(3,'0'); }
+function shotPrefix(seqId){ const q = state.sequences.find(x=>x.id===seqId); return q ? seqCode(q)+'_SH' : 'SH'; }
+// A shot's status follows its linked tasks automatically (Not started / In progress / Completed).
+// With no linked task it can be set by hand.
+function shotAutoStatus(shotId){
+  const ts = shotLinkedTasks(shotId).filter(t=>t.status!=='On Hold');
+  if(!ts.length) return null;
+  if(ts.every(t=>t.status==='Completed')) return 'Completed';
+  if(ts.some(t=>t.status==='Completed' || t.status==='In Progress' || t.status==='In Review' || t.status==='Needs Revision')) return 'In Progress';
+  return 'Not Started';
+}
+function shotStatusValue(s){
+  const auto = shotAutoStatus(s.id);
+  if(auto) return auto;
+  if(s.status==='Completed') return 'Completed';
+  if(s.status==='In Progress' || s.status==='In Review' || s.status==='Needs Revision') return 'In Progress';
+  return 'Not Started';
 }
 function shotStageDots(s){
   const st = s.stages||{};
@@ -3763,7 +3813,7 @@ function shotStageDots(s){
   }).join('')}</span>`;
 }
 function shotStatusPill(s){
-  const st = s.status || 'Not Started';
+  const st = shotStatusValue(s);
   return `<span class="statuspill" style="background:${STATUS_HEX[st]}30;color:${STATUS_COLOR[st]}">${esc(st)}</span>`;
 }
 function shotLinkedTasks(shotId){ return state.tasks.filter(t=>t.shotId===shotId); }
@@ -3792,7 +3842,7 @@ function renderShotsView(){
           <button class="btn btn-ghost" style="padding:1px 5px;font-size:10px;line-height:1" onclick="moveSequence('${q.id}',1)" ${i===state.sequences.length-1?'disabled':''}>▼</button>
         </div>
         <span style="cursor:pointer;font-size:14px" onclick="toggleSeqCollapse('${q.id}')">${isC?'▸':'▾'}</span>
-        <div style="min-width:0"><b style="font-size:15px;cursor:pointer" onclick="openSequenceDrawer('${q.id}')">${esc(q.name)}</b>
+        <div style="min-width:0"><b style="font-size:15px;cursor:pointer" onclick="openSequenceDrawer('${q.id}')"><span class="mono" style="color:var(--gold)">${seqCode(q)}</span> ${esc(q.name)}</b>
           ${q.description?`<div class="faint" style="font-size:12px">${esc(q.description)}</div>`:''}</div>
       </div>
       <div class="row" style="gap:10px;align-items:center">
@@ -3828,6 +3878,7 @@ function renderShotsView(){
 }
 
 /* ---- sequence drawer ---- */
+function nextSeqNumber(){ return state.sequences.reduce((m,q)=>Math.max(m, seqNumber(q)), 0) + 1; }
 function openSequenceDrawer(id){
   document.getElementById('overlay').classList.add('open');
   const drawer = document.getElementById('drawer'); drawer.classList.add('open');
@@ -3835,7 +3886,10 @@ function openSequenceDrawer(id){
   drawer.innerHTML = `<div class="drawer-head"><div><h2 style="margin:0;font-size:17px">${q?'Edit sequence':'New sequence'}</h2></div>
       <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button></div>
     <div class="drawer-body">
-      <div class="field"><label>Name</label><input id="seq-name" value="${esc(q?.name||'')}" placeholder="e.g. SQ010 — Opening"></div>
+      <div class="field-row">
+        <div class="field"><label>Sequence number</label><input id="seq-number" type="number" min="1" step="1" value="${q?seqNumber(q):nextSeqNumber()}"></div>
+        <div class="field"><label>Name</label><input id="seq-name" value="${esc(q?.name||'')}" placeholder="e.g. Opening"></div>
+      </div>
       <div class="field"><label>Description</label><textarea id="seq-desc" rows="2" placeholder="Optional">${esc(q?.description||'')}</textarea></div>
       <div class="row" style="justify-content:space-between;margin-top:14px">
         ${q?`<button class="btn btn-danger btn-sm" onclick="deleteSequence('${q.id}')">Delete</button>`:'<span></span>'}
@@ -3845,7 +3899,8 @@ function openSequenceDrawer(id){
 async function saveSequenceForm(id){
   const name = document.getElementById('seq-name').value.trim();
   if(!name){ toast('Name is required'); return; }
-  const fields = { name, description: document.getElementById('seq-desc').value.trim() };
+  const num = parseInt(document.getElementById('seq-number').value) || nextSeqNumber();
+  const fields = { name, number: num, description: document.getElementById('seq-desc').value.trim() };
   if(id){ const q = state.sequences.find(x=>x.id===id); if(q) Object.assign(q, fields); }
   else state.sequences.push(Object.assign({id: uid('sq')}, fields));
   await saveSequences(); closeDrawer(); render();
@@ -3882,6 +3937,21 @@ function openShotDrawer(id, seqId){
   document.getElementById('overlay').classList.add('open');
   const drawer = document.getElementById('drawer'); drawer.classList.add('open');
   drawer.innerHTML = renderShotDrawerContent(id, seqId);
+  if(!id){ const el = document.getElementById('shot-code'); if(el){ el.focus(); const n = el.value.length; el.setSelectionRange(n,n); } }
+}
+function shotSeqChanged(){
+  const q = state.sequences.find(x=>x.id===document.getElementById('shot-seq').value); const el = document.getElementById('shot-code');
+  if(!q || !el) return;
+  if(/^SQ\d+_SH/.test(el.value)) el.value = el.value.replace(/^SQ\d+/, seqCode(q));
+  else if(!el.value.trim()) el.value = shotPrefix(q.id);
+}
+function shotFramesInput(){
+  const n = parseInt(document.getElementById('shot-frames').value);
+  document.getElementById('shot-seconds').value = isNaN(n) ? '' : (n/projectFps()).toFixed(2);
+}
+function shotSecondsInput(){
+  const sec = parseFloat(document.getElementById('shot-seconds').value);
+  document.getElementById('shot-frames').value = isNaN(sec) ? '' : Math.round(sec*projectFps());
 }
 function renderShotDrawerContent(id, seqIdDefault){
   const s = id ? state.shots.find(x=>x.id===id) : null;
@@ -3895,16 +3965,19 @@ function renderShotDrawerContent(id, seqIdDefault){
       <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button></div>
     <div class="drawer-body">
       <div class="field-row">
-        <div class="field"><label>Sequence</label><select id="shot-seq">${state.sequences.map(q=>`<option value="${q.id}" ${q.id===seqId?'selected':''}>${esc(q.name)}</option>`).join('')}</select></div>
-        <div class="field"><label>Shot code</label><input id="shot-code" value="${esc(s?s.code:nextShotCode(seqId))}" placeholder="e.g. SH010"></div>
+        <div class="field"><label>Sequence</label><select id="shot-seq" onchange="shotSeqChanged()">${state.sequences.map(q=>`<option value="${q.id}" ${q.id===seqId?'selected':''}>${seqCode(q)} · ${esc(q.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>Shot code</label><input id="shot-code" value="${esc(s?s.code:shotPrefix(seqId))}" placeholder="e.g. SQ001_SH010"></div>
       </div>
       <div class="field"><label>Description</label><textarea id="shot-desc" rows="2" placeholder="What happens in this shot">${esc(s?.description||'')}</textarea></div>
       <div class="field-row">
-        <div class="field"><label>First frame</label><input id="shot-f1" type="number" step="1" value="${s&&s.frameStart!==undefined&&s.frameStart!==null?s.frameStart:''}" placeholder="1001"></div>
-        <div class="field"><label>Last frame</label><input id="shot-f2" type="number" step="1" value="${s&&s.frameEnd!==undefined&&s.frameEnd!==null?s.frameEnd:''}" placeholder="1048"></div>
+        <div class="field"><label>Number of frames</label><input id="shot-frames" type="number" min="0" step="1" value="${s&&shotFrameCount(s)?shotFrameCount(s):''}" oninput="shotFramesInput()" placeholder="e.g. 48"></div>
+        <div class="field"><label>Seconds <span class="faint" style="text-transform:none;font-weight:400">(at ${projectFps()} fps)</span></label><input id="shot-seconds" type="number" min="0" step="0.01" value="${s&&shotFrameCount(s)?(shotFrameCount(s)/projectFps()).toFixed(2):''}" oninput="shotSecondsInput()" placeholder="e.g. 2"></div>
       </div>
       <div class="field"><label>Camera notes</label><textarea id="shot-cam" rows="2" placeholder="Lens, movement, framing…">${esc(s?.camera||'')}</textarea></div>
-      <div class="field"><label>Status</label><select id="shot-status">${STATUSES.map(x=>`<option value="${x}" ${(s?s.status:'Not Started')===x?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div class="field"><label>Status</label>
+        <select id="shot-status" ${s&&shotAutoStatus(s.id)?'disabled':''}>${['Not Started','In Progress','Completed'].map(x=>`<option value="${x}" ${(s?shotStatusValue(s):'Not Started')===x?'selected':''}>${x}</option>`).join('')}</select>
+        <div class="faint" style="font-size:11.5px;margin-top:4px">${s&&shotAutoStatus(s.id)?'Automatic — follows the tasks linked to this shot (any task started, in review or needing revision → In progress; all completed → Completed).':'No task linked yet, so you can set it by hand. Once a task is linked, it becomes automatic.'}</div>
+      </div>
       <div class="field"><label>Stages</label>
         <div class="field-row" style="grid-template-columns:1fr 1fr">${SHOT_STAGES.map(([k,l])=>`
           <div class="field" style="margin-bottom:6px"><label style="font-size:11px">${l}</label>
@@ -3928,20 +4001,22 @@ function renderShotDrawerContent(id, seqIdDefault){
 }
 async function saveShotForm(id){
   const code = document.getElementById('shot-code').value.trim();
-  if(!code){ toast('Shot code is required'); return; }
-  const f1 = document.getElementById('shot-f1').value, f2 = document.getElementById('shot-f2').value;
+  if(!code || /^SQ\d+_SH$/.test(code)){ toast('Add the shot number to the code, e.g. '+shotPrefix(document.getElementById('shot-seq').value)+'010'); return; }
+  const fr = document.getElementById('shot-frames').value;
   const stages = {}; document.querySelectorAll('#drawer select[data-stage]').forEach(el=>{ stages[el.dataset.stage] = el.value; });
   const fields = {
     seqId: document.getElementById('shot-seq').value, code,
     description: document.getElementById('shot-desc').value.trim(),
-    frameStart: f1===''?null:parseInt(f1), frameEnd: f2===''?null:parseInt(f2),
+    frames: fr===''?null:(parseInt(fr)||0), frameStart: null, frameEnd: null,
     camera: document.getElementById('shot-cam').value.trim(),
-    status: document.getElementById('shot-status').value, stages,
+    stages,
     playblast: document.getElementById('shot-playblast').value.trim(),
     renderFolder: document.getElementById('shot-render').value.trim(),
     assetIds: [...document.querySelectorAll('#drawer [data-shot-asset].on')].map(el=>el.dataset.shotAsset),
     notes: document.getElementById('shot-notes').value.trim()
   };
+  { const stEl = document.getElementById('shot-status'); if(stEl && !stEl.disabled) fields.status = stEl.value; }
+  if(pendingPreview!==undefined){ fields.previewTs = Date.now(); }
   let sid = id;
   if(id){ const s = state.shots.find(x=>x.id===id); if(s) Object.assign(s, fields); }
   else { sid = uid('sh'); state.shots.push(Object.assign({id: sid}, fields)); }
@@ -3966,7 +4041,7 @@ async function unlinkTaskFromShot(taskId, shotId){
   t.shotId = ''; await saveTasks();
   document.getElementById('drawer').innerHTML = renderShotDrawerContent(shotId); render();
 }
-function shotLabel(s){ const q = state.sequences.find(x=>x.id===s.seqId); return (q?q.name+' · ':'')+(s.code||''); }
+function shotLabel(s){ const q = state.sequences.find(x=>x.id===s.seqId); return (s.code||'')+(q&&q.name?' — '+q.name:''); }
 
 /* ---- levels overview (storyboard-style tiles) ---- */
 function levelsModeIs(m){ return lsGet('levelsViewMode','cards')===m; }
