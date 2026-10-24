@@ -13,7 +13,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<link rel="manifest" href="manifest.webmanifest" />
+<meta name="theme-color" content="#14171C" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Fluxus" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <title>Fluxus — Project Tracker</title>
 <link id="app-favicon" rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23D9A441'/%3E%3Cstop offset='1' stop-color='%234FB6AC'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='7' fill='url(%23g)'/%3E%3Ctext x='16' y='23' font-family='Arial, Helvetica, sans-serif' font-weight='800' font-size='19' fill='%2314171C' text-anchor='middle'%3EF%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -760,7 +767,14 @@ async function signInApp(){
     await auth.signInWithPopup(googleAuthProvider);
     attemptAutoDriveConnect(); // also connect Google Drive right away, so Documents doesn't need a separate click
   }
-  catch(e){ console.error(e); toast('Sign-in failed'); }
+  catch(e){
+    console.error(e);
+    // installed phone apps (esp. iPhone) sometimes can't open the sign-in pop-up — fall back to a full-page sign-in
+    if(e && (e.code==='auth/popup-blocked' || e.code==='auth/operation-not-supported-in-this-environment')){
+      try{ await auth.signInWithRedirect(googleAuthProvider); return; }catch(e2){ console.error(e2); }
+    }
+    toast('Sign-in failed');
+  }
 }
 async function signOutApp(){
   stopLiveAlerts();
@@ -1912,6 +1926,9 @@ const TITLES = {team:["Team","Everyone working on this project"], tasks:["Tasks"
   assets:["Assets","3D assets — polygon and texture budget per item"],
   levels:["Levels","Which assets go in each level, and the running budget total"]};
 
+if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
 function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('open'); document.getElementById('sidebar-backdrop').classList.toggle('open'); }
 function closeSidebar(){ const sb=document.getElementById('sidebar'), bd=document.getElementById('sidebar-backdrop'); if(sb) sb.classList.remove('open'); if(bd) bd.classList.remove('open'); }
 const MOBILE_TABS = [['dashboard','🧭','Dashboard'],['tasks','📋','Tasks'],['gallery','🏞️','Gallery']];
