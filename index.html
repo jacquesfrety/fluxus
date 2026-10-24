@@ -537,6 +537,52 @@
   .confirm-modal-msg{font-size:13.5px;line-height:1.5;color:var(--ink);margin-bottom:18px;}
   .confirm-modal-actions{display:flex;gap:8px;justify-content:center;}
 
+
+  /* ---- phone layout: Dashboard, Tasks (cards), Gallery, notifications; everything else via "More" ---- */
+  .menu-btn,#mobile-tabs,#sidebar-backdrop{display:none;}
+  @media (max-width:820px){
+    .desk-only{display:none !important;}
+    #topbar{padding:10px 14px;align-items:center;flex-wrap:nowrap;gap:10px;}
+    #topbar .topbar-title{flex:1;min-width:0;}
+    #topbar h1{font-size:17px;}
+    #topbar .sub{display:none;}
+    .menu-btn{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:8px;
+      background:var(--surface2);border:1px solid var(--line);color:var(--ink);font-size:18px;flex:0 0 auto;}
+    #view{padding:14px 12px calc(86px + env(safe-area-inset-bottom));}
+    #sidebar{z-index:60;box-shadow:0 0 30px rgba(0,0,0,.5);}
+    #sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:55;}
+    #sidebar-backdrop.open{display:block;}
+    #mobile-tabs{display:flex;flex-direction:row;gap:2px;position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--surface);
+      border-top:1px solid var(--line);padding:4px 4px calc(4px + env(safe-area-inset-bottom));}
+    .mtab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;
+      color:var(--ink-dim);font-size:10.5px;padding:6px 2px;border-radius:8px;}
+    .mtab.active{color:var(--gold);background:var(--surface2);}
+    .mtab-ic{font-size:19px;line-height:1;}
+    .notif-panel{position:fixed;top:58px;left:8px;right:8px;width:auto;max-height:70vh;}
+    #drawer{width:100vw;}
+    .toast{bottom:90px;max-width:90vw;}
+    .dash-grid{grid-template-columns:1fr 1fr;gap:10px;}
+    .project-header{flex-direction:column;padding:14px;}
+    /* tasks table → cards */
+    .filterbar input[type=text]{flex:1 1 100%;min-width:0 !important;}
+    .filterbar select{flex:1 1 45%;min-width:0;}
+    .ttable,.ttable tbody{display:block;width:100%;}
+    .ttable thead{display:none;}
+    .ttable tr.taskrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:11px 12px;margin-bottom:10px;
+      background:var(--surface);border:1px solid var(--line);border-radius:var(--r);}
+    .ttable tr.taskrow td{display:block;border:none;padding:0;background:none !important;}
+    .ttable tr.taskrow td:nth-child(1),
+    .ttable tr.taskrow td:nth-child(3),
+    .ttable tr.taskrow td:nth-child(4){display:none;}
+    .ttable tr.taskrow td:nth-child(2){flex:1 1 100%;font-size:14px;}
+    .ttable tr.taskrow td:nth-child(5){flex:1 1 100%;}
+    .ttable tr.task-group-row,.ttable tr.task-group-row td{display:block;width:100%;}
+    .ttable tr.task-group-row td{padding:10px 4px;}
+    select.inline-edit,input.inline-edit{font-size:14px;padding:6px 8px;}
+    .ttable tr.taskrow td input[type=date]{width:130px;font-size:13px;}
+    .btn{padding:9px 13px;}
+    .btn-sm{padding:7px 10px;}
+  }
   @media (max-width:820px){
     #sidebar{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);transition:transform .2s;z-index:50;}
     #sidebar.open{transform:translateX(0);}
@@ -578,7 +624,8 @@
 
   <main id="main">
     <div id="topbar">
-      <div>
+      <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">☰</button>
+      <div class="topbar-title">
         <h1 id="view-title">Tasks</h1>
         <div class="sub" id="view-sub"></div>
       </div>
@@ -592,6 +639,8 @@
     <div id="drive-banner"></div>
     <div id="view"></div>
   </main>
+  <nav id="mobile-tabs"></nav>
+  <div id="sidebar-backdrop" onclick="closeSidebar()"></div>
 </div>
 
 <div id="overlay" onclick="closeDrawer()"></div>
@@ -1863,7 +1912,16 @@ const TITLES = {team:["Team","Everyone working on this project"], tasks:["Tasks"
   assets:["Assets","3D assets — polygon and texture budget per item"],
   levels:["Levels","Which assets go in each level, and the running budget total"]};
 
+function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('open'); document.getElementById('sidebar-backdrop').classList.toggle('open'); }
+function closeSidebar(){ const sb=document.getElementById('sidebar'), bd=document.getElementById('sidebar-backdrop'); if(sb) sb.classList.remove('open'); if(bd) bd.classList.remove('open'); }
+const MOBILE_TABS = [['dashboard','🧭','Dashboard'],['tasks','📋','Tasks'],['gallery','🏞️','Gallery']];
+function renderMobileTabs(){
+  const el = document.getElementById('mobile-tabs'); if(!el) return;
+  el.innerHTML = MOBILE_TABS.map(([id,ic,l])=>`<button class="mtab ${state.view===id?'active':''}" onclick="setView('${id}')"><span class="mtab-ic">${ic}</span>${l}</button>`).join('')
+    + `<button class="mtab" onclick="toggleSidebar()"><span class="mtab-ic">☰</span>More</button>`;
+}
 function renderNav(){
+  renderMobileTabs();
   const nav = document.getElementById('nav');
   const items = NAV.filter(n=>!n.supervisorOnly || isSupervisor());
   let lastGroup = null;
@@ -2186,7 +2244,7 @@ document.addEventListener('click', (e)=>{
     mentionPickerOpen = false; mp.innerHTML = '';
   }
 });
-function setView(v){ if(v==='gallery' && state.gallery) state.gallery.loaded = false; state.view = v; state.drawerTaskId=null; lsSet('lastView', v); render(); }
+function setView(v){ closeSidebar(); if(v==='gallery' && state.gallery) state.gallery.loaded = false; state.view = v; state.drawerTaskId=null; lsSet('lastView', v); render(); }
 function filterTasksByStatus(status){
   state.filters = { category: "", taskList: "", assignee: "", status: status, search: "" };
   setView('tasks');
@@ -2773,9 +2831,9 @@ function renderTasksView(){
       ${STATUSES.map(s=>`<option value="${s}" ${state.filters.status===s?'selected':''}>${s}</option>`).join('')}
     </select>
     ${(state.filters.search||state.filters.category||state.filters.taskList||state.filters.assignee||state.filters.status)?`<button class="btn btn-ghost btn-sm" onclick="resetTaskFilters()">✕ Reset filters</button>`:''}
-    <button class="btn btn-ghost btn-sm" onclick="openManageCategories()">Manage categories</button>
-    <button class="btn btn-ghost btn-sm" onclick="openManageTaskLists()">Manage task lists</button>
-    <button class="btn btn-ghost btn-sm" id="export-xlsx-btn" onclick="exportTasksToExcel()" title="${(state.filters.search||state.filters.category||state.filters.taskList||state.filters.assignee||state.filters.status)?'Exports the '+tasks.length+' task(s) matching the current filters':'Exports all '+tasks.length+' task(s)'}">⬇ Export to Excel</button>
+    <button class="btn btn-ghost btn-sm desk-only" onclick="openManageCategories()">Manage categories</button>
+    <button class="btn btn-ghost btn-sm desk-only" onclick="openManageTaskLists()">Manage task lists</button>
+    <button class="btn btn-ghost btn-sm desk-only" id="export-xlsx-btn" onclick="exportTasksToExcel()" title="${(state.filters.search||state.filters.category||state.filters.taskList||state.filters.assignee||state.filters.status)?'Exports the '+tasks.length+' task(s) matching the current filters':'Exports all '+tasks.length+' task(s)'}">⬇ Export to Excel</button>
   </div>`;
 
   const selectedCount = state.selectedTaskIds.length;
