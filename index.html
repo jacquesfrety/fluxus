@@ -1971,10 +1971,17 @@ function renderMobileTabs(){
   el.innerHTML = MOBILE_TABS.map(([id,ic,l])=>`<button class="mtab ${state.view===id?'active':''}" onclick="setView('${id}')"><span class="mtab-ic">${ic}</span>${l}</button>`).join('')
     + `<button class="mtab" onclick="toggleSidebar()"><span class="mtab-ic">☰</span>More</button>`;
 }
+// VR projects don't need the Shots page, animation projects don't need Levels (both show while Production isn't set)
+function navVisibleForProduction(id){
+  const prod = state.project && state.project.production;
+  if(id==='shots') return prod!=='VR';
+  if(id==='levels') return prod!=='Animation';
+  return true;
+}
 function renderNav(){
   renderMobileTabs();
   const nav = document.getElementById('nav');
-  const items = NAV.filter(n=>!n.supervisorOnly || isSupervisor());
+  const items = NAV.filter(n=>(!n.supervisorOnly || isSupervisor()) && navVisibleForProduction(n.id));
   let lastGroup = null;
   nav.innerHTML = items.map(n=>{
     let header = '';
@@ -2332,6 +2339,7 @@ function render(){
     : null;
 
   if(state.view==='reports' && !isSupervisor()) state.view = 'dashboard';
+  if(!navVisibleForProduction(state.view)) state.view = 'dashboard';
   renderNav(); renderWhoAmI(); renderBrand(); renderNotifBell();
   document.getElementById('view-title').textContent = TITLES[state.view][0];
   document.getElementById('view-sub').textContent = TITLES[state.view][1];
@@ -4014,7 +4022,7 @@ function renderShotDrawerContent(id, seqIdDefault){
         <div class="dep-checks">${state.assets.length ? state.assets.map(a=>`<span class="dep-chip ${assetIds.includes(a.id)?'on':''}" data-shot-asset="${a.id}" onclick="this.classList.toggle('on')">${esc(a.name)}</span>`).join('') : '<span class="faint" style="font-size:12px">No assets yet — create them on the Assets page</span>'}</div>
       </div>
       ${s?`<div class="field"><label>Tasks for this shot</label>
-        ${linked.length?linked.map(t=>`<div class="dash-task-row" style="cursor:pointer" onclick="closeDrawer();openDrawer('${t.id}')"><span class="dash-task-main"><span class="task-id mono">${t.id}</span> ${esc(t.name)}</span><span class="dash-task-side">${esc(t.status)} <span class="chat-action-link" onclick="event.stopPropagation();unlinkTaskFromShot('${t.id}','${s.id}')">unlink</span></span></div>`).join(''):'<div class="faint" style="font-size:12px">No task linked yet.</div>'}
+        ${linked.length?linked.map(t=>`<div class="dash-task-row" style="cursor:pointer" onclick="closeDrawer();openDrawer('${t.id}')"><span class="dash-task-main"><span class="task-id mono">${t.id}</span> ${esc(t.name)}</span><span class="dash-task-side"><span class="statuspill" style="background:${STATUS_HEX[t.status]}30;color:${STATUS_COLOR[t.status]}">${esc(t.status)}</span> <span class="chat-action-link" onclick="event.stopPropagation();unlinkTaskFromShot('${t.id}','${s.id}')">unlink</span></span></div>`).join(''):'<div class="faint" style="font-size:12px">No task linked yet.</div>'}
         <select style="margin-top:8px" onchange="if(this.value) linkTaskToShot(this.value,'${s.id}')"><option value="">+ Link an existing task…</option>${unlinked.map(t=>`<option value="${t.id}">${t.id} · ${esc(t.name)}</option>`).join('')}</select>
       </div>`:''}
       <div class="field"><label>Notes</label><textarea id="shot-notes" rows="3">${esc(s?.notes||'')}</textarea></div>
@@ -4026,6 +4034,8 @@ function renderShotDrawerContent(id, seqIdDefault){
 async function saveShotForm(id){
   const code = document.getElementById('shot-code').value.trim();
   if(!code || /^SQ\d+_SH$/.test(code)){ toast('Add the shot number to the code, e.g. '+shotPrefix(document.getElementById('shot-seq').value)+'010'); return; }
+  const dup = state.shots.find(x=>x.id!==id && (x.code||'').trim().toLowerCase()===code.toLowerCase());
+  if(dup){ toast(`The code "${code}" is already used by another shot (${shotLabel(dup)}). Choose a different shot number.`, 6000); const ce = document.getElementById('shot-code'); if(ce){ ce.focus(); ce.style.borderColor='var(--red)'; } return; }
   const fr = document.getElementById('shot-frames').value;
   const stages = {}; document.querySelectorAll('#drawer select[data-stage]').forEach(el=>{ stages[el.dataset.stage] = el.value; });
   const fields = {
