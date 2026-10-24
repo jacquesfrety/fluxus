@@ -195,6 +195,13 @@
   .gallery-item:hover .gallery-cap{opacity:1;}
   .gallery-when{margin-left:auto;opacity:.75;}
   .drive-banner{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;margin:0 0 14px;padding:10px 14px;border-radius:var(--r);background:var(--surface2);border:1px solid var(--gold);font-size:13px;}
+  .shot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-top:12px;}
+  .shot-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:border-color .15s;}
+  .shot-card:hover{border-color:var(--gold);}
+  .shot-thumb{position:relative;background:var(--surface2);}
+  .shot-code{position:absolute;left:6px;top:6px;background:rgba(0,0,0,.65);color:#EDEAE1;font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;}
+  .shot-meta{padding:8px 10px 10px;display:flex;flex-direction:column;gap:6px;}
+  .shot-desc{font-size:12px;color:var(--ink-dim);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
   /* ---- kanban ---- */
   .kanban{display:flex;gap:14px;align-items:flex-start;overflow-x:auto;padding-bottom:10px;}
   .kanban-slider-wrap{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
@@ -1103,6 +1110,8 @@ let state = {
   drawColor: 'red',
   assets: [],
   levels: [],
+  sequences: [],
+  shots: [],
   assetsViewMode: lsGet('assetsViewMode', 'list'),
 };
 
@@ -1177,11 +1186,11 @@ async function fsSet(key, value){
 }
 async function loadAll(){
   try{
-    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq, annotations, markups, assets, levels, taskBackups, activityLog, milestones] = await Promise.all([
+    const [categories, taskLists, tasks, team, project, notifications, forumPosts, documents, taskIdSeq, annotations, markups, assets, levels, taskBackups, activityLog, milestones, sequences, shots] = await Promise.all([
       fsGet('categories'), fsGet('taskLists'), fsGet('tasks'),
       fsGet('team'), fsGet('project'),
       fsGet('notifications'), fsGet('forumPosts'), fsGet('documents'), fsGet('taskIdSeq'), fsGet('annotations'), fsGet('markups'),
-      fsGet('assets'), fsGet('levels'), fsGet('taskBackups'), fsGet('activityLog'), fsGet('milestones')
+      fsGet('assets'), fsGet('levels'), fsGet('taskBackups'), fsGet('activityLog'), fsGet('milestones'), fsGet('sequences'), fsGet('shots')
     ]);
     state.team = team || [];
     teamDataLoaded = true;
@@ -1203,6 +1212,8 @@ async function loadAll(){
     state.drawings = markups || [];
     state.assets = assets || [];
     state.levels = levels || [];
+    state.sequences = sequences || [];
+    state.shots = shots || [];
     state.milestones = milestones || [];
     state.timelineLabelsWidth = lsGet('timelineLabelsWidth', 420);
     state.theme = lsGet('theme', 'dark');
@@ -1910,6 +1921,7 @@ const NAV = [
   {id:'activity', label:'Activity', icon:'🕒', group:'Project'},
   {id:'assets', label:'Assets', icon:'⬡', group:'Assets'},
   {id:'levels', label:'Levels', icon:'▥', group:'Assets'},
+  {id:'shots', label:'Shots', icon:'🎬', group:'Assets'},
   {id:'documents', label:'Documents', icon:'📁', group:'Collaboration'},
   {id:'gallery', label:'Gallery', icon:'🏞️', group:'Collaboration'},
   {id:'team', label:'Team', icon:'🧑', group:'Collaboration'},
@@ -1924,7 +1936,8 @@ const TITLES = {team:["Team","Everyone working on this project"], tasks:["Tasks"
   documents:["Documents","A library of files that live in the cloud (OneDrive, Drive…)"],
   gallery:["Gallery","The latest photos and videos posted across the project"],
   assets:["Assets","3D assets — polygon and texture budget per item"],
-  levels:["Levels","Which assets go in each level, and the running budget total"]};
+  levels:["Levels","Which assets go in each level, and the running budget total"],
+  shots:["Shots","Sequences and their shots — status per stage, previews, assets and tasks"]};
 
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
   window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
@@ -2289,6 +2302,7 @@ function render(){
   if(state.view==='documents') actions.innerHTML = '';
   if(state.view==='assets') actions.innerHTML = `<button class="btn btn-gold" onclick="openNewAssetDrawer()">+ New asset</button>`;
   if(state.view==='levels') actions.innerHTML = `<button class="btn btn-gold" onclick="openNewLevelDrawer()">+ New level</button>`;
+  if(state.view==='shots') actions.innerHTML = `<button class="btn btn-ghost" onclick="openSequenceDrawer(null)">+ New sequence</button> <button class="btn btn-gold" onclick="openShotDrawer(null)">+ New shot</button>`;
 
   const v = document.getElementById('view');
   if(state.view==='team') v.innerHTML = renderTeamView();
@@ -2303,6 +2317,7 @@ function render(){
   else if(state.view==='gallery') v.innerHTML = renderGalleryView();
   else if(state.view==='assets') v.innerHTML = renderAssetsView();
   else if(state.view==='levels') v.innerHTML = renderLevelsView();
+  else if(state.view==='shots') v.innerHTML = renderShotsView();
 
   if(state.view==='kanban'){ wireKanbanDnD(); wireKanbanSlider(); }
   if(state.view==='timeline'){ wireTimelineControls(); wireTimelineDrag(); wireTimelineResize(); wireOtherColsSync(); }
@@ -3505,6 +3520,7 @@ async function deleteAsset(id){
   await saveAssets();
   state.levels.forEach(l=>{ if(l.assetUsage) l.assetUsage = l.assetUsage.filter(u=>u.assetId!==id); });
   await saveLevels();
+  if(state.shots.some(sh=>(sh.assetIds||[]).includes(id))){ state.shots.forEach(sh=>{ sh.assetIds = (sh.assetIds||[]).filter(a=>a!==id); }); await saveShots(); }
   closeDrawer();
   render();
 }
@@ -3524,6 +3540,10 @@ function renderLevelsView(){
   if(state.levels.length===0){
     return `<div class="empty-state"><div class="display">No levels yet</div>Create a level, then set how many of each asset it uses to see its running polygon/texture budget.</div>`;
   }
+  const lvSwitch = `<div class="row" style="gap:6px;margin-bottom:14px">
+    <button class="btn btn-sm ${levelsModeIs('cards')?'btn-gold':'btn-ghost'}" onclick="setLevelsViewMode('cards')">☰ Details</button>
+    <button class="btn btn-sm ${levelsModeIs('overview')?'btn-gold':'btn-ghost'}" onclick="setLevelsViewMode('overview')">▦ Overview</button></div>`;
+  if(levelsModeIs('overview')) return lvSwitch + renderLevelsOverview();
   const cards = state.levels.map((l,i)=>{
     const totals = levelTotals(l);
     return `<div class="card" style="cursor:pointer" onclick="openLevelDrawer('${l.id}')">
@@ -3543,10 +3563,11 @@ function renderLevelsView(){
       ${levelAssetThumbsStrip(l)}
     </div>`;
   }).join('');
-  return `<div style="display:flex;flex-direction:column;gap:14px">${cards}</div>`;
+  return lvSwitch + `<div style="display:flex;flex-direction:column;gap:14px">${cards}</div>`;
 }
 function openNewLevelDrawer(){ openLevelDrawer(null); }
 function openLevelDrawer(id){
+  pendingPreview = undefined;
   document.getElementById('overlay').classList.add('open');
   const drawer = document.getElementById('drawer');
   drawer.classList.add('open');
@@ -3562,6 +3583,7 @@ function renderLevelDrawerContent(id){
     <div class="drawer-body">
       <div class="field"><label>Name</label><input id="level-name" value="${esc(l?.name||'')}" placeholder="e.g. Reception Area"></div>
       <div class="field"><label>Description</label><textarea id="level-desc" rows="2" placeholder="Optional">${esc(l?.description||'')}</textarea></div>
+      ${previewFieldHtml(l?l.id:null)}
       <div class="field-row">
         <div class="field"><label>Polygon target <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label><input id="level-budget-polys" type="number" min="0" step="1" value="${l?.budgetPolys||''}" placeholder="No target"></div>
         <div class="field"><label>Texture target <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label><input id="level-budget-tex" type="number" min="0" step="1" value="${l?.budgetTextures||''}" placeholder="No target"></div>
@@ -3605,13 +3627,16 @@ async function saveLevelForm(editingId){
     budgetDrawCalls: parseInt(document.getElementById('level-budget-drawcalls').value)||null,
     assetUsage
   };
+  let lvId = editingId;
   if(editingId){
     const l = state.levels.find(x=>x.id===editingId);
     if(l) Object.assign(l, fields);
   } else {
-    state.levels.push(Object.assign({id: uid('lv')}, fields));
+    lvId = uid('lv');
+    state.levels.push(Object.assign({id: lvId}, fields));
   }
   await saveLevels();
+  await savePreviewFor(lvId);
   closeDrawer();
   render();
 }
@@ -3630,6 +3655,332 @@ async function deleteLevel(id){
   await saveLevels();
   closeDrawer();
   render();
+}
+
+/* ============================= SHOTS (animation) + shared preview images =============================
+   Sequences hold shots (a sequence is just an ordered list of shots). Each shot carries a code, description,
+   frame range, camera notes, an overall status plus a status per production stage, the assets it uses, a
+   preview image, a playblast link and a render-folder link. Tasks can point at a shot (task.shotId).
+   Preview images (shots and levels) are small JPEGs stored one-per-document under the 'preview_<id>' key,
+   loaded lazily, so they never push the main shots/levels documents past Firestore's 1MB limit. */
+const SHOT_STAGES = [['layout','Layout'],['animation','Animation'],['lighting','Lighting'],['render','Render']];
+const STAGE_STATES = ['Not started','In progress','Review','Done'];
+const STAGE_COLOR = {'Not started':'#6B7280','In progress':'#3B82F6','Review':'#D08AC8','Done':'#6FCF97'};
+async function saveSequences(){ await fsSet('sequences', state.sequences); }
+async function saveShots(){ await fsSet('shots', state.shots); }
+state.previews = state.previews || {};
+let previewsLoading = false;
+let pendingPreview; // undefined = unchanged, null = removed, dataURL = new image
+async function ensurePreviewsLoaded(ids){
+  const missing = ids.filter(id=>state.previews[id]===undefined);
+  if(!missing.length || previewsLoading) return;
+  previewsLoading = true;
+  try{
+    for(let i=0;i<missing.length;i+=8){
+      await Promise.all(missing.slice(i,i+8).map(async id=>{ const v = await fsGet('preview_'+id); state.previews[id] = (typeof v==='string') ? v : ''; }));
+    }
+  }catch(e){ console.error(e); }
+  previewsLoading = false;
+  if(state.view==='shots' || state.view==='levels') render();
+}
+async function savePreviewFor(id){
+  if(pendingPreview===undefined) return;
+  state.previews[id] = pendingPreview || '';
+  await fsSet('preview_'+id, pendingPreview || '');
+  pendingPreview = undefined;
+}
+function resizeToPreview(fileOrBlob, maxW){
+  return new Promise((resolve,reject)=>{
+    const url = URL.createObjectURL(fileOrBlob);
+    const img = new Image();
+    img.onload = ()=>{
+      const sc = Math.min(1, maxW/img.width);
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width*sc); c.height = Math.round(img.height*sc);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL('image/jpeg',0.72));
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('could not read image')); };
+    img.src = url;
+  });
+}
+async function pickPreviewFile(evt){
+  const file = evt.target.files[0]; if(!file) return;
+  const box = document.getElementById('pv-preview-box');
+  if(box) box.innerHTML = '<div class="faint" style="font-size:12px">Processing…</div>';
+  try{
+    const blob = isHeicFile(file) ? await convertHeicBlob(file) : file;
+    pendingPreview = await resizeToPreview(blob, 640);
+    if(box) box.innerHTML = `<img src="${pendingPreview}" style="width:160px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`;
+  }catch(e){
+    console.error(e); pendingPreview = undefined;
+    if(box) box.innerHTML = '<div class="faint" style="font-size:12px;color:var(--red)">Could not read that image — try a JPEG or PNG.</div>';
+  }
+}
+function clearPreviewImage(){
+  pendingPreview = null;
+  const box = document.getElementById('pv-preview-box');
+  if(box) box.innerHTML = '<div class="faint" style="font-size:12px">No image</div>';
+}
+function previewFieldHtml(id){
+  const cur = id ? state.previews[id] : '';
+  return `<div class="field"><label>Preview image</label>
+    <div class="row" style="gap:12px;align-items:center">
+      <div id="pv-preview-box">${cur?`<img src="${cur}" style="width:160px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`:'<div class="faint" style="font-size:12px">No image</div>'}</div>
+      <div class="col" style="gap:6px"><input type="file" accept="image/*" onchange="pickPreviewFile(event)" style="font-size:12px">
+      <button class="btn btn-sm btn-ghost" type="button" onclick="clearPreviewImage()">Remove image</button></div>
+    </div></div>`;
+}
+function previewTile(id, icon, h){
+  const src = state.previews[id];
+  return src ? `<img src="${src}" style="width:100%;height:${h}px;object-fit:cover;display:block">`
+    : `<div style="width:100%;height:${h}px;display:flex;align-items:center;justify-content:center;font-size:${Math.round(h/3)}px;background:var(--surface2);color:var(--ink-faint)">${icon}</div>`;
+}
+
+/* ---- shots helpers ---- */
+function shotsOf(seqId){ return state.shots.filter(s=>s.seqId===seqId); }
+function shotProgress(s){
+  const st = s.stages||{};
+  return Math.round(SHOT_STAGES.filter(([k])=>st[k]==='Done').length / SHOT_STAGES.length * 100);
+}
+function seqProgress(seqId){
+  const list = shotsOf(seqId); if(!list.length) return 0;
+  return Math.round(list.reduce((a,s)=>a+shotProgress(s),0)/list.length);
+}
+function shotFrames(s){
+  const a = parseInt(s.frameStart), b = parseInt(s.frameEnd);
+  if(isNaN(a) && isNaN(b)) return '';
+  if(isNaN(b)) return `${a}`;
+  if(isNaN(a)) return `${b}`;
+  return `${a}–${b} (${Math.max(0,b-a+1)}f)`;
+}
+function shotStageDots(s){
+  const st = s.stages||{};
+  return `<span class="row" style="gap:3px">${SHOT_STAGES.map(([k,l])=>{
+    const v = st[k]||'Not started';
+    return `<span title="${l}: ${v}" style="width:14px;height:14px;border-radius:4px;background:${STAGE_COLOR[v]}${v==='Not started'?'66':''};display:inline-block"></span>`;
+  }).join('')}</span>`;
+}
+function shotStatusPill(s){
+  const st = s.status || 'Not Started';
+  return `<span class="statuspill" style="background:${STATUS_HEX[st]}30;color:${STATUS_COLOR[st]}">${esc(st)}</span>`;
+}
+function shotLinkedTasks(shotId){ return state.tasks.filter(t=>t.shotId===shotId); }
+function shotModeIs(m){ return lsGet('shotsViewMode','board')===m; }
+function setShotsViewMode(m){ lsSet('shotsViewMode', m); render(); }
+function toggleSeqCollapse(id){
+  const c = lsGet('seqCollapsed',{}); c[id] = !c[id]; lsSet('seqCollapsed', c); render();
+}
+function renderShotsView(){
+  ensurePreviewsLoaded(state.shots.map(s=>s.id));
+  const modeSwitch = `<div class="row" style="gap:6px;margin-bottom:14px">
+    <button class="btn btn-sm ${shotModeIs('board')?'btn-gold':'btn-ghost'}" onclick="setShotsViewMode('board')">▦ Storyboard</button>
+    <button class="btn btn-sm ${shotModeIs('list')?'btn-gold':'btn-ghost'}" onclick="setShotsViewMode('list')">☰ List</button>
+  </div>`;
+  if(!state.sequences.length){
+    return `<div class="empty-state"><div class="display">No sequences yet</div>Create a sequence, then add its shots. A sequence is simply an ordered list of shots.
+      <div style="margin-top:12px"><button class="btn btn-gold" onclick="openSequenceDrawer(null)">+ New sequence</button></div></div>`;
+  }
+  const collapsed = lsGet('seqCollapsed',{});
+  const blocks = state.sequences.map((q,i)=>{
+    const list = shotsOf(q.id), prog = seqProgress(q.id), isC = !!collapsed[q.id];
+    const head = `<div class="row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="row" style="gap:8px;align-items:center;min-width:0">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <button class="btn btn-ghost" style="padding:1px 5px;font-size:10px;line-height:1" onclick="moveSequence('${q.id}',-1)" ${i===0?'disabled':''}>▲</button>
+          <button class="btn btn-ghost" style="padding:1px 5px;font-size:10px;line-height:1" onclick="moveSequence('${q.id}',1)" ${i===state.sequences.length-1?'disabled':''}>▼</button>
+        </div>
+        <span style="cursor:pointer;font-size:14px" onclick="toggleSeqCollapse('${q.id}')">${isC?'▸':'▾'}</span>
+        <div style="min-width:0"><b style="font-size:15px;cursor:pointer" onclick="openSequenceDrawer('${q.id}')">${esc(q.name)}</b>
+          ${q.description?`<div class="faint" style="font-size:12px">${esc(q.description)}</div>`:''}</div>
+      </div>
+      <div class="row" style="gap:10px;align-items:center">
+        <span class="faint" style="font-size:12px">${list.length} shot${list.length===1?'':'s'}</span>
+        <span class="bar-track" style="width:90px"><span class="bar-fill" style="width:${prog}%"></span></span>
+        <span class="faint" style="font-size:12px">${prog}%</span>
+        <button class="btn btn-sm btn-ghost" onclick="openShotDrawer(null,'${q.id}')">+ Shot</button>
+      </div></div>`;
+    let body = '';
+    if(!isC){
+      if(!list.length) body = `<div class="faint" style="padding:12px 4px;font-size:12.5px">No shots yet.</div>`;
+      else if(shotModeIs('board')){
+        body = `<div class="shot-grid">${list.map(s=>`
+          <div class="shot-card" onclick="openShotDrawer('${s.id}')">
+            <div class="shot-thumb">${previewTile(s.id,'🎬',112)}<span class="shot-code">${esc(s.code||'—')}</span></div>
+            <div class="shot-meta">
+              <div class="row" style="justify-content:space-between;align-items:center">${shotStageDots(s)}${shotStatusPill(s)}</div>
+              ${s.description?`<div class="shot-desc">${esc(s.description)}</div>`:''}
+              <div class="faint" style="font-size:11px">${esc(shotFrames(s))}</div>
+            </div>
+          </div>`).join('')}</div>`;
+      } else {
+        body = `<table class="ttable" style="margin-top:6px"><thead><tr><th>Shot</th><th>Description</th><th>Frames</th><th>Status</th><th>Stages</th><th>Assets</th><th>Tasks</th></tr></thead><tbody>${list.map(s=>`
+          <tr class="taskrow" style="cursor:pointer" onclick="openShotDrawer('${s.id}')">
+            <td><b>${esc(s.code||'—')}</b></td><td>${esc(s.description||'')}</td><td class="faint">${esc(shotFrames(s))}</td>
+            <td>${shotStatusPill(s)}</td><td>${shotStageDots(s)}</td>
+            <td class="faint">${(s.assetIds||[]).length||''}</td><td class="faint">${shotLinkedTasks(s.id).length||''}</td></tr>`).join('')}</tbody></table>`;
+      }
+    }
+    return `<div class="card" style="margin-bottom:14px">${head}${body}</div>`;
+  }).join('');
+  return modeSwitch + blocks;
+}
+
+/* ---- sequence drawer ---- */
+function openSequenceDrawer(id){
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer'); drawer.classList.add('open');
+  const q = id ? state.sequences.find(x=>x.id===id) : null;
+  drawer.innerHTML = `<div class="drawer-head"><div><h2 style="margin:0;font-size:17px">${q?'Edit sequence':'New sequence'}</h2></div>
+      <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button></div>
+    <div class="drawer-body">
+      <div class="field"><label>Name</label><input id="seq-name" value="${esc(q?.name||'')}" placeholder="e.g. SQ010 — Opening"></div>
+      <div class="field"><label>Description</label><textarea id="seq-desc" rows="2" placeholder="Optional">${esc(q?.description||'')}</textarea></div>
+      <div class="row" style="justify-content:space-between;margin-top:14px">
+        ${q?`<button class="btn btn-danger btn-sm" onclick="deleteSequence('${q.id}')">Delete</button>`:'<span></span>'}
+        <button class="btn btn-gold" onclick="saveSequenceForm(${q?`'${q.id}'`:'null'})">${q?'Save changes':'Add sequence'}</button>
+      </div></div>`;
+}
+async function saveSequenceForm(id){
+  const name = document.getElementById('seq-name').value.trim();
+  if(!name){ toast('Name is required'); return; }
+  const fields = { name, description: document.getElementById('seq-desc').value.trim() };
+  if(id){ const q = state.sequences.find(x=>x.id===id); if(q) Object.assign(q, fields); }
+  else state.sequences.push(Object.assign({id: uid('sq')}, fields));
+  await saveSequences(); closeDrawer(); render();
+}
+async function moveSequence(id, dir){
+  const i = state.sequences.findIndex(q=>q.id===id), j = i+dir;
+  if(i<0 || j<0 || j>=state.sequences.length) return;
+  [state.sequences[i], state.sequences[j]] = [state.sequences[j], state.sequences[i]];
+  await saveSequences(); render();
+}
+async function deleteSequence(id){
+  const n = shotsOf(id).length;
+  if(!(await confirmDialog(n ? `Delete this sequence and its ${n} shot${n===1?'':'s'}? Tasks linked to those shots stay, but lose the link.` : 'Delete this sequence?'))) return;
+  const gone = shotsOf(id).map(s=>s.id);
+  state.shots = state.shots.filter(s=>s.seqId!==id);
+  state.sequences = state.sequences.filter(q=>q.id!==id);
+  await saveShots(); await saveSequences();
+  if(gone.length && state.tasks.some(t=>gone.includes(t.shotId))){
+    state.tasks.forEach(t=>{ if(gone.includes(t.shotId)) t.shotId = ''; });
+    await saveTasks();
+  }
+  closeDrawer(); render();
+}
+
+/* ---- shot drawer ---- */
+function nextShotCode(seqId){
+  const used = new Set(shotsOf(seqId).map(s=>s.code));
+  for(let n=10; n<10000; n+=10){ const c = 'SH'+String(n).padStart(3,'0'); if(!used.has(c)) return c; }
+  return '';
+}
+function openShotDrawer(id, seqId){
+  if(!id && !state.sequences.length){ toast('Create a sequence first'); return; }
+  pendingPreview = undefined;
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer'); drawer.classList.add('open');
+  drawer.innerHTML = renderShotDrawerContent(id, seqId);
+}
+function renderShotDrawerContent(id, seqIdDefault){
+  const s = id ? state.shots.find(x=>x.id===id) : null;
+  const seqId = s ? s.seqId : (seqIdDefault || (state.sequences[0] && state.sequences[0].id));
+  const st = (s && s.stages) || {};
+  const linked = s ? shotLinkedTasks(s.id) : [];
+  const unlinked = state.tasks.filter(t=>!t.shotId && t.status!=='Completed');
+  const assetIds = (s && s.assetIds) || [];
+  const link = (u)=> u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer" class="chat-link" style="font-size:12px">Open ↗</a>` : '';
+  return `<div class="drawer-head"><div><div class="task-id mono">${s?esc(s.code||''):'New shot'}</div><h2 style="margin:4px 0 0;font-size:17px">${s?'Edit shot':'New shot'}</h2></div>
+      <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button></div>
+    <div class="drawer-body">
+      <div class="field-row">
+        <div class="field"><label>Sequence</label><select id="shot-seq">${state.sequences.map(q=>`<option value="${q.id}" ${q.id===seqId?'selected':''}>${esc(q.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>Shot code</label><input id="shot-code" value="${esc(s?s.code:nextShotCode(seqId))}" placeholder="e.g. SH010"></div>
+      </div>
+      <div class="field"><label>Description</label><textarea id="shot-desc" rows="2" placeholder="What happens in this shot">${esc(s?.description||'')}</textarea></div>
+      <div class="field-row">
+        <div class="field"><label>First frame</label><input id="shot-f1" type="number" step="1" value="${s&&s.frameStart!==undefined&&s.frameStart!==null?s.frameStart:''}" placeholder="1001"></div>
+        <div class="field"><label>Last frame</label><input id="shot-f2" type="number" step="1" value="${s&&s.frameEnd!==undefined&&s.frameEnd!==null?s.frameEnd:''}" placeholder="1048"></div>
+      </div>
+      <div class="field"><label>Camera notes</label><textarea id="shot-cam" rows="2" placeholder="Lens, movement, framing…">${esc(s?.camera||'')}</textarea></div>
+      <div class="field"><label>Status</label><select id="shot-status">${STATUSES.map(x=>`<option value="${x}" ${(s?s.status:'Not Started')===x?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div class="field"><label>Stages</label>
+        <div class="field-row" style="grid-template-columns:1fr 1fr">${SHOT_STAGES.map(([k,l])=>`
+          <div class="field" style="margin-bottom:6px"><label style="font-size:11px">${l}</label>
+            <select data-stage="${k}">${STAGE_STATES.map(v=>`<option ${(st[k]||'Not started')===v?'selected':''}>${v}</option>`).join('')}</select></div>`).join('')}</div>
+      </div>
+      ${previewFieldHtml(s?s.id:null)}
+      <div class="field"><label>Playblast link ${link(s?.playblast)}</label><input id="shot-playblast" value="${esc(s?.playblast||'')}" placeholder="Paste a Drive / YouTube link"></div>
+      <div class="field"><label>Render folder link ${link(s?.renderFolder)}</label><input id="shot-render" value="${esc(s?.renderFolder||'')}" placeholder="Paste the Drive folder link"></div>
+      <div class="field"><label>Assets used in this shot</label>
+        <div class="dep-checks">${state.assets.length ? state.assets.map(a=>`<span class="dep-chip ${assetIds.includes(a.id)?'on':''}" data-shot-asset="${a.id}" onclick="this.classList.toggle('on')">${esc(a.name)}</span>`).join('') : '<span class="faint" style="font-size:12px">No assets yet — create them on the Assets page</span>'}</div>
+      </div>
+      ${s?`<div class="field"><label>Tasks for this shot</label>
+        ${linked.length?linked.map(t=>`<div class="dash-task-row" style="cursor:pointer" onclick="closeDrawer();openDrawer('${t.id}')"><span class="dash-task-main"><span class="task-id mono">${t.id}</span> ${esc(t.name)}</span><span class="dash-task-side">${esc(t.status)} <span class="chat-action-link" onclick="event.stopPropagation();unlinkTaskFromShot('${t.id}','${s.id}')">unlink</span></span></div>`).join(''):'<div class="faint" style="font-size:12px">No task linked yet.</div>'}
+        <select style="margin-top:8px" onchange="if(this.value) linkTaskToShot(this.value,'${s.id}')"><option value="">+ Link an existing task…</option>${unlinked.map(t=>`<option value="${t.id}">${t.id} · ${esc(t.name)}</option>`).join('')}</select>
+      </div>`:''}
+      <div class="field"><label>Notes</label><textarea id="shot-notes" rows="3">${esc(s?.notes||'')}</textarea></div>
+      <div class="row" style="justify-content:space-between;margin-top:14px">
+        ${s?`<button class="btn btn-danger btn-sm" onclick="deleteShot('${s.id}')">Delete</button>`:'<span></span>'}
+        <button class="btn btn-gold" onclick="saveShotForm(${s?`'${s.id}'`:'null'})">${s?'Save changes':'Add shot'}</button>
+      </div></div>`;
+}
+async function saveShotForm(id){
+  const code = document.getElementById('shot-code').value.trim();
+  if(!code){ toast('Shot code is required'); return; }
+  const f1 = document.getElementById('shot-f1').value, f2 = document.getElementById('shot-f2').value;
+  const stages = {}; document.querySelectorAll('#drawer select[data-stage]').forEach(el=>{ stages[el.dataset.stage] = el.value; });
+  const fields = {
+    seqId: document.getElementById('shot-seq').value, code,
+    description: document.getElementById('shot-desc').value.trim(),
+    frameStart: f1===''?null:parseInt(f1), frameEnd: f2===''?null:parseInt(f2),
+    camera: document.getElementById('shot-cam').value.trim(),
+    status: document.getElementById('shot-status').value, stages,
+    playblast: document.getElementById('shot-playblast').value.trim(),
+    renderFolder: document.getElementById('shot-render').value.trim(),
+    assetIds: [...document.querySelectorAll('#drawer [data-shot-asset].on')].map(el=>el.dataset.shotAsset),
+    notes: document.getElementById('shot-notes').value.trim()
+  };
+  let sid = id;
+  if(id){ const s = state.shots.find(x=>x.id===id); if(s) Object.assign(s, fields); }
+  else { sid = uid('sh'); state.shots.push(Object.assign({id: sid}, fields)); }
+  await saveShots();
+  await savePreviewFor(sid);
+  closeDrawer(); render();
+}
+async function deleteShot(id){
+  if(!(await confirmDialog('Delete this shot? Tasks linked to it stay, but lose the link.'))) return;
+  state.shots = state.shots.filter(s=>s.id!==id);
+  await saveShots();
+  if(state.tasks.some(t=>t.shotId===id)){ state.tasks.forEach(t=>{ if(t.shotId===id) t.shotId=''; }); await saveTasks(); }
+  closeDrawer(); render();
+}
+async function linkTaskToShot(taskId, shotId){
+  const t = state.tasks.find(x=>x.id===taskId); if(!t) return;
+  t.shotId = shotId; await saveTasks();
+  document.getElementById('drawer').innerHTML = renderShotDrawerContent(shotId); render();
+}
+async function unlinkTaskFromShot(taskId, shotId){
+  const t = state.tasks.find(x=>x.id===taskId); if(!t) return;
+  t.shotId = ''; await saveTasks();
+  document.getElementById('drawer').innerHTML = renderShotDrawerContent(shotId); render();
+}
+function shotLabel(s){ const q = state.sequences.find(x=>x.id===s.seqId); return (q?q.name+' · ':'')+(s.code||''); }
+
+/* ---- levels overview (storyboard-style tiles) ---- */
+function levelsModeIs(m){ return lsGet('levelsViewMode','cards')===m; }
+function setLevelsViewMode(m){ lsSet('levelsViewMode', m); render(); }
+function renderLevelsOverview(){
+  ensurePreviewsLoaded(state.levels.map(l=>l.id));
+  return `<div class="shot-grid" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr))">${state.levels.map(l=>{
+    const t = levelTotals(l);
+    return `<div class="shot-card" onclick="openLevelDrawer('${l.id}')">
+      <div class="shot-thumb">${previewTile(l.id,'▥',150)}</div>
+      <div class="shot-meta"><b>${esc(l.name)}</b>
+        ${l.description?`<div class="shot-desc">${esc(l.description)}</div>`:''}
+        <div class="faint" style="font-size:11px">${t.count} asset${t.count===1?'':'s'} · ${fmtNum(t.polys)} polys · ${t.textures} tex</div>
+      </div></div>`;}).join('')}</div>`;
 }
 
 async function createTask(){
@@ -5931,6 +6282,9 @@ function renderDrawerContent(taskId){
           </select>
         </div>
       </div>
+
+      ${state.shots.length?`<div class="field"><label>Shot <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label>
+        <select onchange="updateField('${t.id}','shotId',this.value)"><option value="">—</option>${state.shots.map(sh=>`<option value="${sh.id}" ${t.shotId===sh.id?'selected':''}>${esc(shotLabel(sh))}</option>`).join('')}</select></div>`:''}
 
       <div class="field"><label>Assignees</label>
         <div class="dep-checks">
