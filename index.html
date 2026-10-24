@@ -1096,7 +1096,7 @@ let state = {
   theme: 'dark',
   timelineScrollFrac: null,
   chatCache: {},
-  filters: { category: "", taskList: "", assignee: "", status: "", search: "" },
+  filters: { category: "", taskList: "", assignee: "", status: "", search: "", shot: "" },
   timelineFilters: { category: "", taskList: "", assignee: "" },
   sort: { key: null, dir: "asc" },
   selectedTaskIds: [], // Tasks page bulk-select (tick to move task list / set category / set assignee / delete)
@@ -2326,7 +2326,7 @@ document.addEventListener('click', (e)=>{
 });
 function setView(v){ closeSidebar(); if(v==='gallery' && state.gallery) state.gallery.loaded = false; state.view = v; state.drawerTaskId=null; lsSet('lastView', v); render(); }
 function filterTasksByStatus(status){
-  state.filters = { category: "", taskList: "", assignee: "", status: status, search: "" };
+  state.filters = { category: "", taskList: "", assignee: "", status: status, search: "", shot: "" };
   setView('tasks');
 }
 
@@ -2852,6 +2852,7 @@ function filteredTasks(){
     (!state.filters.taskList || t.taskList===state.filters.taskList) &&
     (!state.filters.assignee || (t.assignees||[]).includes(state.filters.assignee)) &&
     (!state.filters.status || t.status===state.filters.status) &&
+    (!state.filters.shot || t.shotId===state.filters.shot) &&
     (!q || (t.name||'').toLowerCase().includes(q) || (t.notes||'').toLowerCase().includes(q))
   );
 }
@@ -2887,7 +2888,7 @@ function sortArrow(key){
   return state.sort.key===key ? (state.sort.dir==='asc' ? ' ▲' : ' ▼') : '';
 }
 function resetTaskFilters(){
-  state.filters = { category: "", taskList: "", assignee: "", status: "", search: "" };
+  state.filters = { category: "", taskList: "", assignee: "", status: "", search: "", shot: "" };
   render();
 }
 function renderTasksView(){
@@ -2909,11 +2910,15 @@ function renderTasksView(){
       <option value="">All assignees</option>
       ${state.team.map(m=>`<option value="${esc(m.name)}" ${state.filters.assignee===m.name?'selected':''}>${esc(m.name)}</option>`).join('')}
     </select>
+    ${state.shots.length?`<select onchange="state.filters.shot=this.value;render()">
+      <option value="">All shots</option>
+      ${state.shots.map(sh=>`<option value="${sh.id}" ${state.filters.shot===sh.id?'selected':''}>${esc(shotLabel(sh))}</option>`).join('')}
+    </select>`:''}
     <select onchange="state.filters.status=this.value;render()">
       <option value="">All statuses</option>
       ${STATUSES.map(s=>`<option value="${s}" ${state.filters.status===s?'selected':''}>${s}</option>`).join('')}
     </select>
-    ${(state.filters.search||state.filters.category||state.filters.taskList||state.filters.assignee||state.filters.status)?`<button class="btn btn-ghost btn-sm" onclick="resetTaskFilters()">✕ Reset filters</button>`:''}
+    ${(state.filters.search||state.filters.category||state.filters.taskList||state.filters.assignee||state.filters.status||state.filters.shot)?`<button class="btn btn-ghost btn-sm" onclick="resetTaskFilters()">✕ Reset filters</button>`:''}
     <button class="btn btn-ghost btn-sm desk-only" onclick="openManageCategories()">Manage categories</button>
     <button class="btn btn-ghost btn-sm desk-only" onclick="openManageTaskLists()">Manage task lists</button>
     <button class="btn btn-ghost btn-sm desk-only" id="export-xlsx-btn" onclick="exportTasksToExcel()" title="${(state.filters.search||state.filters.category||state.filters.taskList||state.filters.assignee||state.filters.status)?'Exports the '+tasks.length+' task(s) matching the current filters':'Exports all '+tasks.length+' task(s)'}">⬇ Export to Excel</button>
@@ -3797,9 +3802,21 @@ function previewTile(id, icon, h){
 
 /* ---- shots helpers ---- */
 function shotsOf(seqId){ return state.shots.filter(s=>s.seqId===seqId); }
+const STAGE_CAT_COLORS = {layout:'#7FA8D9', animation:'#6FCF97', lighting:'#D9A441', render:'#E5646A'};
+// The stages (Layout, Animation, …) ARE real tasks: shot.stageTaskIds = {layout:'T12', …}. A stage left out
+// of that map isn't used by the shot. Shots created before stage tasks existed (no stageTaskIds at all) fall
+// back to the stage statuses stored on the shot itself until their tasks are created.
+function shotStageList(s){
+  const ids = s.stageTaskIds;
+  if(!ids) return SHOT_STAGES.map(([k,l])=>({key:k,label:l,task:null,status:stageValue((s.stages||{})[k])}));
+  return SHOT_STAGES.filter(([k])=>ids[k]).map(([k,l])=>{
+    const t = state.tasks.find(x=>x.id===ids[k]);
+    return t ? {key:k,label:l,task:t,status:t.status} : null;
+  }).filter(Boolean);
+}
 function shotProgress(s){
-  const st = s.stages||{};
-  return Math.round(SHOT_STAGES.filter(([k])=>stageValue(st[k])==='Completed').length / SHOT_STAGES.length * 100);
+  const list = shotStageList(s); if(!list.length) return 0;
+  return Math.round(list.filter(x=>x.status==='Completed').length / list.length * 100);
 }
 function seqProgress(seqId){
   const list = shotsOf(seqId); if(!list.length) return 0;
@@ -3826,8 +3843,7 @@ function shotPrefix(seqId){ const q = state.sequences.find(x=>x.id===seqId); ret
 // right now). On Hold items are ignored.
 const SHOT_STATUSES = ['Open','In Progress','Completed'];
 function shotItemStatuses(s){
-  const st = s.stages || {};
-  return [...SHOT_STAGES.map(([k])=>stageValue(st[k])), ...shotLinkedTasks(s.id).map(t=>t.status)].filter(v=>v!=='On Hold');
+  return [...shotStageList(s).map(x=>x.status), ...shotLinkedTasks(s.id).filter(t=>!t.stageKey).map(t=>t.status)].filter(v=>v!=='On Hold');
 }
 function shotStatusValue(s){
   const items = shotItemStatuses(s);
@@ -3837,10 +3853,9 @@ function shotStatusValue(s){
   return 'Open';
 }
 function shotStageDots(s){
-  const st = s.stages||{};
-  return `<span class="row" style="gap:3px">${SHOT_STAGES.map(([k,l])=>{
-    const v = stageValue(st[k]);
-    return `<span title="${l}: ${v}" style="width:14px;height:14px;border-radius:4px;background:${STATUS_HEX[v]}${v==='Not Started'?'66':''};display:inline-block"></span>`;
+  return `<span class="row" style="gap:3px">${shotStageList(s).map(x=>{
+    const v = x.status;
+    return `<span title="${x.label}: ${v}" style="width:14px;height:14px;border-radius:4px;background:${STATUS_HEX[v]}${v==='Not Started'?'66':''};display:inline-block"></span>`;
   }).join('')}</span>`;
 }
 function shotStatusPill(s){
@@ -3863,6 +3878,8 @@ function renderShotsView(){
     return `<div class="empty-state"><div class="display">No sequences yet</div>Create a sequence, then add its shots. A sequence is simply an ordered list of shots.
       <div style="margin-top:12px"><button class="btn btn-gold" onclick="openSequenceDrawer(null)">+ New sequence</button></div></div>`;
   }
+  const legacyCount = state.shots.filter(x=>!x.stageTaskIds).length;
+  const legacyBanner = legacyCount ? `<div class="warn-box" style="margin-bottom:14px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>${legacyCount} shot${legacyCount===1?' has':'s have'} no stage tasks yet (Layout, Animation, Lighting, Render).</span><button class="btn btn-sm btn-gold" onclick="createAllLegacyStageTasks()">Create stage tasks</button></div>` : '';
   const collapsed = lsGet('seqCollapsed',{});
   const blocks = state.sequences.map((q,i)=>{
     const list = shotsOf(q.id), prog = seqProgress(q.id), isC = !!collapsed[q.id];
@@ -3905,7 +3922,78 @@ function renderShotsView(){
     }
     return `<div class="card" style="margin-bottom:14px">${head}${body}</div>`;
   }).join('');
-  return modeSwitch + blocks;
+  return legacyBanner + modeSwitch + blocks;
+}
+
+/* ---- stage tasks ---- */
+function seqTaskListName(q){ return `${seqCode(q)} · ${q.name}`; }
+function firstWorkdayFrom(iso){ const d = new Date(iso); while(!isWorkday(d)) d.setDate(d.getDate()+1); return isoOf(d); }
+function nextWorkdayAfter(iso){ const d = new Date(iso); do{ d.setDate(d.getDate()+1); }while(!isWorkday(d)); return isoOf(d); }
+function stageTaskName(shot, label){ return `${shot.code} — ${label}`; }
+// Creates the stage tasks in memory (no saving). Each new task depends on the previous existing stage task.
+// legacy: optional {layout:'Completed',…} statuses to carry over from the old per-shot stage selectors.
+function createStageTasks(shot, keys, legacy){
+  const q = state.sequences.find(x=>x.id===shot.seqId);
+  const listName = q ? seqTaskListName(q) : '';
+  if(listName && !state.taskLists.includes(listName)) state.taskLists.push(listName);
+  shot.stageTaskIds = shot.stageTaskIds || {};
+  let prev = null;
+  SHOT_STAGES.forEach(([k,label])=>{
+    const existing = shot.stageTaskIds[k] && state.tasks.find(x=>x.id===shot.stageTaskIds[k]);
+    if(existing){ prev = existing; return; }
+    if(!keys.includes(k)) return;
+    if(!state.categories.some(c=>c.name===label)) state.categories.push({name:label, color:STAGE_CAT_COLORS[k]});
+    const dur = 3;
+    const start = prev && prev.due ? nextWorkdayAfter(prev.due) : firstWorkdayFrom(todayISO());
+    const st = (legacy && legacy[k]) ? stageValue(legacy[k]) : 'Not Started';
+    const t = tk(nextTaskId(), label, listName, stageTaskName(shot,label), prev?[prev.id]:[], [], start, addWorkdays(start,dur), dur, st, 'Medium', st==='Completed'?100:0, '');
+    t.shotId = shot.id; t.stageKey = k;
+    state.tasks.push(t);
+    shot.stageTaskIds[k] = t.id;
+    prev = t;
+  });
+}
+async function persistStageChanges(){
+  await saveTasks(); await saveShots(); await saveCategories(); await saveTaskListGroups();
+}
+// keep the stage tasks' name / task list in step with the shot's code and sequence
+function syncStageTasks(shot, oldCode){
+  const q = state.sequences.find(x=>x.id===shot.seqId);
+  SHOT_STAGES.forEach(([k,label])=>{
+    const t = shot.stageTaskIds && state.tasks.find(x=>x.id===shot.stageTaskIds[k]);
+    if(!t) return;
+    if(oldCode!==undefined && oldCode!==shot.code && t.name===`${oldCode} — ${label}`) t.name = stageTaskName(shot,label);
+    if(q){
+      const ln = seqTaskListName(q);
+      if(t.taskList!==ln){ t.taskList = ln; if(!state.taskLists.includes(ln)) state.taskLists.push(ln); }
+    }
+  });
+}
+async function createMissingStageTasksFor(shotId){
+  const shot = state.shots.find(x=>x.id===shotId); if(!shot) return;
+  await saveShotForm(shotId, true); // keep whatever was typed in the form
+  createStageTasks(shot, SHOT_STAGES.map(([k])=>k), shot.stages);
+  await persistStageChanges();
+  document.getElementById('drawer').innerHTML = renderShotDrawerContent(shotId); render();
+}
+async function addOneStageTask(shotId, key){
+  const shot = state.shots.find(x=>x.id===shotId); if(!shot) return;
+  await saveShotForm(shotId, true);
+  createStageTasks(shot, [key]);
+  await persistStageChanges();
+  document.getElementById('drawer').innerHTML = renderShotDrawerContent(shotId); render();
+}
+async function createAllLegacyStageTasks(){
+  const legacy = state.shots.filter(x=>!x.stageTaskIds);
+  if(!legacy.length) return;
+  legacy.forEach(sh=>createStageTasks(sh, SHOT_STAGES.map(([k])=>k), sh.stages));
+  await persistStageChanges();
+  toast(`Created stage tasks for ${legacy.length} shot${legacy.length===1?'':'s'}`); render();
+}
+async function changeStageTaskStatus(taskId, value, shotId){
+  await updateField(taskId, 'status', value);
+  const sh = state.shots.find(x=>x.id===shotId), el = document.getElementById('shot-status-pill');
+  if(sh && el) el.innerHTML = shotStatusPill(sh);
 }
 
 /* ---- sequence drawer ---- */
@@ -3932,9 +4020,25 @@ async function saveSequenceForm(id){
   if(!name){ toast('Name is required'); return; }
   const num = parseInt(document.getElementById('seq-number').value) || nextSeqNumber();
   const fields = { name, number: num, description: document.getElementById('seq-desc').value.trim() };
-  if(id){ const q = state.sequences.find(x=>x.id===id); if(q) Object.assign(q, fields); }
-  else state.sequences.push(Object.assign({id: uid('sq')}, fields));
-  await saveSequences(); closeDrawer(); render();
+  let tasksChanged = false;
+  if(id){
+    const q = state.sequences.find(x=>x.id===id);
+    if(q){
+      const oldLn = seqTaskListName(q);
+      Object.assign(q, fields);
+      const newLn = seqTaskListName(q);
+      if(oldLn!==newLn){
+        // the sequence's task list follows its number/name
+        const i = state.taskLists.indexOf(oldLn);
+        if(i>=0) state.taskLists[i] = newLn; else if(state.tasks.some(t=>t.taskList===oldLn) && !state.taskLists.includes(newLn)) state.taskLists.push(newLn);
+        state.tasks.forEach(t=>{ if(t.taskList===oldLn){ t.taskList = newLn; tasksChanged = true; } });
+        await saveTaskListGroups();
+      }
+    }
+  } else state.sequences.push(Object.assign({id: uid('sq')}, fields));
+  await saveSequences();
+  if(tasksChanged) await saveTasks();
+  closeDrawer(); render();
 }
 async function moveSequence(id, dir){
   const i = state.sequences.findIndex(q=>q.id===id), j = i+dir;
@@ -3943,16 +4047,16 @@ async function moveSequence(id, dir){
   await saveSequences(); render();
 }
 async function deleteSequence(id){
-  const n = shotsOf(id).length;
-  if(!(await confirmDialog(n ? `Delete this sequence and its ${n} shot${n===1?'':'s'}? Tasks linked to those shots stay, but lose the link.` : 'Delete this sequence?'))) return;
-  const gone = shotsOf(id).map(s=>s.id);
+  const q = state.sequences.find(x=>x.id===id); if(!q) return;
+  const shots = shotsOf(id);
+  const nTasks = shots.reduce((a,sh)=>a+Object.values(sh.stageTaskIds||{}).filter(tid=>state.tasks.some(t=>t.id===tid)).length, 0);
+  if(!(await confirmDialog(shots.length ? `Delete this sequence, its ${shots.length} shot${shots.length===1?'':'s'} and their ${nTasks} stage task${nTasks===1?'':'s'}?` : 'Delete this sequence?'))) return;
+  await removeShotTasks(shots.map(x=>x.id));
   state.shots = state.shots.filter(s=>s.seqId!==id);
-  state.sequences = state.sequences.filter(q=>q.id!==id);
-  await saveShots(); await saveSequences();
-  if(gone.length && state.tasks.some(t=>gone.includes(t.shotId))){
-    state.tasks.forEach(t=>{ if(gone.includes(t.shotId)) t.shotId = ''; });
-    await saveTasks();
-  }
+  state.sequences = state.sequences.filter(x=>x.id!==id);
+  const ln = seqTaskListName(q);
+  if(!state.tasks.some(t=>t.taskList===ln)) state.taskLists = state.taskLists.filter(l=>l!==ln);
+  await saveShots(); await saveSequences(); await saveTasks(); await saveTaskListGroups();
   closeDrawer(); render();
 }
 
@@ -3984,11 +4088,32 @@ function shotSecondsInput(){
   const sec = parseFloat(document.getElementById('shot-seconds').value);
   document.getElementById('shot-frames').value = isNaN(sec) ? '' : Math.round(sec*projectFps());
 }
+function shotStagesFieldHtml(s){
+  if(!s){
+    return `<div class="field"><label>Stage tasks <span class="faint" style="text-transform:none;font-weight:400">— created in the Tasks list when you add the shot (each depends on the one before)</span></label>
+      <div class="dep-checks">${SHOT_STAGES.map(([k,l])=>`<label class="dep-chip on" style="cursor:pointer"><input type="checkbox" data-newstage="${k}" checked style="margin-right:6px">${l}</label>`).join('')}</div></div>`;
+  }
+  if(!s.stageTaskIds){
+    return `<div class="field"><label>Stages</label>
+      <div class="faint" style="font-size:12px;margin-bottom:8px">This shot has no stage tasks yet.</div>
+      <div class="field-row" style="grid-template-columns:1fr 1fr">${SHOT_STAGES.map(([k,l])=>`
+        <div class="field" style="margin-bottom:6px"><label style="font-size:11px">${l}</label>
+          <select data-stage="${k}">${STATUSES.map(v=>`<option ${stageValue((s.stages||{})[k])===v?'selected':''}>${v}</option>`).join('')}</select></div>`).join('')}</div>
+      <button class="btn btn-sm btn-gold" type="button" onclick="createMissingStageTasksFor('${s.id}')">Create the stage tasks</button></div>`;
+  }
+  return `<div class="field"><label>Stage tasks</label>${SHOT_STAGES.map(([k,l])=>{
+    const t = s.stageTaskIds[k] && state.tasks.find(x=>x.id===s.stageTaskIds[k]);
+    if(!t) return `<div class="dash-task-row"><span class="faint">${l} — no task</span><span class="chat-action-link" onclick="addOneStageTask('${s.id}','${k}')">+ create task</span></div>`;
+    return `<div class="dash-task-row"><span class="dash-task-main"><b>${l}</b> <span class="faint" style="font-size:11.5px">${esc(assigneeNamesLabel(t.assignees)||'unassigned')}</span></span>
+      <span class="dash-task-side"><select class="inline-edit" style="background:${STATUS_HEX[t.status]}30;color:${STATUS_COLOR[t.status]};border-color:${STATUS_HEX[t.status]}66" onchange="changeStageTaskStatus('${t.id}',this.value,'${s.id}')">${STATUSES.map(v=>`<option ${t.status===v?'selected':''}>${v}</option>`).join('')}</select>
+      <span class="chat-action-link" onclick="closeDrawer();openDrawer('${t.id}')">open</span></span></div>`;
+  }).join('')}</div>`;
+}
 function renderShotDrawerContent(id, seqIdDefault){
   const s = id ? state.shots.find(x=>x.id===id) : null;
   const seqId = s ? s.seqId : (seqIdDefault || (state.sequences[0] && state.sequences[0].id));
   const st = (s && s.stages) || {};
-  const linked = s ? shotLinkedTasks(s.id) : [];
+  const linked = s ? shotLinkedTasks(s.id).filter(t=>!t.stageKey) : [];
   const unlinked = state.tasks.filter(t=>!t.shotId && t.status!=='Completed');
   const assetIds = (s && s.assetIds) || [];
   const link = (u)=> u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer" class="chat-link" style="font-size:12px">Open ↗</a>` : '';
@@ -4006,21 +4131,17 @@ function renderShotDrawerContent(id, seqIdDefault){
       </div>
       <div class="field"><label>Camera notes</label><textarea id="shot-cam" rows="2" placeholder="Lens, movement, framing…">${esc(s?.camera||'')}</textarea></div>
       <div class="field"><label>Status</label>
-        <div>${s?shotStatusPill(s):'<span class="statuspill" style="background:#6B728030;color:#9AA3AF">Open</span>'}</div>
-        <div class="faint" style="font-size:11.5px;margin-top:4px">Automatic — In progress while a stage or linked task is in progress, in review or needs revision; Completed when all of them are completed; otherwise Open. Updates when you save.</div>
+        <div id="shot-status-pill">${s?shotStatusPill(s):'<span class="statuspill" style="background:#6B728030;color:#9AA3AF">Open</span>'}</div>
+        <div class="faint" style="font-size:11.5px;margin-top:4px">Automatic — In progress while a stage task is in progress, in review or needs revision; Completed when all of them are completed; otherwise Open.</div>
       </div>
-      <div class="field"><label>Stages</label>
-        <div class="field-row" style="grid-template-columns:1fr 1fr">${SHOT_STAGES.map(([k,l])=>`
-          <div class="field" style="margin-bottom:6px"><label style="font-size:11px">${l}</label>
-            <select data-stage="${k}">${STATUSES.map(v=>`<option ${stageValue(st[k])===v?'selected':''}>${v}</option>`).join('')}</select></div>`).join('')}</div>
-      </div>
+      ${shotStagesFieldHtml(s)}
       ${previewFieldHtml(s?s.id:null)}
       <div class="field"><label>Playblast link ${link(s?.playblast)}</label><input id="shot-playblast" value="${esc(s?.playblast||'')}" placeholder="Paste a Drive / YouTube link"></div>
       <div class="field"><label>Render folder link ${link(s?.renderFolder)}</label><input id="shot-render" value="${esc(s?.renderFolder||'')}" placeholder="Paste the Drive folder link"></div>
       <div class="field"><label>Assets used in this shot</label>
         <div class="dep-checks">${state.assets.length ? state.assets.map(a=>`<span class="dep-chip ${assetIds.includes(a.id)?'on':''}" data-shot-asset="${a.id}" onclick="this.classList.toggle('on')">${esc(a.name)}</span>`).join('') : '<span class="faint" style="font-size:12px">No assets yet — create them on the Assets page</span>'}</div>
       </div>
-      ${s?`<div class="field"><label>Tasks for this shot</label>
+      ${s?`<div class="field"><label>Other tasks for this shot</label>
         ${linked.length?linked.map(t=>`<div class="dash-task-row" style="cursor:pointer" onclick="closeDrawer();openDrawer('${t.id}')"><span class="dash-task-main"><span class="task-id mono">${t.id}</span> ${esc(t.name)}</span><span class="dash-task-side"><span class="statuspill" style="background:${STATUS_HEX[t.status]}30;color:${STATUS_COLOR[t.status]}">${esc(t.status)}</span> <span class="chat-action-link" onclick="event.stopPropagation();unlinkTaskFromShot('${t.id}','${s.id}')">unlink</span></span></div>`).join(''):'<div class="faint" style="font-size:12px">No task linked yet.</div>'}
         <select style="margin-top:8px" onchange="if(this.value) linkTaskToShot(this.value,'${s.id}')"><option value="">+ Link an existing task…</option>${unlinked.map(t=>`<option value="${t.id}">${t.id} · ${esc(t.name)}</option>`).join('')}</select>
       </div>`:''}
@@ -4030,37 +4151,55 @@ function renderShotDrawerContent(id, seqIdDefault){
         <button class="btn btn-gold" onclick="saveShotForm(${s?`'${s.id}'`:'null'})">${s?'Save changes':'Add shot'}</button>
       </div></div>`;
 }
-async function saveShotForm(id){
+async function saveShotForm(id, keepOpen){
   const code = document.getElementById('shot-code').value.trim();
   if(!code || /^SQ\d+_SH$/.test(code)){ toast('Add the shot number to the code, e.g. '+shotPrefix(document.getElementById('shot-seq').value)+'010'); return; }
   const dup = state.shots.find(x=>x.id!==id && (x.code||'').trim().toLowerCase()===code.toLowerCase());
   if(dup){ toast(`The code "${code}" is already used by another shot (${shotLabel(dup)}). Choose a different shot number.`, 6000); const ce = document.getElementById('shot-code'); if(ce){ ce.focus(); ce.style.borderColor='var(--red)'; } return; }
   const fr = document.getElementById('shot-frames').value;
-  const stages = {}; document.querySelectorAll('#drawer select[data-stage]').forEach(el=>{ stages[el.dataset.stage] = el.value; });
+  const legacySel = document.querySelectorAll('#drawer select[data-stage]');
+  const newStages = [...document.querySelectorAll('#drawer input[data-newstage]:checked')].map(el=>el.dataset.newstage);
   const fields = {
     seqId: document.getElementById('shot-seq').value, code,
     description: document.getElementById('shot-desc').value.trim(),
     frames: fr===''?null:(parseInt(fr)||0), frameStart: null, frameEnd: null,
     camera: document.getElementById('shot-cam').value.trim(),
-    stages,
     playblast: document.getElementById('shot-playblast').value.trim(),
     renderFolder: document.getElementById('shot-render').value.trim(),
     assetIds: [...document.querySelectorAll('#drawer [data-shot-asset].on')].map(el=>el.dataset.shotAsset),
     notes: document.getElementById('shot-notes').value.trim()
   };
+  if(legacySel.length){ fields.stages = {}; legacySel.forEach(el=>{ fields.stages[el.dataset.stage] = el.value; }); }
   if(pendingPreview!==undefined){ fields.previewTs = Date.now(); }
-  let sid = id;
-  if(id){ const s = state.shots.find(x=>x.id===id); if(s) Object.assign(s, fields); }
-  else { sid = uid('sh'); state.shots.push(Object.assign({id: sid}, fields)); }
-  await saveShots();
+  let sid = id, shot;
+  if(id){
+    shot = state.shots.find(x=>x.id===id);
+    if(shot){ const oldCode = shot.code; Object.assign(shot, fields); syncStageTasks(shot, oldCode); }
+  } else {
+    sid = uid('sh'); shot = Object.assign({id: sid}, fields); state.shots.push(shot);
+    if(newStages.length) createStageTasks(shot, newStages);
+  }
+  await persistStageChanges();
   await savePreviewFor(sid);
+  if(keepOpen) return;
   closeDrawer(); render();
 }
+async function removeShotTasks(shotIds){
+  // stage tasks go with their shot; any other task merely linked to it just loses the link
+  const stageIds = state.shots.filter(x=>shotIds.includes(x.id)).flatMap(x=>Object.values(x.stageTaskIds||{}));
+  const gone = state.tasks.filter(t=>stageIds.includes(t.id)).map(t=>t.id);
+  state.tasks = state.tasks.filter(t=>!gone.includes(t.id));
+  state.tasks.forEach(t=>{ t.dependsOn = (t.dependsOn||[]).filter(d=>!gone.includes(d)); if(shotIds.includes(t.shotId)) t.shotId=''; });
+  for(const tid of gone) await deleteChatFor(tid);
+  return gone.length;
+}
 async function deleteShot(id){
-  if(!(await confirmDialog('Delete this shot? Tasks linked to it stay, but lose the link.'))) return;
+  const sh = state.shots.find(x=>x.id===id); if(!sh) return;
+  const n = Object.values(sh.stageTaskIds||{}).filter(tid=>state.tasks.some(t=>t.id===tid)).length;
+  if(!(await confirmDialog(n ? `Delete this shot and its ${n} stage task${n===1?'':'s'} (with their chat)?` : 'Delete this shot?'))) return;
+  await removeShotTasks([id]);
   state.shots = state.shots.filter(s=>s.id!==id);
-  await saveShots();
-  if(state.tasks.some(t=>t.shotId===id)){ state.tasks.forEach(t=>{ if(t.shotId===id) t.shotId=''; }); await saveTasks(); }
+  await saveShots(); await saveTasks();
   closeDrawer(); render();
 }
 async function linkTaskToShot(taskId, shotId){
@@ -6392,7 +6531,7 @@ function renderDrawerContent(taskId){
       </div>
 
       ${state.shots.length?`<div class="field"><label>Shot <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label>
-        <select onchange="updateField('${t.id}','shotId',this.value)"><option value="">—</option>${state.shots.map(sh=>`<option value="${sh.id}" ${t.shotId===sh.id?'selected':''}>${esc(shotLabel(sh))}</option>`).join('')}</select></div>`:''}
+        <select ${t.stageKey?'disabled title="Stage task — belongs to this shot"':''} onchange="updateField('${t.id}','shotId',this.value)"><option value="">—</option>${state.shots.map(sh=>`<option value="${sh.id}" ${t.shotId===sh.id?'selected':''}>${esc(shotLabel(sh))}</option>`).join('')}</select></div>`:''}
 
       <div class="field"><label>Assignees</label>
         <div class="dep-checks">
