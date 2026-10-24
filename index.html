@@ -2079,8 +2079,20 @@ function renderProjectDrawerContent(){
           ${PROJECT_TYPES.map(t=>`<option value="${t}" ${p.type===t?'selected':''}>${t}</option>`).join('')}
         </select>
       </div>
-      <div class="field"><label>Frame rate (FPS) <span class="faint" style="text-transform:none;font-weight:400">— used to convert shot frames into seconds</span></label>
-        <select id="proj-fps">${[24,25,30,50,60].map(f=>`<option value="${f}" ${projectFps()===f?'selected':''}>${f} fps</option>`).join('')}</select></div>
+      <div class="field"><label>Production</label>
+        <select id="proj-prod" onchange="projProdChanged()">
+          ${['VR','Animation'].map(t=>`<option value="${t}" ${(p.production||'VR')===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" id="proj-vr-box" style="${(p.production||'VR')==='VR'?'':'display:none'}"><label>Headset</label>
+        <select id="proj-headset">
+          <option value="">— not set —</option>
+          ${VR_HEADSETS.map(h=>`<option ${p.headset===h?'selected':''}>${h}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" id="proj-anim-box" style="${p.production==='Animation'?'':'display:none'}"><label>Frame rate (FPS) <span class="faint" style="text-transform:none;font-weight:400">— used to convert shot frames into seconds</span></label>
+        <select id="proj-fps">${FPS_CHOICES.map(f=>`<option value="${f}" ${projectFps()===f?'selected':''}>${f} fps</option>`).join('')}</select>
+      </div>
       <div class="field"><label>Period</label><input id="proj-period" value="${esc(p.period)}" placeholder="e.g. Aug – Dec 2026"></div>
       <div class="field"><label>Team drive folder <span class="faint" style="text-transform:none;font-weight:400">— a Google Drive folder link, shared as "Anyone with the link can view". The Documents page will show it directly.</span></label>
         <input id="proj-drive-url" value="${esc(p.driveUrl||'')}" placeholder="https://drive.google.com/drive/folders/…"></div>
@@ -2106,6 +2118,11 @@ function renderProjectDrawerContent(){
       </div>` : ''}
     </div>`;
 }
+function projProdChanged(){
+  const v = document.getElementById('proj-prod').value;
+  document.getElementById('proj-vr-box').style.display = v==='VR' ? '' : 'none';
+  document.getElementById('proj-anim-box').style.display = v==='Animation' ? '' : 'none';
+}
 function handleProjectIconPick(e){
   const file = e.target.files[0]; if(!file) return;
   resizeImage(file, 300, 0.85).then(dataUrl=>{
@@ -2119,7 +2136,9 @@ async function saveProjectDetails(){
   state.project.title = document.getElementById('proj-title').value.trim() || 'Untitled Project';
   state.project.type = document.getElementById('proj-type').value;
   state.project.period = document.getElementById('proj-period').value;
-  state.project.fps = parseInt(document.getElementById('proj-fps').value) || 24;
+  state.project.production = document.getElementById('proj-prod').value;
+  state.project.headset = document.getElementById('proj-headset').value;
+  state.project.fps = parseFloat(document.getElementById('proj-fps').value) || 24;
   state.project.driveUrl = document.getElementById('proj-drive-url').value.trim();
   state.project.notes = document.getElementById('proj-notes').value;
   if(pendingProjectIcon) state.project.icon = pendingProjectIcon;
@@ -3776,7 +3795,9 @@ function seqProgress(seqId){
   const list = shotsOf(seqId); if(!list.length) return 0;
   return Math.round(list.reduce((a,s)=>a+shotProgress(s),0)/list.length);
 }
-function projectFps(){ return parseInt(state.project && state.project.fps) || 24; }
+const FPS_CHOICES = [12,15,23.976,24,25,29.97,30,48,50,59.94,60];
+const VR_HEADSETS = ['Meta Quest 3','Meta Quest 3S','Meta Quest 2','Meta Quest Pro','Pico 4 / 4 Ultra','Apple Vision Pro','HTC Vive Focus / XR Elite','HTC Vive (PC)','Valve Index','PlayStation VR2','Other / multi-headset (OpenXR)'];
+function projectFps(){ return parseFloat(state.project && state.project.fps) || 24; }
 function shotFrameCount(s){
   if(s.frames!==undefined && s.frames!==null && s.frames!=='') return parseInt(s.frames)||0;
   const a = parseInt(s.frameStart), b = parseInt(s.frameEnd); // shots saved before the "number of frames" field
@@ -3789,21 +3810,24 @@ function shotFrames(s){
 function seqNumber(q){ if(q.number) return q.number; return Math.max(1, state.sequences.indexOf(q)+1); }
 function seqCode(q){ return 'SQ'+String(seqNumber(q)).padStart(3,'0'); }
 function shotPrefix(seqId){ const q = state.sequences.find(x=>x.id===seqId); return q ? seqCode(q)+'_SH' : 'SH'; }
-// A shot's status follows its linked tasks automatically (Not started / In progress / Completed).
+// A shot's status follows its linked tasks automatically: In progress while any task is actively being
+// worked on (In Progress / In Review / Needs Revision), Completed once every task is Completed, otherwise
+// Open (nothing under way right now — not started, or waiting between tasks). On Hold tasks are ignored.
 // With no linked task it can be set by hand.
+const SHOT_STATUSES = ['Open','In Progress','Completed'];
 function shotAutoStatus(shotId){
   const ts = shotLinkedTasks(shotId).filter(t=>t.status!=='On Hold');
   if(!ts.length) return null;
   if(ts.every(t=>t.status==='Completed')) return 'Completed';
-  if(ts.some(t=>t.status==='Completed' || t.status==='In Progress' || t.status==='In Review' || t.status==='Needs Revision')) return 'In Progress';
-  return 'Not Started';
+  if(ts.some(t=>t.status==='In Progress' || t.status==='In Review' || t.status==='Needs Revision')) return 'In Progress';
+  return 'Open';
 }
 function shotStatusValue(s){
   const auto = shotAutoStatus(s.id);
   if(auto) return auto;
   if(s.status==='Completed') return 'Completed';
   if(s.status==='In Progress' || s.status==='In Review' || s.status==='Needs Revision') return 'In Progress';
-  return 'Not Started';
+  return 'Open';
 }
 function shotStageDots(s){
   const st = s.stages||{};
@@ -3813,8 +3837,8 @@ function shotStageDots(s){
   }).join('')}</span>`;
 }
 function shotStatusPill(s){
-  const st = shotStatusValue(s);
-  return `<span class="statuspill" style="background:${STATUS_HEX[st]}30;color:${STATUS_COLOR[st]}">${esc(st)}</span>`;
+  const st = shotStatusValue(s), key = st==='Open' ? 'Not Started' : st;
+  return `<span class="statuspill" style="background:${STATUS_HEX[key]}30;color:${STATUS_COLOR[key]}">${esc(st==='In Progress'?'In progress':st)}</span>`;
 }
 function shotLinkedTasks(shotId){ return state.tasks.filter(t=>t.shotId===shotId); }
 function shotModeIs(m){ return lsGet('shotsViewMode','board')===m; }
@@ -3975,8 +3999,8 @@ function renderShotDrawerContent(id, seqIdDefault){
       </div>
       <div class="field"><label>Camera notes</label><textarea id="shot-cam" rows="2" placeholder="Lens, movement, framing…">${esc(s?.camera||'')}</textarea></div>
       <div class="field"><label>Status</label>
-        <select id="shot-status" ${s&&shotAutoStatus(s.id)?'disabled':''}>${['Not Started','In Progress','Completed'].map(x=>`<option value="${x}" ${(s?shotStatusValue(s):'Not Started')===x?'selected':''}>${x}</option>`).join('')}</select>
-        <div class="faint" style="font-size:11.5px;margin-top:4px">${s&&shotAutoStatus(s.id)?'Automatic — follows the tasks linked to this shot (any task started, in review or needing revision → In progress; all completed → Completed).':'No task linked yet, so you can set it by hand. Once a task is linked, it becomes automatic.'}</div>
+        <select id="shot-status" ${s&&shotAutoStatus(s.id)?'disabled':''}>${SHOT_STATUSES.map(x=>`<option value="${x}" ${(s?shotStatusValue(s):'Open')===x?'selected':''}>${x==='In Progress'?'In progress':x}</option>`).join('')}</select>
+        <div class="faint" style="font-size:11.5px;margin-top:4px">${s&&shotAutoStatus(s.id)?'Automatic — follows the tasks linked to this shot (a task in progress, in review or needing revision → In progress; all tasks completed → Completed; otherwise Open).':'No task linked yet, so you can set it by hand. Once a task is linked, it becomes automatic.'}</div>
       </div>
       <div class="field"><label>Stages</label>
         <div class="field-row" style="grid-template-columns:1fr 1fr">${SHOT_STAGES.map(([k,l])=>`
@@ -4830,6 +4854,7 @@ function renderDashboardView(){
       <div class="project-header-title">${esc(p.title||'Untitled Project')}</div>
       <div class="project-header-meta">
         <span class="tagpill" style="background:${typeColor}29;color:${typeColor};border:1px solid ${typeColor}66">${esc(p.type||'—')}</span>
+        ${(p.production==='Animation')?`<span class="faint">Animation · ${projectFps()} fps</span>`:((p.production==='VR'||p.headset)?`<span class="faint">VR${p.headset?' · '+esc(p.headset):''}</span>`:'')}
         ${p.period?`<span class="faint">${esc(p.period)}</span>`:''}
       </div>
       ${p.notes?`<div class="project-header-notes">${esc(p.notes)}</div>`:''}
