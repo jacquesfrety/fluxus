@@ -553,9 +553,11 @@
 
 
   /* ---- phone layout: Dashboard, Tasks (cards), Gallery, notifications; everything else via "More" ---- */
-  .menu-btn,#mobile-tabs,#sidebar-backdrop{display:none;}
+  .menu-btn,#mobile-tabs,#sidebar-backdrop,.switch-proj-mobile{display:none;}
   @media (max-width:820px){
     .desk-only{display:none !important;}
+    .switch-proj-mobile{display:block;width:calc(100% - 4px);margin:4px 2px 0;padding:11px 12px;border-radius:8px;
+      background:var(--surface2);border:1px solid var(--line);color:var(--gold);font-size:14px;font-weight:600;text-align:center;}
     #topbar{padding:10px 14px;align-items:center;flex-wrap:nowrap;gap:10px;}
     #topbar .topbar-title{flex:1;min-width:0;}
     #topbar h1{font-size:17px;}
@@ -618,6 +620,7 @@
         <div class="brand-name" id="brand-title">Fluxus</div>
       </div>
     </div>
+    <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
       <div class="fluxus-tag">Fluxus</div>
