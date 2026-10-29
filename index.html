@@ -77,7 +77,15 @@
 
   /* ---- sidebar ---- */
   #sidebar{width:216px;flex:0 0 216px;background:var(--surface);border-right:1px solid var(--line);
-    display:flex;flex-direction:column;padding:18px 12px;}
+    display:flex;flex-direction:column;padding:18px 12px;
+    overflow-y:auto;overflow-x:hidden;min-height:0;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:transparent transparent;}
+  /* Discord-style: slim scrollbar that appears only while hovering the menu; wheel / middle-click autoscroll work as usual */
+  #sidebar:hover{scrollbar-color:#4A525E transparent;}
+  #sidebar::-webkit-scrollbar{width:8px;}
+  #sidebar::-webkit-scrollbar-thumb{background:transparent;border:0;border-radius:4px;}
+  #sidebar:hover::-webkit-scrollbar-thumb{background:#4A525E;}
+  #sidebar::-webkit-scrollbar-thumb:hover{background:#6A7380;}
+  #sidebar .sidebar-foot{padding-bottom:4px;}
   .brand{display:flex;align-items:center;gap:9px;padding:4px 8px 22px;border-radius:8px;}
   .brand.editable{cursor:pointer;}
   .brand.editable:hover{background:var(--surface2);}
