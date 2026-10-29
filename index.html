@@ -2514,7 +2514,7 @@ function formatNum(v){
 function labelShort(s){ return s.length>10 ? s.slice(0,9)+'…' : s; }
 function verticalBarChart(categories, series, opts){
   opts = opts || {};
-  const width = opts.width || 480, height = opts.height || 220;
+  const width = opts.width || 760, height = opts.height || 340;
   const stacked = !!opts.stacked;
   const padTop=22, padBottom=32, padLeft=6, padRight=6;
   const plotH = height-padTop-padBottom, plotW = width-padLeft-padRight;
@@ -2527,7 +2527,7 @@ function verticalBarChart(categories, series, opts){
   if(stacked){
     const totals = categories.map((_,i)=> series.reduce((s,se)=>s+(se.values[i]||0),0));
     const axisMax = niceAxisMax(Math.max(...totals, 0));
-    const barW = Math.max(10, groupW - barGap*2);
+    const barW = Math.min(64, Math.max(10, groupW - barGap*2));
     categories.forEach((cat,i)=>{
       const groupX = padLeft + i*groupW;
       const x = groupX + (groupW-barW)/2;
@@ -2550,13 +2550,14 @@ function verticalBarChart(categories, series, opts){
     const allVals = series.flatMap(s=>s.values);
     const axisMax = niceAxisMax(Math.max(...allVals, 0));
     const seriesCount = series.length;
-    const barW = Math.max(5, (groupW-barGap*(seriesCount+1))/seriesCount);
+    const barW = Math.min(64, Math.max(5, (groupW-barGap*(seriesCount+1))/seriesCount));
+    const groupInner = seriesCount*barW + barGap*(seriesCount+1);
     categories.forEach((cat,i)=>{
       const groupX = padLeft + i*groupW;
       series.forEach((s,si)=>{
         const val = s.values[i]||0;
         const barH = axisMax>0 ? (val/axisMax*plotH) : 0;
-        const x = groupX + barGap + si*(barW+barGap);
+        const x = groupX + (groupW-groupInner)/2 + barGap + si*(barW+barGap);
         const y = padTop + (plotH-barH);
         const color = s.colors ? s.colors[i] : s.color;
         bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="3" fill="${color}"><title>${esc(cat)} — ${esc(s.name)}: ${formatNum(val)}</title></rect>`;
@@ -2568,7 +2569,7 @@ function verticalBarChart(categories, series, opts){
     });
   }
   const axisLine = `<line x1="${padLeft}" y1="${padTop+plotH}" x2="${width-padRight}" y2="${padTop+plotH}" style="stroke:var(--chart-line)" stroke-width="1"/>`;
-  return `<svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}">${axisLine}${bars}${catLabels}</svg>`;
+  return `<svg viewBox="0 0 ${width} ${height}" width="100%" style="height:auto;display:block">${axisLine}${bars}${catLabels}</svg>`;
 }
 function taskRowMini(t, showStatus){
   const overdue = isOverdue(t);
