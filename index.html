@@ -1218,6 +1218,7 @@ async function loadAll(){
     state.documents = documents || [];
     state.annotations = annotations || [];
     state.drawings = markups || [];
+    annBase = JSON.parse(JSON.stringify(state.annotations)); drBase = JSON.parse(JSON.stringify(state.drawings));
     state.assets = assets || [];
     state.levels = levels || [];
     state.sequences = sequences || [];
@@ -1350,6 +1351,7 @@ function stopLiveAlerts(){
 }
 async function pollLiveAlerts(){
   if(!db || !state.projectId || !state.currentUser) return;
+  if(currentDriveMediaFileId) syncMarks().then(ch=>{ if(ch) refreshMarksIfOpen(); });
   try{
     const [freshNotifs, freshTeam, freshTasks, freshPosts] = await Promise.all([fsGet('notifications'), fsGet('team'), fsGet('tasks'), fsGet('forumPosts')]);
     // pick up teammates' task changes (status, assignees, new tasks…) without a manual refresh —
@@ -1762,8 +1764,77 @@ async function saveForumPosts(){
   return true;
 }
 async function saveDocuments(){ await fsSet('documents', state.documents); }
-async function saveAnnotations(){ await fsSet('annotations', state.annotations); }
-async function saveDrawings(){ await fsSet('markups', state.drawings); }
+/* Pins and drawings are shared arrays. They used to be loaded once and saved by overwriting the whole
+   array, so teammates only saw new pins after F5, and a stale tab could erase someone else's pin.
+   Now: syncMarks() merges the server copy with this tab's own unsaved changes (by id), and saves
+   re-fetch first and apply only this tab's changes on top. */
+let annBase = [], drBase = [], marksBusy = false;
+function mergeMarks(server, local, base, isPin){
+  const byId = a => { const m = new Map(); (a||[]).forEach(x=>m.set(x.id,x)); return m; };
+  const S = byId(server), L = byId(local), B = byId(base);
+  const out = new Map(S);
+  L.forEach((lv,id)=>{
+    const bv = B.get(id);
+    if(!bv){ out.set(id, lv); return; }                            // created here
+    if(JSON.stringify(lv) === JSON.stringify(bv)) return;           // untouched here: keep server's
+    const sv = S.get(id); if(!sv) return;                           // deleted elsewhere: don't resurrect
+    const merged = Object.assign({}, sv, lv);
+    if(isPin){
+      const seen = new Set(); merged.replies = [];
+      (sv.replies||[]).concat(lv.replies||[]).forEach(r=>{ if(!seen.has(r.id)){ seen.add(r.id); merged.replies.push(r); } });
+      merged.replies.sort((a,b)=>(a.ts||0)-(b.ts||0));
+    }
+    out.set(id, merged);
+  });
+  B.forEach((bv,id)=>{ if(!L.has(id)) out.delete(id); });            // deleted here
+  return Array.from(out.values());
+}
+async function saveMarks(key, isPin){
+  let server = null;
+  for(let i=0;i<3 && !Array.isArray(server);i++){
+    try{ server = await fsGet(key); }catch(e){ server = null; }
+    if(!Array.isArray(server) && i<2) await new Promise(r=>setTimeout(r, 400*(i+1)));
+  }
+  const local = isPin ? state.annotations : state.drawings;
+  const base = isPin ? annBase : drBase;
+  let merged = local;
+  if(Array.isArray(server)) merged = mergeMarks(server, local, base, isPin);
+  else if(base.length){ toast('Could not reach the server — your pin/drawing was not saved. Try again.'); return; }
+  if(isPin){ state.annotations = merged; annBase = JSON.parse(JSON.stringify(merged)); }
+  else { state.drawings = merged; drBase = JSON.parse(JSON.stringify(merged)); }
+  await fsSet(key, merged);
+}
+async function syncMarks(){
+  if(marksBusy || !db || !state.projectId) return false;
+  marksBusy = true;
+  try{
+    const [sa, sd] = await Promise.all([fsGet('annotations'), fsGet('markups')]);
+    let changed = false;
+    if(Array.isArray(sa)){
+      const m = mergeMarks(sa, state.annotations, annBase, true);
+      if(JSON.stringify(m) !== JSON.stringify(state.annotations)){ state.annotations = m; changed = true; }
+      annBase = JSON.parse(JSON.stringify(sa));
+    }
+    if(Array.isArray(sd)){
+      const m = mergeMarks(sd, state.drawings, drBase, false);
+      if(JSON.stringify(m) !== JSON.stringify(state.drawings)){ state.drawings = m; changed = true; }
+      drBase = JSON.parse(JSON.stringify(sd));
+    }
+    return changed;
+  }catch(e){ return false; }
+  finally{ marksBusy = false; }
+}
+function refreshMarksIfOpen(){
+  const fid = currentDriveMediaFileId;
+  if(!fid || !document.getElementById('drive-lightbox-pins')) return;
+  const ae = document.activeElement;
+  if(ae && /^(INPUT|TEXTAREA)$/.test(ae.tagName) && ae.closest && ae.closest('#drive-lightbox-pins')) return; // don't wipe a comment being typed
+  if(typeof pinDraft!=='undefined' && pinDraft) return;
+  refreshPinsLayer(fid);
+  if(typeof refreshDrawLayer==='function') refreshDrawLayer(fid);
+}
+async function saveAnnotations(){ await saveMarks('annotations', true); }
+async function saveDrawings(){ await saveMarks('markups', false); }
 async function saveAssets(){ await fsSet('assets', state.assets); }
 async function saveLevels(){ await fsSet('levels', state.levels); }
 async function saveMilestones(){ await fsSet('milestones', state.milestones); }
@@ -5719,6 +5790,7 @@ async function openDriveMedia(f, kind){
    since there's no folder listing here to draw siblings from ---- */
 function openMediaLightbox(fileId, imgUrl, webViewLink, group, groupIndex){
   currentDriveMediaFileId = fileId;
+  syncMarks().then(ch=>{ if(ch) refreshMarksIfOpen(); });   // always show teammates' latest pins/drawings
   currentDriveMediaUrl = null; // nothing was fetched as a blob here, so nothing to revoke on close
   // group/groupIndex let a caller (e.g. a multi-photo chat post) wire up prev/next arrows across
   // just that post's images, independent of the Drive-browser sibling list used elsewhere
