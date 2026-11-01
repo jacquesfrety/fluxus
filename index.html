@@ -1227,10 +1227,12 @@ async function loadAll(){
     state.annotations = annotations || [];
     state.drawings = markups || [];
     annBase = JSON.parse(JSON.stringify(state.annotations)); drBase = JSON.parse(JSON.stringify(state.drawings));
+    COLL_KEYS.forEach(k=>{ collBase[k] = []; });
     state.assets = assets || [];
     state.levels = levels || [];
     state.sequences = sequences || [];
     state.shots = shots || [];
+    COLL_KEYS.forEach(k=>{ collBase[k] = JSON.parse(JSON.stringify(state[k]||[])); });
     state.milestones = milestones || [];
     state.timelineLabelsWidth = lsGet('timelineLabelsWidth', 420);
     state.theme = lsGet('theme', 'dark');
@@ -1421,7 +1423,10 @@ async function pollLiveAlerts(){
       if(!typing && !drawerOpen){
         let changed = false;
         const upd = (key, fresh)=>{
-          if(Array.isArray(fresh) && JSON.stringify(fresh)!==JSON.stringify(state[key])){ state[key] = fresh; changed = true; }
+          if(!Array.isArray(fresh)) return;
+          const m = mergeColl(fresh, state[key], collBase[key]||[]);   // keeps any unsaved local edit
+          collBase[key] = JSON.parse(JSON.stringify(fresh));
+          if(JSON.stringify(m)!==JSON.stringify(state[key])){ state[key] = m; changed = true; }
         };
         upd('sequences', fSeq); upd('shots', fShots); upd('levels', fLevels);
         if(changed){
@@ -1771,7 +1776,7 @@ async function saveForumPosts(){
   await fsSet('forumPosts', state.forumPosts);
   return true;
 }
-async function saveDocuments(){ await fsSet('documents', state.documents); }
+async function saveDocuments(){ await saveColl('documents'); }
 /* Pins and drawings are shared arrays. They used to be loaded once and saved by overwriting the whole
    array, so teammates only saw new pins after F5, and a stale tab could erase someone else's pin.
    Now: syncMarks() merges the server copy with this tab's own unsaved changes (by id), and saves
@@ -1811,6 +1816,7 @@ async function saveMarks(key, isPin){
   if(isPin){ state.annotations = merged; annBase = JSON.parse(JSON.stringify(merged)); }
   else { state.drawings = merged; drBase = JSON.parse(JSON.stringify(merged)); }
   await fsSet(key, merged);
+  maybeBackupData(isPin ? 'annotations' : 'drawings');
 }
 async function syncMarks(){
   if(marksBusy || !db || !state.projectId) return false;
@@ -1841,10 +1847,144 @@ function refreshMarksIfOpen(){
   refreshPinsLayer(fid);
   if(typeof refreshDrawLayer==='function') refreshDrawLayer(fid);
 }
+
+/* ---- Shots / sequences / levels / assets / documents: same fix as tasks, pins and the forum.
+   They used to be saved by overwriting the whole shared array from this tab's copy, so a stale tab could
+   erase a teammate's changes. Now a save re-fetches the server copy and applies only THIS tab's own
+   changes on top (new / deleted / edited fields / reordered), measured against collBase. ---- */
+const COLL_KEYS = ['shots','sequences','levels','assets','documents'];
+let collBase = {};
+function mergeColl(server, local, base){
+  const byId = a => { const m = new Map(); (a||[]).forEach(x=>{ if(x && x.id!==undefined) m.set(x.id,x); }); return m; };
+  const S = byId(server), L = byId(local), B = byId(base);
+  const out = new Map(S);
+  L.forEach((lv,id)=>{
+    const bv = B.get(id);
+    if(!bv){ out.set(id, lv); return; }                                 // created in this tab
+    if(JSON.stringify(lv) === JSON.stringify(bv)) return;                // untouched here: server's copy wins
+    const sv = S.get(id); if(!sv) return;                                // deleted elsewhere: don't resurrect
+    const m = Object.assign({}, sv);
+    Object.keys(lv).forEach(k=>{ if(JSON.stringify(lv[k]) !== JSON.stringify(bv[k])) m[k] = lv[k]; });
+    Object.keys(bv).forEach(k=>{ if(!(k in lv)) delete m[k]; });
+    out.set(id, m);
+  });
+  B.forEach((bv,id)=>{ if(!L.has(id)) out.delete(id); });                // deleted in this tab
+  const arr = Array.from(out.values());
+  const baseOrder = (base||[]).map(x=>x.id).filter(id=>L.has(id));
+  const localOrder = (local||[]).map(x=>x.id).filter(id=>B.has(id));
+  if(JSON.stringify(baseOrder) !== JSON.stringify(localOrder)){          // ▲▼ reordering done here
+    const idx = new Map((local||[]).map((x,i)=>[x.id,i]));
+    arr.sort((a,b)=>(idx.has(a.id)?idx.get(a.id):1e9)-(idx.has(b.id)?idx.get(b.id):1e9));
+  }
+  return arr;
+}
+async function saveColl(key){
+  let server = null;
+  for(let i=0;i<3 && !Array.isArray(server);i++){
+    try{ server = await fsGet(key); }catch(e){ server = null; }
+    if(!Array.isArray(server) && i<2) await new Promise(r=>setTimeout(r, 400*(i+1)));
+  }
+  const local = state[key] || [];
+  const base = collBase[key] || [];
+  let merged = local;
+  if(Array.isArray(server)){
+    merged = mergeColl(server, local, base);
+    // keep the objects other code may still hold references to: update them in place
+    const L = new Map(local.map(x=>[x.id,x]));
+    merged = merged.map(m=>{ const lv = L.get(m.id); if(lv && lv!==m){ Object.keys(lv).forEach(k=>delete lv[k]); Object.assign(lv, m); return lv; } return m; });
+  } else if(base.length){ toast('Could not reach the server — your change was not saved. Try again.'); return; }
+  state[key] = merged;
+  collBase[key] = JSON.parse(JSON.stringify(merged));
+  await fsSet(key, merged);
+  maybeBackupData(key);
+}
+
+/* ---- Data backups (Shots & sequences, Levels, Assets, Documents & pins): automatic snapshots, Supervisor
+   restore on the Reports page. One Firestore doc per group, pruned to 30 days and ~700 KB. ---- */
+const DATA_BACKUP_GROUPS = {
+  bk_shots:{label:'Shots & sequences', keys:['sequences','shots']},
+  bk_levels:{label:'Levels', keys:['levels']},
+  bk_assets:{label:'Assets', keys:['assets']},
+  bk_docs:{label:'Documents & pins', keys:['documents','annotations','drawings']}
+};
+const DATA_FS_KEY = {sequences:'sequences', shots:'shots', levels:'levels', assets:'assets', documents:'documents', annotations:'annotations', drawings:'markups'};
+const DATA_BACKUP_MIN_GAP_MS = 15*60*1000, DATA_BACKUP_RETENTION_MS = 30*24*60*60*1000, DATA_BACKUP_MAX_CHARS = 700000;
+let dataBackups = {}, dataBackupsLoaded = false, dataBackupBusy = {};
+function dataGroupFor(key){ return Object.keys(DATA_BACKUP_GROUPS).find(g=>DATA_BACKUP_GROUPS[g].keys.includes(key)); }
+async function loadDataBackups(){
+  if(dataBackupsLoaded || !db || !state.projectId) return;
+  const gs = Object.keys(DATA_BACKUP_GROUPS);
+  const res = await Promise.all(gs.map(g=>fsGet(g)));
+  gs.forEach((g,i)=>{ dataBackups[g] = Array.isArray(res[i]) ? res[i] : []; });
+  dataBackupsLoaded = true;
+}
+async function maybeBackupData(key, force){
+  const g = dataGroupFor(key); if(!g || dataBackupBusy[g]) return;
+  dataBackupBusy[g] = true;
+  try{
+    await loadDataBackups();
+    if(!dataBackupsLoaded) return;
+    const list = dataBackups[g] || [];
+    const last = list[list.length-1];
+    const data = {}; DATA_BACKUP_GROUPS[g].keys.forEach(k=>{ data[k] = JSON.parse(JSON.stringify(state[k]||[])); });
+    if(!force){
+      if(last && (Date.now()-last.ts) < DATA_BACKUP_MIN_GAP_MS) return;
+      if(last && JSON.stringify(last.data) === JSON.stringify(data)) return;
+    }
+    const counts = {}; Object.keys(data).forEach(k=>{ counts[k] = data[k].length; });
+    let next = [...list, { ts: Date.now(), by: state.currentUser||'', counts, data }];
+    const cutoff = Date.now() - DATA_BACKUP_RETENTION_MS;
+    next = next.filter((b,i)=> b.ts>=cutoff || i===next.length-1);
+    while(next.length>1 && JSON.stringify(next).length > DATA_BACKUP_MAX_CHARS) next.shift();
+    dataBackups[g] = next;
+    await fsSet(g, next);
+  }catch(e){ console.error('data backup failed', e); }
+  finally{ dataBackupBusy[g] = false; }
+}
+function dataBackupSummary(g, b){
+  const nm = {sequences:'sequence', shots:'shot', levels:'level', assets:'asset', documents:'document', annotations:'pin', drawings:'drawing'};
+  return DATA_BACKUP_GROUPS[g].keys.map(k=>{ const n=(b.counts||{})[k]||0; return n+' '+nm[k]+(n===1?'':'s'); }).join(', ');
+}
+async function restoreDataBackup(g, ts){
+  if(!isSupervisor()){ toast('Only Supervisors can restore a backup'); return; }
+  const b = (dataBackups[g]||[]).find(x=>x.ts===ts); if(!b) return;
+  if(!(await confirmDialog(`Restore "${DATA_BACKUP_GROUPS[g].label}" to how it was on ${fmtWhen(ts)} (${dataBackupSummary(g,b)})? This replaces what is there now. A backup of the current state is taken first, so you can undo this.`, {confirmLabel:'Restore', danger:true}))) return;
+  await maybeBackupData(DATA_BACKUP_GROUPS[g].keys[0], true);
+  for(const k of DATA_BACKUP_GROUPS[g].keys){
+    state[k] = JSON.parse(JSON.stringify(b.data[k]||[]));
+    if(k==='annotations') annBase = JSON.parse(JSON.stringify(state[k]));
+    else if(k==='drawings') drBase = JSON.parse(JSON.stringify(state[k]));
+    else collBase[k] = JSON.parse(JSON.stringify(state[k]));
+    await fsSet(DATA_FS_KEY[k], state[k]);
+  }
+  toast('Restored from backup');
+  render();
+}
+function dataBackupsSectionHTML(){
+  if(!dataBackupsLoaded){
+    loadDataBackups().then(()=>{ if(state.view==='reports') render(); });
+    return `<div class="card dash-list-card" style="margin-top:14px"><h3>Data backups</h3><div class="faint" style="font-size:12px">Loading…</div></div>`;
+  }
+  const groups = Object.keys(DATA_BACKUP_GROUPS).map(g=>{
+    const list = [...(dataBackups[g]||[])].reverse();
+    return `<details style="margin-bottom:8px"><summary style="cursor:pointer;padding:6px 0;font-weight:600">${esc(DATA_BACKUP_GROUPS[g].label)} <span class="faint" style="font-weight:400;font-size:11px">— ${list.length} backup${list.length===1?'':'s'}</span></summary>
+      ${list.length ? `<div class="manage-list">${list.map(b=>`
+        <div class="dash-task-row">
+          <span>${fmtWhen(b.ts)} <span class="faint" style="font-size:11px">— ${esc(dataBackupSummary(g,b))}${b.by?' · '+esc(b.by):''}</span></span>
+          <button class="btn btn-sm btn-ghost" onclick="restoreDataBackup('${g}',${b.ts})">Restore</button>
+        </div>`).join('')}</div>` : `<div class="faint" style="font-size:12px">None yet — one is captured automatically after the next change.</div>`}
+    </details>`;
+  }).join('');
+  return `<div class="card dash-list-card" style="margin-top:14px">
+    <h3>Data backups</h3>
+    <div class="faint" style="margin:-6px 0 10px">Same safety net as the task list, for Shots &amp; sequences, Levels, Assets, and Documents &amp; pins: a snapshot is kept automatically after changes (at most one every 15 minutes, 30 days). Restoring takes a backup of the current state first.</div>
+    ${groups}
+  </div>`;
+}
 async function saveAnnotations(){ await saveMarks('annotations', true); }
 async function saveDrawings(){ await saveMarks('markups', false); }
-async function saveAssets(){ await fsSet('assets', state.assets); }
-async function saveLevels(){ await fsSet('levels', state.levels); }
+async function saveAssets(){ await saveColl('assets'); }
+async function saveLevels(){ await saveColl('levels'); }
 async function saveMilestones(){ await fsSet('milestones', state.milestones); }
 /* ---- Timeline milestones: key dates (e.g. "WIP Presentation") shown as markers on the Timeline, separate from tasks ---- */
 function openMilestoneDrawer(id){
@@ -3813,8 +3953,8 @@ const SHOT_STAGES = [['layout','Layout'],['animation','Animation'],['lighting','
 // 'Not started / In progress / Review / Done' — map those across when reading.
 const STAGE_LEGACY = {'Not started':'Not Started','In progress':'In Progress','Review':'In Review','Done':'Completed'};
 function stageValue(v){ return STAGE_LEGACY[v] || v || 'Not Started'; }
-async function saveSequences(){ await fsSet('sequences', state.sequences); }
-async function saveShots(){ await fsSet('shots', state.shots); }
+async function saveSequences(){ await saveColl('sequences'); }
+async function saveShots(){ await saveColl('shots'); }
 state.previews = state.previews || {};
 state.previewTsSeen = state.previewTsSeen || {};
 let previewsLoading = false;
@@ -5264,7 +5404,8 @@ function renderReportsView(){
   return `<div class="faint" style="margin-bottom:14px">Visible to Supervisors only. "Needs Revision" is a running count of how many times a task assigned to this person has been sent back for revision — it doesn't reset if the task is later completed, so it reflects quality over time rather than current status. "Completed late" takes MC into account: working days a member spent on MC between a task's start and its completion extend that task's deadline, so time off sick isn't counted against them. "MC days" is each member's total MC working days.</div>
   ${table}
   <div class="dash-2col" style="margin-top:14px"><div>${completedChart}</div><div>${rateChart}</div></div>
-  ${backupsSection}`;
+  ${backupsSection}
+  ${dataBackupsSectionHTML()}`;
 }
 
 /* ============================= PMS SUPPORT (forum: bugs + feature requests) ============================= */
