@@ -637,7 +637,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-01 11:02</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-02 08:21</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -2493,9 +2493,9 @@ function renderNotifBell(){
     </div>
     ${mine.length ? mine.slice(0,40).map(n=>`
       <div class="notif-item ${n.read?'':'unread'}" onclick="openNotification('${n.id}')">
-        <div class="notif-icon">${({tag:'@',newpost:'📣',pin:'📍',review:'👀',status:'🔔',taskpost:'💬',forumcomment:'🗨️',forumreply:'💬',forumstatus:'🔄'})[n.type]||'↩'}</div>
+        <div class="notif-icon">${({tag:'@',newpost:'📣',pin:'📍',pinonmine:'📍',review:'👀',status:'🔔',taskpost:'💬',forumcomment:'🗨️',forumreply:'💬',forumstatus:'🔄'})[n.type]||'↩'}</div>
         <div class="notif-text">
-          <b>${esc(n.fromUser)}</b> ${({tag:'tagged you in',newpost:'posted a new topic:',pin:'tagged you in a pin on:',review:'sent for review:',status:'updated the status of',taskpost:'posted in your task',forumcomment:'commented on the support topic:',forumreply:'replied to your support topic:',forumstatus:'changed the status of your support topic:'})[n.type]||'replied to you in'} <b>${esc(n.taskName)}</b>
+          <b>${esc(n.fromUser)}</b> ${({tag:'tagged you in',newpost:'posted a new topic:',pin:'tagged you in a pin on:',pinonmine:'pinned a comment on your image in',review:'sent for review:',status:'updated the status of',taskpost:'posted in your task',forumcomment:'commented on the support topic:',forumreply:'replied to your support topic:',forumstatus:'changed the status of your support topic:'})[n.type]||'replied to you in'} <b>${esc(n.taskName)}</b>
           <div class="faint">${esc(n.snippet||'')}</div>
           <div class="notif-time">${fmtWhen(n.ts)}</div>
         </div>
@@ -6258,6 +6258,7 @@ async function savePinDraft(){
   state.annotations.push(pin);
   await saveAnnotations();
   await notifyPinMentions(text, pin.driveFileId);
+  await notifyPinOwner(pin.driveFileId, text);
   pinDraft = null;
   state.pinAddMode = false;
   refreshPinsLayer(pin.driveFileId);
@@ -6298,6 +6299,39 @@ async function deletePin(id){
   await saveAnnotations();
   openPinId = null;
   refreshPinsLayer(fileId);
+}
+/* Whoever posted an image (in a task chat, or as a document) is told when someone else drops a pin on it —
+   unless the pin already tagged them, in which case the tag notification covers it. */
+let allChatsCached = false;
+function findFileOwner(fileId){
+  for(const tid of Object.keys(state.chatCache||{})){
+    for(const m of (state.chatCache[tid]||[])){
+      const files = (m.driveFiles && m.driveFiles.length) ? m.driveFiles : (m.driveFile ? [m.driveFile] : []);
+      if(files.some(f=>f.id===fileId)) return { author:m.author, taskId:tid };
+    }
+  }
+  const d = (state.documents||[]).find(x=>x.driveFileId===fileId);
+  if(d && d.uploadedBy) return { author:d.uploadedBy, taskId:d.taskId||null };
+  return null;
+}
+async function ensureAllChatsCached(){
+  if(allChatsCached || !db || !state.projectId) return;
+  try{
+    const snap = await db.collection('projects').doc(state.projectId).collection('chats').get();
+    snap.forEach(doc=>{ if(!state.chatCache[doc.id]){ try{ state.chatCache[doc.id] = JSON.parse(doc.data().value)||[]; }catch(e){} } });
+    allChatsCached = true;
+  }catch(e){ console.error(e); }
+}
+async function notifyPinOwner(fileId, text){
+  try{
+    let owner = findFileOwner(fileId);
+    if(!owner){ await ensureAllChatsCached(); owner = findFileOwner(fileId); }
+    if(!owner || !owner.author || owner.author===state.currentUser) return;
+    if(extractMentions(text).includes(owner.author)) return;   // already notified by the @tag
+    const task = owner.taskId ? state.tasks.find(t=>t.id===owner.taskId) : null;
+    const file = (state.driveFiles||[]).find(x=>x.id===fileId);
+    await addNotification(owner.author, 'pinonmine', task ? task.id : 'pin:'+fileId, task ? task.name : (file ? file.name : 'a file'), state.currentUser, text.slice(0,60));
+  }catch(e){ console.error('pin owner notify failed', e); }
 }
 async function notifyPinMentions(text, fileId){
   const names = extractMentions(text);
