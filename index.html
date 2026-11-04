@@ -292,6 +292,15 @@
   .tl-cal-slider-row input[type=range]{width:100%;display:block;}
   .tl-labels-row.tl-group-label{background:var(--surface2);font-weight:700;font-size:12.5px;padding:0 10px;gap:6px;}
   .tl-labels-row.tl-group-label:hover{background:var(--surface3);}
+  /* timeline horizontal sliders: pinned to the bottom of the visible area, styled like the menu's slim scrollbar */
+  .tl-sticky-sliders{position:sticky;bottom:0;z-index:20;display:flex;align-items:center;gap:0;margin-top:6px;padding:6px 0;background:var(--bg);border-top:1px solid var(--line);}
+  input[type=range].tl-hslider{height:12px;}
+  input[type=range].tl-hslider::-webkit-slider-runnable-track{height:8px;border-radius:4px;background:transparent;}
+  input[type=range].tl-hslider::-webkit-slider-thumb{width:64px;height:8px;margin-top:0;border-radius:4px;background:#4A525E;}
+  input[type=range].tl-hslider:hover::-webkit-slider-thumb{background:#6A7380;}
+  input[type=range].tl-hslider::-moz-range-track{height:8px;border-radius:4px;background:transparent;}
+  input[type=range].tl-hslider::-moz-range-thumb{width:64px;height:8px;border-radius:4px;background:#4A525E;border:none;}
+  input[type=range].tl-hslider:hover::-moz-range-thumb{background:#6A7380;}
   .tl-rowband.tl-groupband{background:var(--surface2);opacity:.7;}
   .tl-rowband{position:absolute;left:0;right:0;height:38px;border-bottom:1px solid var(--line);}
   .tl-today{position:absolute;top:0;border-left:2px solid var(--gold);z-index:3;}
@@ -642,7 +651,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-05 07:30</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-05 07:36</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -5036,11 +5045,11 @@ function renderTimelineView(){
         </div>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:0;margin-top:10px">
+    <div class="tl-sticky-sliders">
       <div style="flex:0 0 ${taskColWidth}px"></div>
-      <div style="flex:0 0 ${OTHER_COLS_VIEWPORT}px"><input type="range" id="tl-cols-slider" min="0" max="100" value="0" oninput="scrollOtherColsFromSlider(this.value)" style="width:100%"></div>
+      <div style="flex:0 0 ${OTHER_COLS_VIEWPORT}px"><input type="range" class="tl-hslider" id="tl-cols-slider" min="0" max="100" value="0" oninput="scrollOtherColsFromSlider(this.value)" style="width:100%"></div>
       <div style="flex:0 0 6px"></div>
-      <input type="range" id="tl-scroll-input" min="0" max="100" value="0" oninput="scrollFromSlider(this.value)" style="flex:1;min-width:0">
+      <input type="range" class="tl-hslider" id="tl-scroll-input" min="0" max="100" value="0" oninput="scrollFromSlider(this.value)" style="flex:1;min-width:0">
     </div>
   `;
 }
