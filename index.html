@@ -639,7 +639,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-04 09:41</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-04 16:19</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -7121,6 +7121,20 @@ function handleImagePick(e){
   renderChatImagePreviews();
   e.target.value = ''; // clear so picking the same file again (after removing it) still fires onchange
 }
+/* Paste a screenshot / copied image straight into the task chat (Ctrl+V) or a Support comment box */
+document.addEventListener('paste', (e)=>{
+  const t = e.target; if(!t || !t.id) return;
+  if(t.id!=='chat-input' && t.id!=='post-comment-input') return;
+  const imgs = Array.from((e.clipboardData && e.clipboardData.items) || [])
+    .filter(it=>it.kind==='file' && /^image\//.test(it.type)).map(it=>it.getAsFile()).filter(Boolean);
+  if(!imgs.length) return;
+  e.preventDefault();
+  const stamp = new Date().toISOString().replace(/[-:T]/g,'').slice(0,14);
+  const files = imgs.map((f,i)=> new File([f], `pasted-${stamp}${imgs.length>1?'-'+(i+1):''}.${(f.type.split('/')[1]||'png').replace('jpeg','jpg')}`, {type:f.type}));
+  if(t.id==='chat-input') handleImagePick({target:{files, value:''}});
+  else handlePostCommentImagePick({target:{files:[files[0]], value:''}});
+  toast(files.length>1 ? `${files.length} images pasted` : 'Image pasted — press Post to send');
+});
 function removePendingImageFile(idx){
   pendingImageFiles.splice(idx,1);
   renderChatImagePreviews();
