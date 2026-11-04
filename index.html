@@ -290,6 +290,9 @@
   .tl-cal-slider-row{position:sticky;left:0;top:0;height:20px;background:var(--surface3);
     border-bottom:1px solid var(--line);z-index:8;display:flex;align-items:center;padding:0;box-sizing:border-box;}
   .tl-cal-slider-row input[type=range]{width:100%;display:block;}
+  .tl-labels-row.tl-group-label{background:var(--surface2);font-weight:700;font-size:12.5px;padding:0 10px;gap:6px;}
+  .tl-labels-row.tl-group-label:hover{background:var(--surface3);}
+  .tl-rowband.tl-groupband{background:var(--surface2);opacity:.7;}
   .tl-rowband{position:absolute;left:0;right:0;height:38px;border-bottom:1px solid var(--line);}
   .tl-today{position:absolute;top:0;border-left:2px solid var(--gold);z-index:3;}
   .tl-bar{position:absolute;top:7px;height:24px;border-radius:5px;cursor:grab;display:flex;
@@ -639,7 +642,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-05 07:26</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-05 07:30</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -4805,6 +4808,8 @@ function renderTimelineView(){
       <input type="range" id="tl-zoom-input" min="8" max="60" step="2" value="${state.timelineZoom||26}" oninput="setZoom(parseInt(this.value))">
     </span>
     <button class="btn btn-sm btn-ghost" onclick="scrollToToday()">Today</button>
+    <button class="btn btn-sm ${state.groupTasksByList?'btn-gold':'btn-ghost'}" onclick="toggleGroupTasksByList()">${state.groupTasksByList?'✓ ':''}Group by task list</button>
+    ${state.groupTasksByList?`<button class="btn btn-sm btn-ghost" onclick="setAllTaskGroupsCollapsed(false)">▾ Expand all</button><button class="btn btn-sm btn-ghost" onclick="setAllTaskGroupsCollapsed(true)">▸ Collapse all</button>`:''}
     <button class="btn btn-sm btn-ghost" onclick="openMilestoneDrawer()">◆ Add milestone</button>
     ${(state.timelineFilters.category||state.timelineFilters.taskList||state.timelineFilters.assignee)?`<button class="btn btn-sm btn-ghost" onclick="resetTimelineFilters()">✕ Reset filters</button>`:''}
     <span class="faint" style="font-size:11.5px">Gold line = today · violet ◆ = milestone · gradient reflects progress · solid red / red arrow = dependency issue · ! = double-booked</span>
@@ -4823,7 +4828,17 @@ function renderTimelineView(){
   const zoom = state.timelineZoom || 26; // px per day
   const width = totalDays * zoom;
   const rowH = 38, milestoneRowH = state.milestones.length ? 24 : 0, headH = 44 + milestoneRowH;
-  const totalH = headH + tasks.length*rowH;
+  // rows: task rows, optionally grouped under collapsible task-list headers (same setting as the Tasks page)
+  const tlRows = [];
+  if(state.groupTasksByList){
+    groupTasksByTaskList(tasks).forEach(g=>{
+      const collapsed = isTaskGroupCollapsed(g.key);
+      const avg = Math.round(g.tasks.reduce((a,t)=>a+(t.pct||0),0)/(g.tasks.length||1));
+      tlRows.push({group:g, collapsed, avg});
+      if(!collapsed) g.tasks.forEach(t=>tlRows.push({task:t}));
+    });
+  } else tasks.forEach(t=>tlRows.push({task:t}));
+  const totalH = headH + tlRows.length*rowH;
 
   // day columns (gridlines, weekend/holiday shading, day numbers, month labels)
   let dayCols = '', weekendBands = '', dayNums = '', monthLabels = '';
@@ -4866,10 +4881,12 @@ function renderTimelineView(){
     </div>`;
   }).join('');
 
-  const rowBands = tasks.map((t,i)=>`<div class="tl-rowband" style="top:${headH+i*rowH}px"></div>`).join('');
+  const rowBands = tlRows.map((r,i)=>`<div class="tl-rowband ${r.group?'tl-groupband':''}" style="top:${headH+i*rowH}px"></div>`).join('');
 
   const barRects = {};
-  const bars = tasks.map((t,i)=>{
+  const bars = tlRows.map((r,i)=>{
+    if(!r.task) return '';
+    const t = r.task;
     const dep = dependencyStatus(t);
     const warn = dep.state==='warn'||dep.state==='unknown';
     const left = Math.max(0, daysBetween(min,t.start))*zoom;
@@ -4949,7 +4966,13 @@ function renderTimelineView(){
   const OTHER_COLS_VIEWPORT = Math.max(200, Math.min(410, state.timelineLabelsWidth - 360));
   const taskColWidth = Math.max(100, state.timelineLabelsWidth - OTHER_COLS_VIEWPORT);
 
-  const labelRows = tasks.map(t=>`
+  const labelRows = tlRows.map(r=>{
+    if(r.group){
+      const g = r.group, n = g.tasks.length;
+      return `<div class="tl-labels-row tl-group-label" onclick="toggleTaskGroupCollapse('${esc(g.key)}')"><span class="task-group-chevron">${r.collapsed?'▸':'▾'}</span><span class="task-group-name">${esc(g.name)}</span><span class="faint" style="font-size:11.5px;margin-left:6px">${n} task${n===1?'':'s'} · ${r.avg}%</span></div>`;
+    }
+    const t = r.task;
+    return `
     <div class="tl-labels-row" onclick="openDrawer('${t.id}')">
       <div class="tl-col-task-fixed" style="flex:0 0 ${taskColWidth}px"><span class="task-id mono">${t.id}</span><span>${esc(t.name)}</span></div>
       <div class="tl-cols-scroll-outer other-cols-scroll">
@@ -4960,7 +4983,8 @@ function renderTimelineView(){
           <span class="tl-col-list">${taskListTag(t.taskList)}</span>
         </div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   const labelsHead = `<div class="tl-labels-row head">
     <div class="tl-col-task-fixed" style="flex:0 0 ${taskColWidth}px">Task</div>
