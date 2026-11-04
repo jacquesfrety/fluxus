@@ -639,7 +639,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-04 16:19</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-05 07:26</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -1120,7 +1120,7 @@ let state = {
   sort: { key: null, dir: "asc" },
   selectedTaskIds: [], // Tasks page bulk-select (tick to move task list / set category / set assignee / delete)
   milestones: [],       // key dates shown on the Timeline (e.g. "WIP Presentation") — no duration, no assignee, just a name + date
-  groupTasksByList: lsGet('tasksGroupByList', false),
+  groupTasksByList: lsGet('tasksGroupByList', true),
   collapsedTaskGroups: lsGet('tasksCollapsedGroups', []),
   annotations: [],
   pinAddMode: false,
@@ -2776,6 +2776,11 @@ function toggleGroupTasksByList(){
   lsSet('tasksGroupByList', state.groupTasksByList);
   render();
 }
+function setAllTaskGroupsCollapsed(collapse){
+  state.collapsedTaskGroups = collapse ? [...state.taskLists, '__none__'] : [];
+  lsSet('tasksCollapsedGroups', state.collapsedTaskGroups);
+  render();
+}
 function isTaskGroupCollapsed(name){
   return state.collapsedTaskGroups.includes(name);
 }
@@ -3129,6 +3134,7 @@ function renderTasksView(){
     <input type="text" id="tasks-search-input" placeholder="Search tasks…" value="${esc(state.filters.search)}"
       oninput="state.filters.search=this.value;render()" style="min-width:180px">
     <button class="btn btn-sm ${state.groupTasksByList?'btn-gold':'btn-ghost'}" onclick="toggleGroupTasksByList()">${state.groupTasksByList?'✓ ':''}Group by task list</button>
+    ${state.groupTasksByList?`<button class="btn btn-sm btn-ghost" onclick="setAllTaskGroupsCollapsed(false)" title="Open every task list">▾ Expand all</button><button class="btn btn-sm btn-ghost" onclick="setAllTaskGroupsCollapsed(true)" title="Close every task list">▸ Collapse all</button>`:''}
     <select onchange="state.filters.category=this.value;render()">
       <option value="">All categories</option>
       ${state.categories.map(c=>`<option value="${esc(c.name)}" ${state.filters.category===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
