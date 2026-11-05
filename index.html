@@ -151,6 +151,16 @@
   .empty-state .display{color:var(--ink-dim);font-size:16px;margin-bottom:6px;}
 
   /* filter bar */
+  .ms-btn{display:inline-flex;align-items:center;gap:6px;justify-content:space-between;background:var(--surface2);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 9px;font-size:12.5px;cursor:pointer;max-width:190px;}
+  .ms-btn.active{border-color:var(--gold);color:var(--gold);}
+  .ms-btn-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .ms-caret{font-size:10px;color:var(--ink-dim);flex:0 0 auto;}
+  .tl-labels-row.head .ms-btn{font-size:10.5px;padding:3px 7px;max-width:100%;text-transform:none;letter-spacing:0;}
+  .ms-panel{display:none;position:fixed;z-index:200;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.45);padding:6px;max-height:60vh;overflow:auto;}
+  .ms-head{display:flex;justify-content:space-between;align-items:center;padding:4px 6px 6px;font-size:11px;}
+  .ms-head a{color:var(--gold);cursor:pointer;}
+  .ms-opt{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:13px;cursor:pointer;color:var(--ink);text-transform:none;letter-spacing:0;font-weight:400;}
+  .ms-opt:hover{background:var(--surface2);}
   .filterbar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;}
   .filterbar select, .filterbar input{padding:6px 8px;font-size:12.5px;}
 
@@ -605,7 +615,7 @@
     .project-header{flex-direction:column;padding:14px;}
     /* tasks table → cards */
     .filterbar input[type=text]{flex:1 1 100%;min-width:0 !important;}
-    .filterbar select{flex:1 1 45%;min-width:0;}
+    .filterbar select,.filterbar .ms-btn{flex:1 1 45%;min-width:0;max-width:none;}
     .ttable,.ttable tbody{display:block;width:100%;}
     .ttable thead{display:none;}
     .ttable tr.taskrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:11px 12px;margin-bottom:10px;
@@ -652,7 +662,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-05 07:39</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-05 09:15</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -1128,8 +1138,8 @@ let state = {
   theme: 'dark',
   timelineScrollFrac: null,
   chatCache: {},
-  filters: { category: "", taskList: "", assignee: "", status: "", search: "", shot: "" },
-  timelineFilters: { category: "", taskList: "", assignee: "" },
+  filters: { category: [], taskList: [], assignee: [], status: [], search: "", shot: "" },
+  timelineFilters: { category: [], taskList: [], assignee: [] },
   sort: { key: null, dir: "asc" },
   selectedTaskIds: [], // Tasks page bulk-select (tick to move task list / set category / set assignee / delete)
   milestones: [],       // key dates shown on the Timeline (e.g. "WIP Presentation") — no duration, no assignee, just a name + date
@@ -2569,7 +2579,7 @@ document.addEventListener('click', (e)=>{
 });
 function setView(v){ closeSidebar(); if(v==='gallery' && state.gallery) state.gallery.loaded = false; state.view = v; state.drawerTaskId=null; lsSet('lastView', v); render(); }
 function filterTasksByStatus(status){
-  state.filters = { category: "", taskList: "", assignee: "", status: status, search: "", shot: "" };
+  state.filters = { category: [], taskList: [], assignee: [], status: status?[status]:[], search: "", shot: "" };
   setView('tasks');
 }
 
@@ -3093,23 +3103,81 @@ async function saveMyProfile(){
   render();
 }
 
+
+/* ---- multi-select filters (Tasks page + Timeline): tick several values at once ---- */
+const MS_SCOPES = { tasks:()=>state.filters, tl:()=>state.timelineFilters };
+const MS_OPTS = {
+  category:()=>state.categories.map(c=>c.name),
+  taskList:()=>state.taskLists.slice(),
+  assignee:()=>state.team.map(m=>m.name),
+  status:()=>STATUSES.slice()
+};
+let msOpenKey = null;
+function msBtn(scope,key,allLabel){
+  const arr = MS_SCOPES[scope]()[key] || [];
+  const text = !arr.length ? allLabel : (arr.length===1 ? arr[0] : arr.length+' selected');
+  return `<button type="button" class="ms-btn ${arr.length?'active':''}" onclick="msOpen(event,'${scope}','${key}')" title="${esc(arr.join(', '))}"><span class="ms-btn-text">${esc(text)}</span><span class="ms-caret">▾</span></button>`;
+}
+function msClose(){
+  msOpenKey = null;
+  const p = document.getElementById('ms-panel'); if(p) p.style.display = 'none';
+}
+function msOpen(ev, scope, key){
+  ev.stopPropagation();
+  const id = scope+':'+key;
+  if(msOpenKey===id){ msClose(); return; }
+  msOpenKey = id;
+  let p = document.getElementById('ms-panel');
+  if(!p){ p = document.createElement('div'); p.id = 'ms-panel'; p.className = 'ms-panel'; p.onclick = e=>e.stopPropagation(); document.body.appendChild(p); }
+  msFillPanel(scope, key);
+  const r = ev.currentTarget.getBoundingClientRect();
+  p.style.display = 'block';
+  p.style.minWidth = Math.max(170, r.width)+'px';
+  const ph = p.offsetHeight;
+  let top = r.bottom + 4;
+  if(top + ph > window.innerHeight - 8) top = Math.max(8, r.top - ph - 4);
+  p.style.top = top+'px';
+  p.style.left = Math.min(r.left, window.innerWidth - p.offsetWidth - 8)+'px';
+}
+function msFillPanel(scope, key){
+  const p = document.getElementById('ms-panel'); if(!p) return;
+  const sel = MS_SCOPES[scope]()[key] || [];
+  const opts = MS_OPTS[key]();
+  p.innerHTML = `<div class="ms-head"><span class="faint">Tick one or more</span><a onclick="msClear('${scope}','${key}')">Clear</a></div>` +
+    opts.map(o=>`<label class="ms-opt"><input type="checkbox" ${sel.includes(o)?'checked':''} onchange="msToggle('${scope}','${key}',this.dataset.v,this.checked)" data-v="${esc(o)}"><span>${esc(o)}</span></label>`).join('');
+}
+function msToggle(scope, key, val, checked){
+  const f = MS_SCOPES[scope]();
+  const arr = (f[key] || []).filter(x=>x!==val);
+  if(checked) arr.push(val);
+  f[key] = arr;
+  render();
+}
+function msClear(scope, key){
+  MS_SCOPES[scope]()[key] = [];
+  render();
+  msFillPanel(scope, key);
+}
+document.addEventListener('click', ()=>{ if(msOpenKey) msClose(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && msOpenKey) msClose(); });
+
 /* ============================= TASKS VIEW ============================= */
 function filteredTasks(){
   const q = (state.filters.search||'').trim().toLowerCase();
   return state.tasks.filter(t=>
-    (!state.filters.category || t.category===state.filters.category) &&
-    (!state.filters.taskList || t.taskList===state.filters.taskList) &&
-    (!state.filters.assignee || (t.assignees||[]).includes(state.filters.assignee)) &&
-    (!state.filters.status || t.status===state.filters.status) &&
+    (!state.filters.category.length || state.filters.category.includes(t.category)) &&
+    (!state.filters.taskList.length || state.filters.taskList.includes(t.taskList)) &&
+    (!state.filters.assignee.length || (t.assignees||[]).some(a=>state.filters.assignee.includes(a))) &&
+    (!state.filters.status.length || state.filters.status.includes(t.status)) &&
     (!state.filters.shot || t.shotId===state.filters.shot) &&
     (!q || (t.name||'').toLowerCase().includes(q) || (t.notes||'').toLowerCase().includes(q))
   );
 }
 function filteredTasksForTimeline(){
   return state.tasks.filter(t=>
-    (!state.timelineFilters.category || t.category===state.timelineFilters.category) &&
-    (!state.timelineFilters.taskList || t.taskList===state.timelineFilters.taskList) &&
-    (!state.timelineFilters.assignee || (t.assignees||[]).includes(state.timelineFilters.assignee))
+    (!state.timelineFilters.category.length || state.timelineFilters.category.includes(t.category)) &&
+    (!state.timelineFilters.taskList.length || state.timelineFilters.taskList.includes(t.taskList)) &&
+    (!state.timelineFilters.assignee.length || (t.assignees||[]).some(a=>state.timelineFilters.assignee.includes(a)))
   );
 }
 function compareTasks(a,b,key,dir){
@@ -3137,7 +3205,7 @@ function sortArrow(key){
   return state.sort.key===key ? (state.sort.dir==='asc' ? ' ▲' : ' ▼') : '';
 }
 function resetTaskFilters(){
-  state.filters = { category: "", taskList: "", assignee: "", status: "", search: "", shot: "" };
+  state.filters = { category: [], taskList: [], assignee: [], status: [], search: "", shot: "" };
   render();
 }
 function renderTasksView(){
@@ -3148,30 +3216,18 @@ function renderTasksView(){
       oninput="state.filters.search=this.value;render()" style="min-width:180px">
     <button class="btn btn-sm ${state.groupTasksByList?'btn-gold':'btn-ghost'}" onclick="toggleGroupTasksByList()">${state.groupTasksByList?'✓ ':''}Group by task list</button>
     ${state.groupTasksByList?`<button class="btn btn-sm btn-ghost" onclick="setAllTaskGroupsCollapsed(false)" title="Open every task list">▾ Expand all</button><button class="btn btn-sm btn-ghost" onclick="setAllTaskGroupsCollapsed(true)" title="Close every task list">▸ Collapse all</button>`:''}
-    <select onchange="state.filters.category=this.value;render()">
-      <option value="">All categories</option>
-      ${state.categories.map(c=>`<option value="${esc(c.name)}" ${state.filters.category===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
-    </select>
-    <select onchange="state.filters.taskList=this.value;render()">
-      <option value="">All task lists</option>
-      ${state.taskLists.map(l=>`<option value="${esc(l)}" ${state.filters.taskList===l?'selected':''}>${esc(l)}</option>`).join('')}
-    </select>
-    <select onchange="state.filters.assignee=this.value;render()">
-      <option value="">All assignees</option>
-      ${state.team.map(m=>`<option value="${esc(m.name)}" ${state.filters.assignee===m.name?'selected':''}>${esc(m.name)}</option>`).join('')}
-    </select>
+    ${msBtn('tasks','category','All categories')}
+    ${msBtn('tasks','taskList','All task lists')}
+    ${msBtn('tasks','assignee','All assignees')}
     ${state.shots.length?`<select onchange="state.filters.shot=this.value;render()">
       <option value="">All shots</option>
       ${state.shots.map(sh=>`<option value="${sh.id}" ${state.filters.shot===sh.id?'selected':''}>${esc(shotLabel(sh))}</option>`).join('')}
     </select>`:''}
-    <select onchange="state.filters.status=this.value;render()">
-      <option value="">All statuses</option>
-      ${STATUSES.map(s=>`<option value="${s}" ${state.filters.status===s?'selected':''}>${s}</option>`).join('')}
-    </select>
-    ${(state.filters.search||state.filters.category||state.filters.taskList||state.filters.assignee||state.filters.status||state.filters.shot)?`<button class="btn btn-ghost btn-sm" onclick="resetTaskFilters()">✕ Reset filters</button>`:''}
+    ${msBtn('tasks','status','All statuses')}
+    ${(state.filters.search||state.filters.category.length||state.filters.taskList.length||state.filters.assignee.length||state.filters.status.length||state.filters.shot)?`<button class="btn btn-ghost btn-sm" onclick="resetTaskFilters()">✕ Reset filters</button>`:''}
     <button class="btn btn-ghost btn-sm desk-only" onclick="openManageCategories()">Manage categories</button>
     <button class="btn btn-ghost btn-sm desk-only" onclick="openManageTaskLists()">Manage task lists</button>
-    <button class="btn btn-ghost btn-sm desk-only" id="export-xlsx-btn" onclick="exportTasksToExcel()" title="${(state.filters.search||state.filters.category||state.filters.taskList||state.filters.assignee||state.filters.status)?'Exports the '+tasks.length+' task(s) matching the current filters':'Exports all '+tasks.length+' task(s)'}">⬇ Export to Excel</button>
+    <button class="btn btn-ghost btn-sm desk-only" id="export-xlsx-btn" onclick="exportTasksToExcel()" title="${(state.filters.search||state.filters.category.length||state.filters.taskList.length||state.filters.assignee.length||state.filters.status.length)?'Exports the '+tasks.length+' task(s) matching the current filters':'Exports all '+tasks.length+' task(s)'}">⬇ Export to Excel</button>
   </div>`;
 
   const selectedCount = state.selectedTaskIds.length;
@@ -4799,7 +4855,7 @@ function showConflictInfo(e, taskId){
   alert(`Double-booking on "${t.name}":\n\n${lines}`);
 }
 function resetTimelineFilters(){
-  state.timelineFilters = { category: "", taskList: "", assignee: "" };
+  state.timelineFilters = { category: [], taskList: [], assignee: [] };
   render();
 }
 function renderTimelineView(){
@@ -4821,7 +4877,7 @@ function renderTimelineView(){
     <button class="btn btn-sm ${state.groupTasksByList?'btn-gold':'btn-ghost'}" onclick="toggleGroupTasksByList()">${state.groupTasksByList?'✓ ':''}Group by task list</button>
     ${state.groupTasksByList?`<button class="btn btn-sm btn-ghost" onclick="setAllTaskGroupsCollapsed(false)">▾ Expand all</button><button class="btn btn-sm btn-ghost" onclick="setAllTaskGroupsCollapsed(true)">▸ Collapse all</button>`:''}
     <button class="btn btn-sm btn-ghost" onclick="openMilestoneDrawer()">◆ Add milestone</button>
-    ${(state.timelineFilters.category||state.timelineFilters.taskList||state.timelineFilters.assignee)?`<button class="btn btn-sm btn-ghost" onclick="resetTimelineFilters()">✕ Reset filters</button>`:''}
+    ${(state.timelineFilters.category.length||state.timelineFilters.taskList.length||state.timelineFilters.assignee.length)?`<button class="btn btn-sm btn-ghost" onclick="resetTimelineFilters()">✕ Reset filters</button>`:''}
     <span class="faint" style="font-size:11.5px">Gold line = today · violet ◆ = milestone · gradient reflects progress · solid red / red arrow = dependency issue · ! = double-booked</span>
   </div>`;
 
@@ -5001,23 +5057,14 @@ function renderTimelineView(){
     <div class="tl-cols-scroll-outer other-cols-scroll">
       <div class="tl-cols-scroll-inner">
         <span class="tl-col-assignee" onclick="event.stopPropagation()">
-          <select class="inline-edit" onchange="state.timelineFilters.assignee=this.value;render()">
-            <option value="">Assignee</option>
-            ${state.team.map(m=>`<option value="${esc(m.name)}" ${state.timelineFilters.assignee===m.name?'selected':''}>${esc(m.name)}</option>`).join('')}
-          </select>
+          ${msBtn('tl','assignee','Assignee')}
         </span>
         <span class="tl-col-estimation">Est.</span>
         <span class="tl-col-category" onclick="event.stopPropagation()">
-          <select class="inline-edit" onchange="state.timelineFilters.category=this.value;render()">
-            <option value="">Category</option>
-            ${state.categories.map(c=>`<option value="${esc(c.name)}" ${state.timelineFilters.category===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
-          </select>
+          ${msBtn('tl','category','Category')}
         </span>
         <span class="tl-col-list" onclick="event.stopPropagation()">
-          <select class="inline-edit" onchange="state.timelineFilters.taskList=this.value;render()">
-            <option value="">Task list</option>
-            ${state.taskLists.map(l=>`<option value="${esc(l)}" ${state.timelineFilters.taskList===l?'selected':''}>${esc(l)}</option>`).join('')}
-          </select>
+          ${msBtn('tl','taskList','Task list')}
         </span>
       </div>
     </div>
