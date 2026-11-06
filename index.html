@@ -662,7 +662,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-05 09:15</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-06 09:01</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -1080,6 +1080,37 @@ function openChatImageLightbox(taskId, msgId, fileId){
   const df = idx>=0 ? group[idx] : group[0];
   if(!df) return;
   openMediaLightbox(df.id, driveThumbLarge(df.thumbnailLink,1600), df.webViewLink||'', group, idx>=0?idx:0);
+}
+/* Download a Drive file straight to the computer without opening it. Google-native files (Docs, Sheets,
+   Slides, Drawings) can't be downloaded as-is, so they are exported (PDF / XLSX / PPTX / PNG). */
+async function driveDownloadFile(card){
+  const id = card && card.dataset.fileId; if(!id) return;
+  const f = (state.driveFiles||[]).find(x=>x.id===id) || {};
+  const name = f.name || card.dataset.fileName || 'file';
+  const mt = f.mimeType || '';
+  let url = `https://www.googleapis.com/drive/v3/files/${id}?alt=media&supportsAllDrives=true`, fname = name;
+  if(mt.startsWith('application/vnd.google-apps.')){
+    const EXPORTS = {
+      'application/vnd.google-apps.document':['application/pdf','.pdf'],
+      'application/vnd.google-apps.spreadsheet':['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','.xlsx'],
+      'application/vnd.google-apps.presentation':['application/vnd.openxmlformats-officedocument.presentationml.presentation','.pptx'],
+      'application/vnd.google-apps.drawing':['image/png','.png']
+    };
+    const ex = EXPORTS[mt];
+    if(!ex){ toast("This Google file type can't be downloaded from here"); return; }
+    url = `https://www.googleapis.com/drive/v3/files/${id}/export?mimeType=${encodeURIComponent(ex[0])}`;
+    if(!fname.toLowerCase().endsWith(ex[1])) fname += ex[1];
+  }
+  toast('Downloading “'+name+'”…', 4000);
+  try{
+    const res = await fetch(url, { headers: driveHeaders() });
+    if(!res.ok) throw new Error('download failed: '+res.status);
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 60000);
+  }catch(err){ console.error(err); toast('Download failed — try reconnecting Google Drive'); }
 }
 async function driveApiRename(fileId, newName){
   const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name`, {
@@ -6593,6 +6624,7 @@ function renderDriveBrowser(){
         <div class="doc-card-body">
           <div class="doc-card-name" title="${esc(f.name)}">${esc(f.name)}</div>
           <div class="doc-card-meta">
+            ${isFolder?'':`<span class="chat-action-link" onclick="event.stopPropagation();driveDownloadFile(this.closest('.doc-card'))">⬇ Download</span>`}
             <span class="chat-action-link" onclick="event.stopPropagation();driveRenamePrompt(this.closest('.doc-card'))">Rename</span>
             <span class="chat-action-link" onclick="event.stopPropagation();driveStartMove(this.closest('.doc-card'))">Move</span>
             <span class="chat-action-link" onclick="event.stopPropagation();driveDeletePrompt(this.closest('.doc-card'))">Delete</span>
