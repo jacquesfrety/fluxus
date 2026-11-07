@@ -710,7 +710,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-07 19:42</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-07 20:09</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -7410,6 +7410,15 @@ function renderTaskLinkedFiles(t){
   return `<div class="field"><label>Files</label>
     ${linked.length ? linked.map(d=>{
       const tColor = DOC_TYPE_COLOR[d.type]||'#6B7280';
+      if(d.type==='Video'){
+        return `<div class="shot-video-row">
+          <div class="shot-video-thumb" onclick="openDocVideo('${d.id}')" title="Review this video">${d.thumbnail?`<img src="${esc(d.thumbnail)}" referrerpolicy="no-referrer">`:'🎬'}<span class="doc-thumb-play">▶</span></div>
+          <div style="min-width:0;flex:1;cursor:pointer" onclick="closeDrawer();openDocDrawer('${d.id}')" title="Open details"><div class="doc-card-name" title="${esc(d.name)}">${esc(d.name)}</div>
+            <div class="faint" style="font-size:11.5px">${esc(d.uploadedBy||'')} · ${fmtWhen(d.ts)}</div></div>
+          <button class="btn btn-sm btn-gold" onclick="openDocVideo('${d.id}')">▶ Review</button>
+          <span class="chat-action-link" onclick="unlinkDocumentFromTask('${d.id}','${t.id}')">Unlink</span>
+        </div>`;
+      }
       return `<div class="dash-task-row">
         <div class="dash-task-main" style="cursor:pointer" onclick="closeDrawer();openDocDrawer('${d.id}')">
           <span class="tagpill" style="background:${tColor}29;color:${tColor};border:1px solid ${tColor}66">${d.type}</span>
