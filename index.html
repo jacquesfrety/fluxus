@@ -710,7 +710,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-07 20:09</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-07 22:08</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -2012,9 +2012,10 @@ const DATA_BACKUP_GROUPS = {
   bk_shots:{label:'Shots & sequences', keys:['sequences','shots']},
   bk_levels:{label:'Levels', keys:['levels']},
   bk_assets:{label:'Assets', keys:['assets']},
-  bk_docs:{label:'Documents & pins', keys:['documents','annotations','drawings']}
+  bk_docs:{label:'Documents & pins', keys:['documents','annotations','drawings']},
+  bk_video:{label:'Video comments', keys:['videoNotes']}
 };
-const DATA_FS_KEY = {sequences:'sequences', shots:'shots', levels:'levels', assets:'assets', documents:'documents', annotations:'annotations', drawings:'markups'};
+const DATA_FS_KEY = {sequences:'sequences', shots:'shots', levels:'levels', assets:'assets', documents:'documents', annotations:'annotations', drawings:'markups', videoNotes:'videoNotes'};
 const DATA_BACKUP_MIN_GAP_MS = 15*60*1000, DATA_BACKUP_RETENTION_MS = 30*24*60*60*1000, DATA_BACKUP_MAX_CHARS = 700000;
 let dataBackups = {}, dataBackupsLoaded = false, dataBackupBusy = {};
 function dataGroupFor(key){ return Object.keys(DATA_BACKUP_GROUPS).find(g=>DATA_BACKUP_GROUPS[g].keys.includes(key)); }
@@ -2033,6 +2034,7 @@ async function maybeBackupData(key, force){
     if(!dataBackupsLoaded) return;
     const list = dataBackups[g] || [];
     const last = list[list.length-1];
+    if(g==='bk_video' && !Array.isArray(state.videoNotes)) return;   // never snapshot an unloaded (empty) list
     const data = {}; DATA_BACKUP_GROUPS[g].keys.forEach(k=>{ data[k] = JSON.parse(JSON.stringify(state[k]||[])); });
     if(!force){
       if(last && (Date.now()-last.ts) < DATA_BACKUP_MIN_GAP_MS) return;
@@ -2049,7 +2051,7 @@ async function maybeBackupData(key, force){
   finally{ dataBackupBusy[g] = false; }
 }
 function dataBackupSummary(g, b){
-  const nm = {sequences:'sequence', shots:'shot', levels:'level', assets:'asset', documents:'document', annotations:'pin', drawings:'drawing'};
+  const nm = {sequences:'sequence', shots:'shot', levels:'level', assets:'asset', documents:'document', annotations:'pin', drawings:'drawing', videoNotes:'video comment'};
   return DATA_BACKUP_GROUPS[g].keys.map(k=>{ const n=(b.counts||{})[k]||0; return n+' '+nm[k]+(n===1?'':'s'); }).join(', ');
 }
 async function restoreDataBackup(g, ts){
@@ -2066,6 +2068,7 @@ async function restoreDataBackup(g, ts){
   }
   toast('Restored from backup');
   render();
+  if(typeof vr!=='undefined' && vr){ vrRenderSide(); vrRenderMarkers(); vrRenderDraw(); }
 }
 function dataBackupsSectionHTML(){
   if(!dataBackupsLoaded){
@@ -2084,7 +2087,7 @@ function dataBackupsSectionHTML(){
   }).join('');
   return `<div class="card dash-list-card" style="margin-top:14px">
     <h3>Data backups</h3>
-    <div class="faint" style="margin:-6px 0 10px">Same safety net as the task list, for Shots &amp; sequences, Levels, Assets, and Documents &amp; pins: a snapshot is kept automatically after changes (at most one every 15 minutes, 30 days). Restoring takes a backup of the current state first.</div>
+    <div class="faint" style="margin:-6px 0 10px">Same safety net as the task list, for Shots &amp; sequences, Levels, Assets, Documents &amp; pins, and Video comments: a snapshot is kept automatically after changes (at most one every 15 minutes, 30 days). Restoring takes a backup of the current state first.</div>
     ${groups}
   </div>`;
 }
