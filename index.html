@@ -169,6 +169,10 @@
   .vr-mark{position:absolute;top:1px;width:4px;height:10px;margin-left:-2px;border-radius:2px;cursor:pointer;}
   .vr-mark{box-shadow:0 0 0 1px rgba(0,0,0,.6);width:5px;margin-left:-2.5px;}
   .vr-mark-draft{background:transparent;border:1.5px dashed #fff;box-shadow:none;}
+  .shot-video-row{display:flex;align-items:center;gap:10px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface2);margin-top:6px;}
+  .shot-video-thumb{position:relative;width:72px;height:42px;border-radius:6px;background:var(--surface3);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 auto;cursor:pointer;font-size:20px;}
+  .shot-video-thumb .doc-thumb-play{width:22px;height:22px;bottom:3px;right:3px;font-size:10px;}
+  .shot-video-thumb img{width:100%;height:100%;object-fit:cover;}
   .vr-btnrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px;}
   .vr-frame{font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--ink);padding:0 8px;}
   .vr-colors{display:inline-flex;gap:5px;align-items:center;}
@@ -706,7 +710,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-07 19:32</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-07 19:42</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -4292,7 +4296,7 @@ function renderShotsView(){
             <div class="shot-meta">
               <div class="row" style="justify-content:space-between;align-items:center">${shotStageDots(s)}${shotStatusPill(s)}</div>
               ${s.description?`<div class="shot-desc">${esc(s.description)}</div>`:''}
-              <div class="faint" style="font-size:11px">${esc(shotFrames(s))}</div>
+              <div class="faint" style="font-size:11px">${esc(shotFrames(s))}${shotVideoDocs(s.id).length?` · 🎬 ${shotVideoDocs(s.id).length}`:''}</div>
             </div>
           </div>`).join('')}</div>`;
       } else {
@@ -4492,6 +4496,35 @@ function shotStagesFieldHtml(s){
       <span class="chat-action-link" onclick="closeDrawer();openDrawer('${t.id}')">open</span></span></div>`;
   }).join('')}</div>`;
 }
+/* videos uploaded to the shot's tasks (Documents of type Video linked to a task of this shot) + the playblast link */
+function shotVideoDocs(shotId){
+  const ids = new Set(shotLinkedTasks(shotId).map(t=>t.id));
+  return state.documents.filter(d=>d.type==='Video' && d.taskId && ids.has(d.taskId)).sort((a,b)=>(b.ts||0)-(a.ts||0));
+}
+function openDocVideo(docId){
+  const d = state.documents.find(x=>x.id===docId); if(!d) return;
+  if(d.driveFileId && state.driveSignedIn){ openVideoReview({ id:d.driveFileId, name:d.name, webViewLink:d.url, mimeType:'video/mp4' }); return; }
+  if(d.driveFileId && !state.driveSignedIn){ toast('Connect Google Drive (Reconnect banner / Documents page) to review the video here — opening it in Drive instead'); }
+  if(d.url) window.open(d.url, '_blank', 'noopener');
+}
+function shotVideosFieldHtml(s){
+  if(!s) return '';
+  const docs = shotVideoDocs(s.id);
+  if(!docs.length && !s.playblast) return '';
+  const rows = docs.map(d=>{
+    const t = state.tasks.find(x=>x.id===d.taskId);
+    const stage = t && t.stageKey ? (SHOT_STAGES.find(([k])=>k===t.stageKey)||[])[1] : '';
+    return `<div class="shot-video-row">
+      <div class="shot-video-thumb" onclick="openDocVideo('${d.id}')">${d.thumbnail?`<img src="${esc(d.thumbnail)}" referrerpolicy="no-referrer">`:'🎬'}<span class="doc-thumb-play">▶</span></div>
+      <div style="min-width:0;flex:1"><div class="doc-card-name" title="${esc(d.name)}">${esc(d.name)}</div>
+        <div class="faint" style="font-size:11.5px">${esc(stage||'Task')}${t?' · '+esc(t.id):''} · ${esc(d.uploadedBy||'')} · ${fmtWhen(d.ts)}</div></div>
+      <button class="btn btn-sm btn-gold" onclick="openDocVideo('${d.id}')">▶ Review</button>
+      ${d.url?`<a class="btn btn-sm btn-ghost" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none">↗</a>`:''}
+    </div>`;
+  }).join('');
+  const pb = s.playblast ? `<div class="shot-video-row"><div class="shot-video-thumb">🎞</div><div style="flex:1"><div class="doc-card-name">Playblast</div></div><a class="btn btn-sm btn-ghost" href="${esc(s.playblast)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none">Open ↗</a></div>` : '';
+  return `<div class="field"><label>Videos <span class="faint" style="text-transform:none;font-weight:400">— uploaded to this shot's tasks</span></label>${rows}${pb}</div>`;
+}
 function renderShotDrawerContent(id, seqIdDefault){
   const s = id ? state.shots.find(x=>x.id===id) : null;
   const seqId = s ? s.seqId : (seqIdDefault || (state.sequences[0] && state.sequences[0].id));
@@ -4508,6 +4541,7 @@ function renderShotDrawerContent(id, seqIdDefault){
         <div class="field"><label>Shot code</label><input id="shot-code" value="${esc(s?s.code:shotPrefix(seqId))}" placeholder="e.g. SQ001_SH010"></div>
       </div>
       <div class="field"><label>Description</label><textarea id="shot-desc" rows="2" placeholder="What happens in this shot">${esc(s?.description||'')}</textarea></div>
+      ${shotVideosFieldHtml(s)}
       <div class="field-row">
         <div class="field"><label>Number of frames</label><input id="shot-frames" type="number" min="0" step="1" value="${s&&shotFrameCount(s)?shotFrameCount(s):''}" oninput="shotFramesInput()" placeholder="e.g. 48"></div>
         <div class="field"><label>Seconds <span class="faint" style="text-transform:none;font-weight:400">(at ${projectFps()} fps)</span></label><input id="shot-seconds" type="number" min="0" step="0.01" value="${s&&shotFrameCount(s)?(shotFrameCount(s)/projectFps()).toFixed(2):''}" oninput="shotSecondsInput()" placeholder="e.g. 2"></div>
@@ -6112,8 +6146,7 @@ function vrBuildPlayer(){
       <input type="range" id="vr-range" min="0" max="1" step="1" value="0" oninput="vrSeekFrame(parseInt(this.value))"></div>
     <div class="vr-btnrow">
       <button class="btn btn-sm btn-ghost" onclick="vrStop()" title="Stop (back to first frame)">■ Stop</button>
-      <button class="btn btn-sm btn-ghost" onclick="vrPause()" title="Pause (Space)">⏸ Pause</button>
-      <button class="btn btn-sm btn-gold" onclick="vrPlay()" title="Play (Space)">▶ Play</button>
+      <button class="btn btn-sm btn-gold" id="vr-playbtn" style="min-width:84px" onclick="vrTogglePlay()" title="Play / Pause (Space)">▶ Play</button>
       <button class="btn btn-sm btn-ghost" onclick="vrStep(-1)" title="Previous frame (←)">‹ 1f</button>
       <button class="btn btn-sm btn-ghost" onclick="vrStep(1)" title="Next frame (→)">1f ›</button>
       <span class="vr-frame" id="vr-frame">Frame 0 / 0</span>
@@ -6131,8 +6164,8 @@ function vrBuildPlayer(){
     vrUpdateUI(); vrRenderMarkers();
   });
   ['seeked','timeupdate','pause','ended'].forEach(ev=>v.addEventListener(ev, ()=>vrUpdateUI()));
-  v.addEventListener('play', ()=>{ vr.playing = true; vrRenderDraw(); vrLoop(); });
-  v.addEventListener('pause', ()=>{ vr.playing = false; vrRenderDraw(); });
+  v.addEventListener('play', ()=>{ vr.playing = true; vrSyncPlayBtn(); vrRenderDraw(); vrLoop(); });
+  v.addEventListener('pause', ()=>{ vr.playing = false; vrSyncPlayBtn(); vrRenderDraw(); });
   wireVrDraw();
   vrSetColor(vr.color);
   vrUpdateUI();
@@ -6150,6 +6183,8 @@ function vrUpdateUI(){
   const rg = document.getElementById('vr-range'); if(rg && document.activeElement!==rg) rg.value = fr;
   if(changed){ vrRenderDraw(); vrUpdateComposerLabel(); if(!vr.playing) vrHighlightNotes(); }
 }
+function vrTogglePlay(){ if(vr && vr.video){ vr.video.paused ? vrPlay() : vrPause(); } }
+function vrSyncPlayBtn(){ const b = document.getElementById('vr-playbtn'); if(b && vr && vr.video) b.textContent = vr.video.paused ? '▶ Play' : '⏸ Pause'; }
 function vrPlay(){ if(vr && vr.video){ if(vr.video.ended || vr.frame>=vr.total) vr.video.currentTime = 0; vr.video.play(); } }
 function vrPause(){ if(vr && vr.video) vr.video.pause(); }
 function vrStop(){ if(vr && vr.video){ vr.video.pause(); vr.video.currentTime = 0.5/vr.fps; vrUpdateUI(); } }
