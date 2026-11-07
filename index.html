@@ -167,6 +167,8 @@
   .vr-scrub input[type=range]{width:100%;display:block;margin:0;}
   .vr-markers{position:absolute;left:7px;right:7px;top:0;height:12px;}
   .vr-mark{position:absolute;top:1px;width:4px;height:10px;margin-left:-2px;border-radius:2px;cursor:pointer;}
+  .vr-mark{box-shadow:0 0 0 1px rgba(0,0,0,.6);width:5px;margin-left:-2.5px;}
+  .vr-mark-draft{background:transparent;border:1.5px dashed #fff;box-shadow:none;}
   .vr-btnrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px;}
   .vr-frame{font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--ink);padding:0 8px;}
   .vr-colors{display:inline-flex;gap:5px;align-items:center;}
@@ -704,7 +706,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-07 19:11</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-07 19:32</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -6146,7 +6148,7 @@ function vrUpdateUI(){
   vr.frame = fr;
   const el = document.getElementById('vr-frame'); if(el) el.textContent = `Frame ${fr} / ${vr.total} · ${vrTimecode(fr)}`;
   const rg = document.getElementById('vr-range'); if(rg && document.activeElement!==rg) rg.value = fr;
-  if(changed){ vrRenderDraw(); vrUpdateComposerLabel(); }
+  if(changed){ vrRenderDraw(); vrUpdateComposerLabel(); if(!vr.playing) vrHighlightNotes(); }
 }
 function vrPlay(){ if(vr && vr.video){ if(vr.video.ended || vr.frame>=vr.total) vr.video.currentTime = 0; vr.video.play(); } }
 function vrPause(){ if(vr && vr.video) vr.video.pause(); }
@@ -6155,6 +6157,7 @@ function vrSeekFrame(f){
   if(!vr || !vr.video) return;
   vr.video.pause();
   f = Math.max(0, Math.min(vr.total, f));
+  const rg = document.getElementById('vr-range'); if(rg && document.activeElement!==rg) rg.value = f;
   vr.video.currentTime = (f+0.5)/vr.fps;
 }
 function vrStep(d){ if(vr && vr.video){ vr.video.pause(); vrSeekFrame(vrFrameNow()+d); } }
@@ -6169,8 +6172,8 @@ function vrSetColor(c){
   if(!vr) return; vr.color = c;
   document.querySelectorAll('#vr-colors .vr-color').forEach(i=>i.classList.toggle('sel', i.dataset.c===c));
 }
-function vrUndoStroke(){ if(vr && vr.draft.strokes.length){ vr.draft.strokes.pop(); if(!vr.draft.strokes.length) vr.draft.frame = null; vrRenderDraw(); vrUpdateComposerLabel(); } }
-function vrClearDraft(){ if(vr){ vr.draft = { frame:null, strokes:[] }; vrRenderDraw(); vrUpdateComposerLabel(); } }
+function vrUndoStroke(){ if(vr && vr.draft.strokes.length){ vr.draft.strokes.pop(); if(!vr.draft.strokes.length) vr.draft.frame = null; vrRenderDraw(); vrUpdateComposerLabel(); vrRenderMarkers(); } }
+function vrClearDraft(){ if(vr){ vr.draft = { frame:null, strokes:[] }; vrRenderDraw(); vrUpdateComposerLabel(); vrRenderMarkers(); } }
 function vrStrokeSvg(st){
   if(!st.p || !st.p.length) return '';
   const d = st.p.map((q,i)=>(i?'L':'M')+q[0].toFixed(4)+' '+q[1].toFixed(4)).join(' ');
@@ -6199,7 +6202,7 @@ function wireVrDraw(){
     vrRenderDraw();
   });
   svg.addEventListener('pointermove', e=>{ if(vr && vr.drawing){ vr.drawing.p.push(pt(e)); vrRenderDraw(); } });
-  const end = ()=>{ if(vr && vr.drawing){ vr.drawing = null; vrUpdateComposerLabel(); } };
+  const end = ()=>{ if(vr && vr.drawing){ vr.drawing = null; vrUpdateComposerLabel(); vrRenderMarkers(); } };
   svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', end);
 }
 function vrRenderMarkers(){
@@ -6212,7 +6215,9 @@ function vrRenderMarkers(){
     if(n.strokes && n.strokes.length) o.d = true;
     if(!n.text && !(n.strokes&&n.strokes.length)) o.c = true;
   });
-  el.innerHTML = Object.keys(by).map(f=>{
+  const draftMark = (vr.draft.strokes.length && vr.draft.frame!=null)
+    ? `<i class="vr-mark vr-mark-draft" style="left:${(vr.draft.frame/vr.total*100).toFixed(3)}%" title="Unsent drawing — frame ${vr.draft.frame}" onclick="vrSeekFrame(${vr.draft.frame})"></i>` : '';
+  el.innerHTML = draftMark + Object.keys(by).map(f=>{
     const o = by[f], col = (o.c&&o.d) ? '#B08BE0' : o.d ? '#46C2B8' : 'var(--gold)';
     return `<i class="vr-mark" style="left:${(f/vr.total*100).toFixed(3)}%;background:${col}" title="Frame ${f}" onclick="vrSeekFrame(${f})"></i>`;
   }).join('');
@@ -6265,7 +6270,7 @@ function vrRenderList(){
     const fr = vrNoteFrame(n);
     const canDel = n.author===state.currentUser || isSupervisor();
     const reps = (n.replies||[]).map(r=>`<div class="vr-reply"><b>${esc(r.author)}</b> <span class="faint">${fmtWhen(r.ts)}</span><div>${renderMentionText(r.text)}</div></div>`).join('');
-    return `<div class="vr-note ${n.resolved?'resolved':''} ${fr===vr.frame?'cur':''}">
+    return `<div class="vr-note ${n.resolved?'resolved':''} ${fr===vr.frame?'cur':''}" ${fr!=null?`onclick="vrNoteClick(event,${fr})" style="cursor:pointer" title="Click to go to frame ${fr}"`:''}>
       <div class="vr-note-head">${avatarForName(n.author,20)}<b>${esc(n.author)}</b>
         <span class="vr-chip" ${fr!=null?`onclick="vrSeekFrame(${fr})" title="Go to this frame"`:''}>${fr!=null?'Frame '+fr:'Overall'}</span>
         ${n.strokes&&n.strokes.length?`<span class="vr-chip" onclick="vrSeekFrame(${fr})" title="Has a drawing">✏</span>`:''}
@@ -6279,6 +6284,16 @@ function vrRenderList(){
       ${vr.replyOpen===n.id?`<div class="vr-replybox"><textarea id="vr-reply-${n.id}" rows="2" placeholder="Reply…"></textarea><button class="btn btn-sm btn-gold" onclick="vrSendReply('${n.id}')">Send</button></div>`:''}
     </div>`;
   }).join('');
+}
+function vrHighlightNotes(){
+  document.querySelectorAll('#vr-list .vr-note').forEach(el=>{
+    const m = /frame (\d+)/.exec(el.getAttribute('title')||'');
+    el.classList.toggle('cur', !!m && +m[1]===vr.frame);
+  });
+}
+function vrNoteClick(ev, fr){
+  if(ev.target.closest('.chat-action-link, textarea, button, a, .vr-replybox')) return;   // actions keep their own behaviour
+  vrSeekFrame(fr);
 }
 function vrToggleReply(id){ vr.replyOpen = vr.replyOpen===id ? null : id; vrRenderList(); if(vr.replyOpen){ const t = document.getElementById('vr-reply-'+id); if(t) t.focus(); } }
 async function vrSaveNotes(){ await saveColl('videoNotes'); vrRenderMarkers(); vrRenderList(); vrRenderDraw(); }
@@ -6299,6 +6314,7 @@ async function vrPost(){
     await saveColl('videoNotes');
     const inp2 = document.getElementById('vr-input'); if(inp2) inp2.value = '';
     vr.draft = { frame:null, strokes:[] };
+    vr.mode = 'frame';   // next comment is on the current frame again (not silently "Overall")
     if(text){ await notifyPinMentions(text, vr.file.id); }
     await notifyPinOwner(vr.file.id, text || '(drawing)', 'videoonmine');
     vrRenderMarkers(); vrRenderList(); vrRenderDraw(); vrUpdateComposerLabel();
