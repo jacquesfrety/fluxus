@@ -710,7 +710,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-07 22:08</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-08 18:59</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -1324,7 +1324,10 @@ async function loadAll(){
       const m = /^T(\d+)$/.exec(t.id||''); return m ? Math.max(max, parseInt(m[1],10)) : max;
     }, 0);
     state.taskIdSeq = Math.max(taskIdSeq||0, maxExistingTaskNum);
-    state.project = Object.assign({title:"Untitled Project", icon:"", type:"Students", period:"", notes:"", nonWorkingDays:[], driveUrl:""}, project||{});
+    // a project created before its settings were ever saved has no 'project' doc: use the name typed at creation
+    let titleFallback = "Untitled Project";
+    if(!project){ try{ const ps = await db.collection('projects').doc(state.projectId).get(); if(ps.exists && ps.data().name) titleFallback = ps.data().name; }catch(e){} }
+    state.project = Object.assign({title:titleFallback, icon:"", type:"Students", period:"", notes:"", nonWorkingDays:[], driveUrl:""}, project||{});
     state.notifications = notifications || [];
     state.forumPosts = forumPosts || [];
     lastSavedForumSnapshot = JSON.parse(JSON.stringify(state.forumPosts));
@@ -8091,7 +8094,18 @@ async function listProjects(){
     return out;
   }catch(e){ console.error(e); return []; }
 }
-async function createProject(name, seedExample){
+const DEFAULT_CATEGORIES = {
+  VR: ['Concept & Design','Modeling','Surfacing / Texturing','Rigging','Animation','Level Design','Lighting & Baking','Scripting / Gameplay','Interaction & UI','Audio','Optimization & Performance','Testing & QA','Build & Deploy'],
+  Animation: ['Concept & Design','Storyboard','Modeling','Surfacing / Texturing','Rigging','Layout','Animation','FX','Lighting','Rendering','Compositing','Sound & Music','Editing & Delivery']
+};
+function defaultCategoriesFor(prod){
+  const names = DEFAULT_CATEGORIES[prod] || DEFAULT_CATEGORIES.VR;
+  // keep the shot-stage colours so Layout/Animation/Lighting/Render match the auto-created stage categories
+  const stageColor = {Layout:STAGE_CAT_COLORS.layout, Animation:STAGE_CAT_COLORS.animation, Lighting:STAGE_CAT_COLORS.lighting, Rendering:STAGE_CAT_COLORS.render};
+  return names.map((n,i)=>({name:n, color:(prod==='Animation' && stageColor[n]) || TAG_PALETTE[i % TAG_PALETTE.length]}));
+}
+async function createProject(name, seedExample, production){
+  production = production === 'Animation' ? 'Animation' : 'VR';
   const ref = db.collection('projects').doc();
   await ref.set({name, createdAt: Date.now(), memberEmails: []});
   state.projectId = ref.id;
@@ -8099,6 +8113,19 @@ async function createProject(name, seedExample){
   if(seedExample){
     seedData();
     await Promise.all([saveTeam(), saveCategories(), saveTaskListGroups(), saveTasks()]);
+  }
+  state.project = {title:name, icon:"", type:"Students", period:"", notes:"", nonWorkingDays:[], driveUrl:"", production};
+  await fsSet('project', state.project);
+  if(!seedExample){
+    state.categories = defaultCategoriesFor(production);
+    await saveCategories();
+  }
+  if(!seedExample && authUser && authUser.email){
+    // an empty project would otherwise have no team and the creator would run as the generic "Administrator":
+    // add the creator as the first Supervisor (name/photo from their Google account, editable on the Team page)
+    state.team = [{ id: uid('u'), name: authUser.displayName || authUser.email.split('@')[0], role: 'Supervisor',
+                    email: authUser.email, phone: '', notes: '', avatar: authUser.photoURL || '' }];
+    await saveTeam();
   }
   return ref.id;
 }
@@ -8192,6 +8219,8 @@ async function showPicker(){
   const dbWarning = db ? '' : `<div class="warn-box">Not connected to the database — check your internet connection and reload.</div>`;
   const createSection = canCreate ? `
       <div class="field" style="margin-top:16px"><label>New project name</label><input id="picker-new-name" placeholder="e.g. 141 Neil Road"></div>
+      <div class="field"><label>Production type <span class="faint" style="text-transform:none;font-weight:400">— sets the default task categories</span></label>
+        <select id="picker-prod"><option value="VR">VR</option><option value="Animation">Animation</option></select></div>
       <label class="row" style="gap:7px;font-size:12.5px;color:var(--ink-dim);margin-bottom:12px">
         <input type="checkbox" id="picker-seed-example"> Start with example data (categories, sample tasks)
       </label>
@@ -8225,7 +8254,7 @@ async function createProjectFromPicker(){
   const name = document.getElementById('picker-new-name').value.trim();
   if(!name){ toast('Name is required'); return; }
   const seed = document.getElementById('picker-seed-example').checked;
-  await createProject(name, seed);
+  await createProject(name, seed, document.getElementById('picker-prod').value);
   await enterApp();
 }
 
