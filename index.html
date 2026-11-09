@@ -552,6 +552,10 @@
   .help-sec{border:1px solid var(--line);border-radius:8px;margin-bottom:8px;background:var(--surface2);}
   .help-sec summary{cursor:pointer;padding:10px 12px;font-weight:600;font-size:13.5px;}
   .help-body{padding:0 14px 10px;font-size:13px;line-height:1.55;color:var(--ink-dim);}
+  .help-admin-head{margin:16px 0 8px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#D9A441;font-weight:700;}
+  .help-sec.help-admin{border-color:#D9A441;background:rgba(217,164,65,.08);}
+  .help-sec.help-admin summary{color:#D9A441;}
+  .help-body ol{margin:4px 0;padding-left:20px;}
   .help-body ul{margin:4px 0;padding-left:18px;} .help-body p{margin:6px 0;} .help-body b{color:var(--ink);}
   .notif-btn:hover{color:var(--ink);border-color:var(--ink-faint);}
   .notif-badge{position:absolute;top:-5px;right:-5px;background:var(--red);color:#fff;font-size:10px;
@@ -714,7 +718,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-09 10:35</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-09 10:41</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -3420,7 +3424,19 @@ function renderTasksView(){
 const HELP_SECTIONS = [
  ['Getting started', `<p><b>Signing in.</b> Sign in with the Google account you gave to your administrator — it must be the same one, because it is how Fluxus recognises you. You see only the projects you were added to.</p>
   <p><b>Roles.</b> <b>Supervisors</b> see everything, including Reports. <b>Students</b> see the project pages and edit their own work. Your role comes from the Team page, matched on your email address.</p>
-  <p><b>Phone and tablet.</b> On a small screen the sidebar becomes a menu and a bottom tab bar appears. To install Fluxus as an app, open the page in your browser and choose “Add to Home Screen”.</p>`],
+`],
+ ['Install Fluxus on your phone', `<p>Fluxus can be installed on your home screen so it opens like an app, full screen. On a small screen the sidebar becomes a menu and a bottom tab bar appears. You do not download anything from a store.</p>
+  <p><b>Android (Chrome)</b></p>
+  <ol><li>Open the Fluxus link in <b>Chrome</b> and sign in.</li>
+  <li>Tap the <b>three-dot menu</b> (top right).</li>
+  <li>Tap <b>Install app</b> (or <b>Add to Home screen</b>), then <b>Install</b>.</li>
+  <li>Open Fluxus from the new icon on your home screen.</li></ol>
+  <p><b>iPhone / iPad (Safari)</b></p>
+  <ol><li>Open the Fluxus link in <b>Safari</b> (this works best in Safari) and sign in.</li>
+  <li>Tap the <b>Share</b> button (square with an arrow).</li>
+  <li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.</li>
+  <li>Open Fluxus from the new icon on your home screen.</li></ol>
+  <p class="faint">Updates arrive automatically: just open the app again. If Google Drive is disconnected, tap <b>Reconnect</b> in the yellow banner.</p>`],
  ['The pages', `<ul>
   <li><b>Dashboard</b> — where things stand: progress, what is late, what is due soon.</li>
   <li><b>Tasks</b> — the full task list, grouped by task list and filterable. Click a task to open it.</li>
@@ -3463,6 +3479,40 @@ const HELP_SECTIONS = [
   <li>If something is deleted by mistake, tell your supervisor: they can restore an earlier copy.</li>
   <li>While you type, or have a drawer open, background refreshes are paused.</li></ul>`]
 ];
+const HELP_ADMIN_SECTIONS = [
+ ['Publishing a new version', `<p>Fluxus is one HTML file on GitHub Pages. Project data lives in Firestore, so replacing the file never erases data.</p>
+  <ol><li>Download the new <b>tracker.html</b>.</li><li><b>Rename it to index.html</b>.</li>
+  <li>GitHub repository → <i>Add file → Upload files</i> → drop <b>index.html</b> → <i>Commit changes</i> (main branch).</li>
+  <li>Wait about 1 minute, then hard refresh (Ctrl+Shift+R / Cmd+Shift+R).</li>
+  <li>Check the date/time next to “Fluxus” in the sidebar to confirm the new version is live.</li></ol>
+  <p>The PWA files (<b>manifest.webmanifest, sw.js, icon-192.png, icon-512.png, apple-touch-icon.png</b>) must sit beside index.html. Keep a copy of the previous index.html for rollback (or use the file History on GitHub).</p>`],
+ ['Creating a project', `<ul><li>Only owner accounts (nyp@frety.name, nyp.frety@gmail.com) can create projects.</li>
+  <li>On the project picker: name, <b>Production type</b> (VR or Animation), <i>Create project</i>. The type sets the default categories and hides pages that do not apply.</li>
+  <li>“Start with example data” creates sample tasks and categories instead — use it only to experiment.</li>
+  <li>You are added to the Team page as <b>Supervisor</b>.</li>
+  <li>Then open <b>Project settings</b> (click the project name): icon, period, notes, non-working days, headset / frame rate, and the <b>Team drive folder</b> link.</li></ul>`],
+ ['Adding people', `<p>A person gets access when their <b>Google account email</b> is on the project’s Team page. There is no invitation or password.</p>
+  <ul><li>Ask for the exact email of the Google account they will use.</li>
+  <li>Team → add a member: name, role (Supervisor or student), <b>email</b>. Saving updates the access list automatically.</li>
+  <li>They open the Fluxus link and sign in with Google using <b>that same account</b>.</li>
+  <li>To remove someone, delete them from the Team page (their Drive access is separate).</li>
+  <li><b>“Not a member” / no project shown:</b> the email is missing or has a typo on the Team page.</li></ul>`],
+ ['Google Drive: folder and permissions', `<ul><li>Create one Drive folder per project. Copy its link.</li>
+  <li><b>Project settings → Team drive folder</b> → paste the link → Save.</li>
+  <li>In Google Drive: right-click the folder → <i>Share</i> → add each person’s Google email. <b>Editor</b> for people who upload, <b>Viewer</b> for read-only.</li>
+  <li>Removing someone from the Team page does not remove them from the Drive folder — remove them there too.</li>
+  <li>Each person connects Drive once (Google pop-up). If it expires, the yellow banner shows <b>Reconnect</b>.</li>
+  <li>A “Google hasn’t verified this app” screen is expected: <i>Advanced → Go to … (unsafe)</i>.</li></ul>`],
+ ['Consoles and other things to remember', `<ul><li><b>Google Cloud → OAuth consent screen:</b> if the status is “Testing”, only listed <b>test users</b> can connect Drive (and it expires after 7 days). Add people as test users, or publish the app.</li>
+  <li><b>Firebase → Authentication → Authorized domains:</b> your GitHub Pages domain must be listed, or sign-in fails (also after moving or renaming the site).</li>
+  <li><b>Firestore usage:</b> the free plan has daily limits; the 20-second refresh adds reads steadily.</li>
+  <li><b>Backups:</b> automatic, 30 days. <i>Reports → Data backups</i> → Restore (snapshots the current state first).</li>
+  <li><b>More owner accounts:</b> the owner emails are inside the file (OWNER_EMAILS) — ask Claude to change them.</li></ul>`],
+ ['Quick troubleshooting', `<ul><li><b>New version not showing:</b> still deploying, or cache — hard refresh; check the version stamp.</li>
+  <li><b>404 page:</b> the file is not named exactly index.html, or not on the main branch.</li>
+  <li><b>Sign-in fails / pop-up closes:</b> pop-ups blocked, or domain missing in Firebase authorized domains.</li>
+  <li><b>Drive banner keeps coming back / files do not load for one person:</b> folder not shared with that account, or OAuth “Testing” mode without that person as test user.</li></ul>`]
+];
 function openHelp(){
   document.getElementById('overlay').classList.add('open');
   const drawer = document.getElementById('drawer');
@@ -3474,7 +3524,8 @@ function openHelp(){
     </div>
     <div class="drawer-body">
       <input id="help-search" placeholder="Search help…" oninput="filterHelp(this.value)" style="width:100%;margin-bottom:10px">
-      <div id="help-list">${HELP_SECTIONS.map((s,i)=>`<details class="help-sec" ${i===0?'open':''}><summary>${s[0]}</summary><div class="help-body">${s[1]}</div></details>`).join('')}</div>
+      <div id="help-list">${HELP_SECTIONS.map((s,i)=>`<details class="help-sec" ${i===0?'open':''}><summary>${s[0]}</summary><div class="help-body">${s[1]}</div></details>`).join('')}
+      ${isAdmin() ? `<div class="help-admin-head">🔒 Administrator only — not visible to other users</div>` + HELP_ADMIN_SECTIONS.map(s=>`<details class="help-sec help-admin"><summary>${s[0]}</summary><div class="help-body">${s[1]}</div></details>`).join('') : ''}</div>
       <div id="help-none" class="faint" style="display:none;padding:10px 0">No section matches.</div>
     </div>`;
 }
