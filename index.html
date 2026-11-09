@@ -718,7 +718,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-09 10:41</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-09 10:46</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -3483,8 +3483,9 @@ const HELP_ADMIN_SECTIONS = [
  ['Publishing a new version', `<p>Fluxus is one HTML file on GitHub Pages. Project data lives in Firestore, so replacing the file never erases data.</p>
   <ol><li>Download the new <b>tracker.html</b>.</li><li><b>Rename it to index.html</b>.</li>
   <li>GitHub repository → <i>Add file → Upload files</i> → drop <b>index.html</b> → <i>Commit changes</i> (main branch).</li>
-  <li>Wait about 1 minute, then hard refresh (Ctrl+Shift+R / Cmd+Shift+R).</li>
-  <li>Check the date/time next to “Fluxus” in the sidebar to confirm the new version is live.</li></ol>
+  <li>Wait about 1 minute for GitHub Pages to deploy.</li>
+  <li><b>Press Ctrl+F5</b> (Cmd+Shift+R on a Mac) to be sure your browser loads the latest version and not an old cached copy.</li>
+  <li>Check the date and time next to “Fluxus” in the left column: it must match the new file. If not, press Ctrl+F5 again or wait a little longer.</li></ol>
   <p>The PWA files (<b>manifest.webmanifest, sw.js, icon-192.png, icon-512.png, apple-touch-icon.png</b>) must sit beside index.html. Keep a copy of the previous index.html for rollback (or use the file History on GitHub).</p>`],
  ['Creating a project', `<ul><li>Only owner accounts (nyp@frety.name, nyp.frety@gmail.com) can create projects.</li>
   <li>On the project picker: name, <b>Production type</b> (VR or Animation), <i>Create project</i>. The type sets the default categories and hides pages that do not apply.</li>
@@ -3508,7 +3509,7 @@ const HELP_ADMIN_SECTIONS = [
   <li><b>Firestore usage:</b> the free plan has daily limits; the 20-second refresh adds reads steadily.</li>
   <li><b>Backups:</b> automatic, 30 days. <i>Reports → Data backups</i> → Restore (snapshots the current state first).</li>
   <li><b>More owner accounts:</b> the owner emails are inside the file (OWNER_EMAILS) — ask Claude to change them.</li></ul>`],
- ['Quick troubleshooting', `<ul><li><b>New version not showing:</b> still deploying, or cache — hard refresh; check the version stamp.</li>
+ ['Quick troubleshooting', `<ul><li><b>New version not showing:</b> still deploying, or cache — press Ctrl+F5; check the version date in the left column.</li>
   <li><b>404 page:</b> the file is not named exactly index.html, or not on the main branch.</li>
   <li><b>Sign-in fails / pop-up closes:</b> pop-ups blocked, or domain missing in Firebase authorized domains.</li>
   <li><b>Drive banner keeps coming back / files do not load for one person:</b> folder not shared with that account, or OAuth “Testing” mode without that person as test user.</li></ul>`]
