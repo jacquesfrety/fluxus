@@ -549,6 +549,10 @@
   .notif-btn{position:relative;background:var(--surface2);border:1px solid var(--line);border-radius:8px;
     width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:15px;
     color:var(--ink-dim);flex:0 0 auto;}
+  .help-sec{border:1px solid var(--line);border-radius:8px;margin-bottom:8px;background:var(--surface2);}
+  .help-sec summary{cursor:pointer;padding:10px 12px;font-weight:600;font-size:13.5px;}
+  .help-body{padding:0 14px 10px;font-size:13px;line-height:1.55;color:var(--ink-dim);}
+  .help-body ul{margin:4px 0;padding-left:18px;} .help-body p{margin:6px 0;} .help-body b{color:var(--ink);}
   .notif-btn:hover{color:var(--ink);border-color:var(--ink-faint);}
   .notif-badge{position:absolute;top:-5px;right:-5px;background:var(--red);color:#fff;font-size:10px;
     font-weight:700;min-width:16px;height:16px;border-radius:9px;display:flex;align-items:center;
@@ -710,7 +714,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-08 18:59</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-09 10:32</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -736,6 +740,7 @@
       <div class="row" style="gap:10px;position:relative">
         <div id="topbar-actions"></div>
         <button class="notif-btn" id="sound-toggle-btn" onclick="toggleSoundAlerts()" title="Sound alerts on — click to mute">🔊</button>
+        <button class="notif-btn" id="help-btn" onclick="openHelp()" title="Help" aria-label="Help" style="font-weight:700;font-size:15px">?</button>
         <button class="notif-btn" id="notif-btn" onclick="toggleNotifPanel()">🔔<span id="notif-badge"></span></button>
         <div class="notif-panel" id="notif-panel"></div>
       </div>
@@ -3411,6 +3416,78 @@ function renderTasksView(){
   }).join('');
 
   return filterBar + bulkBar + `<table class="ttable">${thead}<tbody>${groupBlocks}</tbody></table>`;
+}
+const HELP_SECTIONS = [
+ ['Getting started', `<p><b>Signing in.</b> Sign in with the Google account you gave to your administrator — it must be the same one, because it is how Fluxus recognises you. You see only the projects you were added to.</p>
+  <p><b>Roles.</b> <b>Supervisors</b> see everything, including Reports. <b>Students</b> see the project pages and edit their own work. Your role comes from the Team page, matched on your email address.</p>
+  <p><b>Phone and tablet.</b> On a small screen the sidebar becomes a menu and a bottom tab bar appears. To install Fluxus as an app, open the page in your browser and choose “Add to Home Screen”.</p>`],
+ ['The pages', `<ul>
+  <li><b>Dashboard</b> — where things stand: progress, what is late, what is due soon.</li>
+  <li><b>Tasks</b> — the full task list, grouped by task list and filterable. Click a task to open it.</li>
+  <li><b>Timeline</b> — Gantt-style view with dependencies, same grouping and filters as Tasks.</li>
+  <li><b>Kanban</b> — cards by status; drag a card or use its status menu.</li>
+  <li><b>Reports</b> — per-member statistics (Supervisors only).</li>
+  <li><b>Activity</b> — automatic log of who changed what and when.</li>
+  <li><b>Assets</b> — 3D assets with polygon and texture budgets.</li>
+  <li><b>Levels</b> — (VR projects) which assets go in each level and the running budget.</li>
+  <li><b>Shots</b> — (Animation projects) sequences and shots, status per stage, previews, assets, linked tasks.</li>
+  <li><b>Documents</b> — library of files stored in Google Drive.</li>
+  <li><b>Gallery</b> — latest photos and videos posted across the project.</li>
+  <li><b>Team</b> — members, roles, contact details.</li>
+  <li><b>PMS Support</b> — report bugs and request features; vote on what matters.</li></ul>`],
+ ['Working with tasks', `<p><b>Creating a task.</b> Use “+ New task”. Give it a name, a task list, a category, assignees, start and end dates (or a duration in working days), a priority and a status.</p>
+  <p><b>Task drawer.</b> Click any task to open it: details, attached files, and a <b>chat</b> where team members discuss the task, paste images and annotate them.</p>
+  <ul><li><b>Task lists</b> are the groups on the Tasks page and Timeline. Click a group header to collapse or expand it.</li>
+  <li><b>Categories</b> are coloured tags for the kind of work. Use <i>Manage categories</i> to see or edit them.</li>
+  <li><b>Dependencies</b> make a task wait for another; they are drawn on the Timeline.</li>
+  <li><b>Filters</b> are multi-select: open a filter, tick several values, press clear to reset.</li></ul>
+  <p><b>Notifications.</b> The bell shows what concerns you: assignments, status changes, replies, comments or drawings on your files, and forum activity. Fluxus checks for new activity about every 20 seconds, so you rarely need to reload.</p>`],
+ ['Assets, Levels and Shots', `<p><b>Assets</b> track each 3D item with its polygon and texture budget.</p>
+  <p><b>Levels</b> (VR projects) list the assets used per level and add up the budget, so you see early when a level is too heavy for the headset.</p>
+  <p><b>Shots</b> (Animation projects) organise work in sequences and shots. Each shot has an overall status and a status per stage (Layout, Animation, Lighting, Render). Creating a shot can create its stage tasks automatically, chained one after another. A shot shows its linked tasks, its assets and any videos attached to those tasks.</p>`],
+ ['Documents, Gallery and Google Drive', `<p>Files live in <b>Google Drive</b>, not in Fluxus. Fluxus stores only links and notes.</p>
+  <ul><li><b>Connect Drive</b> when prompted (Google sign-in). If the connection expires, a yellow banner appears with a <b>Reconnect</b> button.</li>
+  <li><b>Documents</b> lists the project files. You can open a file, or <b>download it without opening it</b>.</li>
+  <li><b>Gallery</b> shows the latest images and videos posted in task chats and documents. Images can be pasted straight from the clipboard into a chat.</li></ul>
+  <p class="faint"><b>Cannot open a file?</b> You may not have access to the Google Drive folder. Contact the <b>administrator of the project</b> — their name is on the <b>Team</b> page — and ask them to share the folder with your Google account.</p>`],
+ ['Reviewing images and video', `<p><b>Images.</b> Open an image, click to drop a numbered pin with a comment, or draw on it. The poster of the image is notified of pins on their files.</p>
+  <p><b>Video review.</b> Open a video from Documents, the Gallery, a shot or a task.</p>
+  <ul><li>Play / Pause (one toggle button), Stop, and a slider to move to any frame, with the frame number displayed.</li>
+  <li>Comments on the right: <b>overall</b> comments, or comments on the <b>current frame</b>. Draw on any frame, then send.</li>
+  <li>Marks on the time bar: gold = comment, teal = drawing, violet = both, dashed white = a drawing not sent yet.</li>
+  <li>Click a comment and the slider jumps to its frame. Comments can be replied to and marked resolved.</li></ul>`],
+ ['Chat and PMS Support', `<p>Each task has its own chat. Type <b>@</b> to mention a team member; they are notified.</p>
+  <p><b>PMS Support</b> is a small forum for the tool itself: post a bug or a feature request, vote, and follow its status (Open, Planned, In Progress, Resolved, Declined). Votes decide the order.</p>`],
+ ['Safety nets', `<p>Several people can work at the same time. On save, Fluxus re-reads the shared copy and applies only your own changes, so one person’s edit does not overwrite another’s.</p>
+  <ul><li>Automatic data backups of shots, levels, assets, documents and video comments are kept for 30 days.</li>
+  <li>If something is deleted by mistake, tell your supervisor: they can restore an earlier copy.</li>
+  <li>While you type, or have a drawer open, background refreshes are paused.</li></ul>`]
+];
+function openHelp(){
+  document.getElementById('overlay').classList.add('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.add('open');
+  drawer.innerHTML = `
+    <div class="drawer-head">
+      <div><h2 style="margin:0;font-size:17px">Help</h2><div class="faint" style="margin-top:3px">Fluxus — created by Jacques Fréty</div></div>
+      <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="drawer-body">
+      <input id="help-search" placeholder="Search help…" oninput="filterHelp(this.value)" style="width:100%;margin-bottom:10px">
+      <div id="help-list">${HELP_SECTIONS.map((s,i)=>`<details class="help-sec" ${i===0?'open':''}><summary>${s[0]}</summary><div class="help-body">${s[1]}</div></details>`).join('')}</div>
+      <div id="help-none" class="faint" style="display:none;padding:10px 0">No section matches.</div>
+    </div>`;
+}
+function filterHelp(q){
+  q = (q||'').trim().toLowerCase();
+  let shown = 0;
+  document.querySelectorAll('#help-list .help-sec').forEach(d=>{
+    const hit = !q || d.textContent.toLowerCase().includes(q);
+    d.style.display = hit ? '' : 'none';
+    if(hit) shown++;
+    if(q) d.open = hit;
+  });
+  document.getElementById('help-none').style.display = shown ? 'none' : '';
 }
 function openManageCategories(){
   document.getElementById('overlay').classList.add('open');
