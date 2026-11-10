@@ -297,7 +297,8 @@
   .tl-zoom input[type=range]{width:110px;}
   .tl-scrollctl{display:flex;align-items:center;gap:8px;margin-top:10px;}
   .tl-scrollctl input[type=range]{flex:1;}
-  .tl-outer{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:flex;}
+  .tl-outer{border:1px solid var(--line);border-radius:var(--r);overflow-x:hidden;overflow-y:auto;display:flex;align-items:flex-start;}
+  .tl-labels-row.head, .tl-headerband{position:relative;z-index:8;} /* kept at the top of .tl-outer while the rows scroll (see wireTimelineControls) */
   .tl-labels{flex:0 0 520px;min-width:300px;background:var(--surface);border-right:1px solid var(--line);}
   .tl-resize-handle{flex:0 0 6px;cursor:col-resize;background:var(--surface3);position:relative;}
   .tl-resize-handle::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
@@ -718,7 +719,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-09 10:46</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-10 09:09</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -5348,7 +5349,34 @@ function renderTimelineView(){
     </div>
   `;
 }
+function fitTimelineHeight(){
+  const outer = document.querySelector('.tl-outer'), view = document.getElementById('view');
+  if(!outer || !view) return;
+  const keep = outer.scrollTop;
+  outer.style.maxHeight = 'none';
+  view.scrollTop = 0;
+  const sl = document.querySelector('.tl-sticky-sliders');
+  const padB = parseFloat(getComputedStyle(view).paddingBottom) || 0;
+  const top = outer.getBoundingClientRect().top - view.getBoundingClientRect().top;
+  const avail = view.clientHeight - top - (sl ? sl.offsetHeight + 6 : 0) - padB - 4;
+  outer.style.maxHeight = Math.max(260, avail) + 'px';
+  const hd = document.getElementById('tl-resize-handle'), lb = document.getElementById('tl-labels');
+  if(hd && lb) hd.style.height = lb.offsetHeight + 'px';
+  outer.scrollTop = keep;
+}
+window.addEventListener('resize', ()=>{ if(state.view==='timeline') fitTimelineHeight(); });
 function wireTimelineControls(){
+  const outerEl = document.querySelector('.tl-outer');
+  if(outerEl){
+    // vertical scroll lives in .tl-outer (so the filters, month and day header stay visible); the header rows follow it
+    const headA = outerEl.querySelector('.tl-labels-row.head'), headB = outerEl.querySelector('.tl-headerband');
+    const follow = ()=>{ const y = outerEl.scrollTop; state.timelineScrollTop = y;
+      const t = y ? `translateY(${y}px)` : ''; if(headA) headA.style.transform = t; if(headB) headB.style.transform = t; };
+    outerEl.addEventListener('scroll', follow);
+    fitTimelineHeight();
+    if(state.timelineScrollTop){ outerEl.scrollTop = state.timelineScrollTop; }
+    follow();
+  }
   const area = document.getElementById('tl-scrollarea');
   const slider = document.getElementById('tl-scroll-input');
   if(!area || !slider) return;
