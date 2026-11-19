@@ -719,7 +719,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-10 09:09</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-19 12:22</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -3505,6 +3505,17 @@ const HELP_ADMIN_SECTIONS = [
   <li>Removing someone from the Team page does not remove them from the Drive folder — remove them there too.</li>
   <li>Each person connects Drive once (Google pop-up). If it expires, the yellow banner shows <b>Reconnect</b>.</li>
   <li>A “Google hasn’t verified this app” screen is expected: <i>Advanced → Go to … (unsafe)</i>.</li></ul>`],
+ ['Firebase: database and sign-in', `<p>Firebase does two jobs: <b>Authentication</b> (Sign in with Google) and <b>Firestore</b> (where all projects, tasks, comments and settings are stored). The file only holds the connection details (<b>firebaseConfig</b>, project <b>pms-project-b11da</b>); the data is never in the file. Open <b>console.firebase.google.com</b> with the Google account that owns the project.</p>
+  <ul><li><b>Data layout:</b> <i>projects</i> → one document per project (name, <b>memberEmails</b>) → <i>store</i> (one document per kind of data) and <i>chats</i> (one per task).</li>
+  <li><b>memberEmails</b> is rebuilt from the Team page at every save; the security rules use it, so only people on the Team page can read or write a project.</li>
+  <li><b>Authentication → Sign-in method:</b> Google must be enabled.</li>
+  <li><b>Authentication → Settings → Authorized domains:</b> your GitHub Pages domain must be listed (add the new one if the address changes).</li>
+  <li><b>Authentication → Users</b> lists everyone who signed in — it does not give access to a project.</li>
+  <li><b>Firestore → Rules:</b> keep the rules that check memberEmails; do not open them to everyone, and do not change them without asking Claude.</li>
+  <li><b>Firestore → Data:</b> do not edit by hand unless you must; back up first.</li>
+  <li><b>Usage:</b> the free plan has daily read/write limits (a big class at once can reach them: saving/loading fails until the next day). The paid Blaze plan removes the limit.</li>
+  <li><b>1 MB limit:</b> each kind of data is one document (~1 MB max). If saving a very long list suddenly fails, tell Claude.</li>
+  <li><b>Export:</b> Google Cloud Console → Firestore → Import/Export (needs Blaze) — worth doing before a big change.</li></ul>`],
  ['Consoles and other things to remember', `<ul><li><b>Google Cloud → OAuth consent screen:</b> if the status is “Testing”, only listed <b>test users</b> can connect Drive (and it expires after 7 days). Add people as test users, or publish the app.</li>
   <li><b>Firebase → Authentication → Authorized domains:</b> your GitHub Pages domain must be listed, or sign-in fails (also after moving or renaming the site).</li>
   <li><b>Firestore usage:</b> the free plan has daily limits; the 20-second refresh adds reads steadily.</li>
