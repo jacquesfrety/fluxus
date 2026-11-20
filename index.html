@@ -719,7 +719,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-21 07:34</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-21 07:39</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -5846,11 +5846,41 @@ function renderReportsView(){
       </div>`).join('')}</div>` : `<div class="faint" style="font-size:12px">No backups yet — one will be captured automatically the next time the task list changes.</div>`}
   </div>`;
 
-  return `<div class="faint" style="margin-bottom:14px">Visible to Supervisors only. "Needs Revision" is a running count of how many times a task assigned to this person has been sent back for revision — it doesn't reset if the task is later completed, so it reflects quality over time rather than current status. "Completed late" takes MC into account: working days a member spent on MC between a task's start and its completion extend that task's deadline, so time off sick isn't counted against them. "MC days" is each member's total MC working days.</div>
+  return `<div class="row" style="justify-content:flex-end;margin-bottom:8px"><button class="btn btn-sm" onclick="exportReportPDF()" title="Opens the print dialog — choose “Save as PDF”">⬇ Export PDF</button></div>
+  <div id="report-export"><div class="faint" style="margin-bottom:14px">Visible to Supervisors only. "Needs Revision" is a running count of how many times a task assigned to this person has been sent back for revision — it doesn't reset if the task is later completed, so it reflects quality over time rather than current status. "Completed late" takes MC into account: working days a member spent on MC between a task's start and its completion extend that task's deadline, so time off sick isn't counted against them. "MC days" is each member's total MC working days.</div>
   ${table}
-  <div class="dash-2col" style="margin-top:14px"><div>${completedChart}</div><div>${rateChart}</div></div>
+  <div class="dash-2col" style="margin-top:14px"><div>${completedChart}</div><div>${rateChart}</div></div></div>
   ${backupsSection}
   ${dataBackupsSectionHTML()}`;
+}
+
+/* Report → PDF: the report table and charts (not the backups) are copied into a clean, light-theme window and sent to the
+   browser's print dialog, where "Save as PDF" produces the file. No library needed. */
+function exportReportPDF(){
+  const src = document.getElementById('report-export');
+  if(!src){ toast('Nothing to export'); return; }
+  const w = window.open('', '_blank');
+  if(!w){ toast('Pop-up blocked — allow pop-ups for this site, then try again'); return; }
+  const head = Array.from(document.querySelectorAll('style, link[rel="stylesheet"], link[href*="fonts.g"]')).map(n=>n.outerHTML).join('\n');
+  const title = `${(state.project && state.project.title) || 'Project'} — Report`;
+  const when = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+  w.document.open();
+  w.document.write(`<!doctype html><html data-theme="light"><head><meta charset="utf-8"><title>${esc(title)} — ${esc(when)}</title>${head}
+    <style>
+      html,body{background:#fff !important;color:#171A1F;height:auto;overflow:visible;}
+      body{padding:18px 22px;display:block;}
+      *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+      .rep-head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #171A1F;padding-bottom:8px;margin-bottom:14px;}
+      .rep-head h1{font-size:20px;margin:0;} .rep-head span{font-size:12px;color:#4B5563;}
+      .card,.ttable tr{break-inside:avoid;page-break-inside:avoid;}
+      .btn{display:none !important;}
+      @page{size:A4 landscape;margin:12mm;}
+    </style></head><body>
+    <div class="rep-head"><h1>${esc(title)}</h1><span>${esc(when)}</span></div>
+    ${src.innerHTML}
+    </body></html>`);
+  w.document.close();
+  setTimeout(()=>{ try{ w.focus(); w.print(); }catch(e){ console.error(e); } }, 600);
 }
 
 /* ============================= PMS SUPPORT (forum: bugs + feature requests) ============================= */
