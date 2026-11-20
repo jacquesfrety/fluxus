@@ -15,7 +15,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <link rel="manifest" href="manifest.webmanifest" />
-<meta name="theme-color" content="#14171C" />
+<meta name="theme-color" content="#0E1015" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="Fluxus" />
@@ -27,12 +27,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#14171C; --surface:#1C2028; --surface2:#242A33; --surface3:#2C333E;
-    --line:#333B47; --ink:#EDEAE1; --ink-dim:#B7BEC8; --ink-faint:#7D8696;
+    --bg:#0E1015; --surface:#1B1F27; --surface2:#262B35; --surface3:#333A47;
+    --line:#3C4452; --ink:#F4F5F7; --ink-dim:#C5CBD6; --ink-faint:#8F98A9;
     --gold:#D9A441; --gold-dim:#B98A34; --teal:#4FB6AC; --blue:#3B82F6;
     --grey:#6B7280; --violet:#B08BE0; --green:#6FCF97; --red:#E5646A; --orange:#D2A056; --pink:#D08AC8;
-    --chart-line:#333B47; --chart-label:#7D8696; --chart-value:#B7BEC8; --chart-value-strong:#0F1216;
-    --weekend-bg:rgba(255,255,255,.07); --holiday-bg:rgba(229,100,106,.16);
+    --chart-line:#3C4452; --chart-label:#8F98A9; --chart-value:#C5CBD6; --chart-value-strong:#0F1216;
+    --weekend-bg:rgba(255,255,255,.09); --holiday-bg:rgba(229,100,106,.16);
     --r:7px;
   }
   html[data-theme="light"]{
@@ -719,7 +719,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-19 12:22</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-20 13:06</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -1309,7 +1309,27 @@ async function fsGet(key){
     return snap.exists ? JSON.parse(snap.data().value) : null;
   }catch(e){ console.error(e); return null; }
 }
+/* Inactive members (Team page → Deactivate) are read-only: every write to the shared project data is refused here,
+   in the one place all saves go through. The only thing still allowed is the task chat (saveChat) and the
+   notifications it creates. A refused save also reloads the data, so an edit made on screen doesn't linger. */
+function isReadOnlyUser(){
+  if(isAdmin()) return false;
+  const m = state.team.find(x=>x.name===state.currentUser);
+  return !!(m && m.inactive);
+}
+let roRevertTimer = null, roReverting = false;
+function roBlocked(){
+  if(roReverting) return;
+  toast('You are inactive — read-only. You can still write in the task chat.');
+  if(roRevertTimer) return;
+  roRevertTimer = setTimeout(async ()=>{
+    roRevertTimer = null; roReverting = true;
+    try{ await loadAll(); render(); }catch(e){ console.error(e); }
+    roReverting = false;
+  }, 500);
+}
 async function fsSet(key, value){
+  if(key!=='notifications' && isReadOnlyUser()){ roBlocked(); return; }
   if(!db || !state.projectId){ toast('Not connected — nothing was saved'); return; }
   try{
     await db.collection('projects').doc(state.projectId).collection('store').doc(key).set({value: JSON.stringify(value)});
@@ -1404,6 +1424,7 @@ async function loadAll(){
   }
 }
 async function recordLastSeen(){
+  if(isReadOnlyUser()) return; // read-only: no write at all, not even this one
   // stamps this person's team profile with "now", so Admin/Supervisors can see who last connected
   const m = state.team.find(x=>x.name===state.currentUser);
   if(!m) return; // e.g. Administrator with no team profile in this project — nothing to stamp
@@ -1595,6 +1616,7 @@ async function pollLiveAlerts(){
   }catch(e){ console.error('live alert poll failed', e); }
 }
 async function saveTeam(){
+  if(isReadOnlyUser()){ roBlocked(); return; }
   await syncMemberEmails(); // must happen first — the security rules for 'store'/'chats' check this
   await fsSet('team', state.team);
 }
@@ -2166,7 +2188,7 @@ async function saveProject(){
   await fsSet('project', state.project);
 }
 async function syncProjectName(){
-  if(!db || !state.projectId) return;
+  if(!db || !state.projectId || isReadOnlyUser()) return;
   const name = (state.project.title||'').trim();
   if(!name) return;
   try{
@@ -2705,6 +2727,7 @@ function render(){
   if(state.view==='levels') actions.innerHTML = `<button class="btn btn-gold" onclick="openNewLevelDrawer()">+ New level</button>`;
   if(state.view==='shots') actions.innerHTML = `<button class="btn btn-ghost" onclick="openSequenceDrawer(null)">+ New sequence</button> <button class="btn btn-gold" onclick="openShotDrawer(null)">+ New shot</button>`;
 
+  if(isReadOnlyUser()) actions.innerHTML = `<span class="faint" style="font-size:12px">🔒 Read-only (inactive) — you can still use the task chat</span>`;
   const v = document.getElementById('view');
   if(state.view==='team') v.innerHTML = renderTeamView();
   else if(state.view==='tasks') v.innerHTML = renderTasksView();
@@ -2940,12 +2963,12 @@ function renderTeamView(){
     return (a.name||'').localeCompare(b.name||'');
   });
   return `<div class="team-grid">${sortedTeam.map(m=>`
-    <div class="tcard" data-role="${esc(displayRole(m))}">
+    <div class="tcard" data-role="${esc(displayRole(m))}" ${m.inactive?'style="opacity:.6"':''}>
       <div class="tcard-top">
         ${avatarForMember(m, 88)}
         <div>
           <div class="tcard-name">${esc(m.name)}</div>
-          <div class="tcard-role">${esc(displayRole(m))}</div>
+          <div class="tcard-role">${esc(displayRole(m))}${m.inactive?' · <b>Inactive</b>':''}</div>
         </div>
       </div>
       ${(m.email && isAdmin())?`<div class="tcard-field">✉ ${esc(m.email)}</div>`:''}
@@ -2955,6 +2978,7 @@ function renderTeamView(){
       ${renderMCSection(m)}
       ${canEdit ? `<div class="tcard-actions">
         <button class="btn btn-sm" onclick="openTeamDrawer('${m.id}')">Edit</button>
+        <button class="btn btn-sm" title="${m.inactive?'Back in the assignee lists and reports':'Hidden from assignee lists and reports; read-only, but can still sign in, use the task chat and be @mentioned'}" onclick="toggleMemberInactive('${m.id}')">${m.inactive?'Activate':'Deactivate'}</button>
         <button class="btn btn-sm btn-danger" onclick="deleteTeamMember('${m.id}')">Remove</button>
       </div>` : ''}
     </div>`).join('')}</div>${isSupervisor() ? renderAddMCBar() : ''}`;
@@ -3206,7 +3230,7 @@ const MS_SCOPES = { tasks:()=>state.filters, tl:()=>state.timelineFilters };
 const MS_OPTS = {
   category:()=>state.categories.map(c=>c.name),
   taskList:()=>state.taskLists.slice(),
-  assignee:()=>state.team.map(m=>m.name),
+  assignee:()=>state.team.filter(m=>!m.inactive || liveTasks().some(t=>(t.assignees||[]).includes(m.name))).map(m=>m.name),
   status:()=>STATUSES.slice()
 };
 let msOpenKey = null;
@@ -3258,10 +3282,46 @@ function msClear(scope, key){
 document.addEventListener('click', ()=>{ if(msOpenKey) msClose(); });
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && msOpenKey) msClose(); });
 
+/* ---- Between two teams: members can be set Inactive (hidden from assignee lists, filters, reports but can still
+   sign in and be @mentioned) and tasks/task lists can be Archived (hidden everywhere except the Tasks page when
+   "Show archived" is on). Archived tasks are only flagged (t.archived), never deleted, so they can be restored. ---- */
+function liveTasks(){ return state.tasks.filter(t=>!t.archived); }
+function activeMembers(){ return state.team.filter(m=>!m.inactive); }
+// members offered for a task's assignee list: the active ones, plus anyone already on the task (so they can still be removed)
+function assignableMembers(t){ const have = (t && t.assignees) || []; return state.team.filter(m=>!m.inactive || have.includes(m.name)); }
+async function setTasksArchived(ids, flag){
+  if(!isSupervisor()){ toast('Only supervisors can archive tasks'); return; }
+  const set = new Set(ids); let n = 0;
+  state.tasks.forEach(t=>{ if(set.has(t.id) && !!t.archived!==flag){ if(flag) t.archived = true; else delete t.archived; n++; } });
+  if(!n) return;
+  await saveTasks();
+  state.selectedTaskIds = state.selectedTaskIds.filter(id=>!set.has(id));
+  toast(`${n} task${n===1?'':'s'} ${flag?'archived':'unarchived'}`);
+  if(state.drawerTaskId && set.has(state.drawerTaskId)) closeDrawer();
+  render();
+}
+async function archiveSelectedTasks(flag){ await setTasksArchived(state.selectedTaskIds.slice(), flag); }
+async function archiveTaskList(name, flag){
+  const ids = state.tasks.filter(t=>t.taskList===name && !!t.archived!==flag).map(t=>t.id);
+  if(!ids.length) return;
+  if(!(await confirmDialog(flag ? `Archive the ${ids.length} task${ids.length===1?'':'s'} of “${name}”? They are hidden everywhere (you can unarchive them later).` : `Unarchive the ${ids.length} archived task${ids.length===1?'':'s'} of “${name}”?`))) return;
+  await setTasksArchived(ids, flag);
+  const d = document.getElementById('drawer'); if(d && d.classList.contains('open') && d.querySelector('.manage-list')) d.innerHTML = renderManageTaskListsContent();
+}
+function toggleShowArchived(){ state.showArchived = !state.showArchived; render(); }
+async function toggleMemberInactive(id){
+  if(!isAdmin()){ toast('Only the Administrator can edit team profiles'); return; }
+  const m = state.team.find(x=>x.id===id); if(!m) return;
+  if(m.inactive) delete m.inactive; else m.inactive = true;
+  await saveTeam();
+  toast(m.inactive ? `${m.name} is now inactive` : `${m.name} is active again`);
+  render();
+}
 /* ============================= TASKS VIEW ============================= */
 function filteredTasks(){
   const q = (state.filters.search||'').trim().toLowerCase();
   return state.tasks.filter(t=>
+    (state.showArchived || !t.archived) &&
     (!state.filters.category.length || state.filters.category.includes(t.category)) &&
     (!state.filters.taskList.length || state.filters.taskList.includes(t.taskList)) &&
     (!state.filters.assignee.length || (t.assignees||[]).some(a=>state.filters.assignee.includes(a))) &&
@@ -3272,6 +3332,7 @@ function filteredTasks(){
 }
 function filteredTasksForTimeline(){
   return state.tasks.filter(t=>
+    !t.archived &&
     (!state.timelineFilters.category.length || state.timelineFilters.category.includes(t.category)) &&
     (!state.timelineFilters.taskList.length || state.timelineFilters.taskList.includes(t.taskList)) &&
     (!state.timelineFilters.assignee.length || (t.assignees||[]).some(a=>state.timelineFilters.assignee.includes(a)))
@@ -3322,6 +3383,7 @@ function renderTasksView(){
     </select>`:''}
     ${msBtn('tasks','status','All statuses')}
     ${(state.filters.search||state.filters.category.length||state.filters.taskList.length||state.filters.assignee.length||state.filters.status.length||state.filters.shot)?`<button class="btn btn-ghost btn-sm" onclick="resetTaskFilters()">✕ Reset filters</button>`:''}
+    ${(state.tasks.some(t=>t.archived)||state.showArchived)?`<button class="btn btn-sm ${state.showArchived?'btn-gold':'btn-ghost'}" onclick="toggleShowArchived()" title="Archived tasks are hidden everywhere else">${state.showArchived?'✓ ':''}Show archived (${state.tasks.filter(t=>t.archived).length})</button>`:''}
     <button class="btn btn-ghost btn-sm desk-only" onclick="openManageCategories()">Manage categories</button>
     <button class="btn btn-ghost btn-sm desk-only" onclick="openManageTaskLists()">Manage task lists</button>
     <button class="btn btn-ghost btn-sm desk-only" id="export-xlsx-btn" onclick="exportTasksToExcel()" title="${(state.filters.search||state.filters.category.length||state.filters.taskList.length||state.filters.assignee.length||state.filters.status.length)?'Exports the '+tasks.length+' task(s) matching the current filters':'Exports all '+tasks.length+' task(s)'}">⬇ Export to Excel</button>
@@ -3340,8 +3402,9 @@ function renderTasksView(){
     </select>
     <select onchange="if(this.value) bulkSetAssignee(this.value)">
       <option value="">Set assignee…</option>
-      ${state.team.map(m=>`<option value="${esc(m.name)}">${esc(m.name)}</option>`).join('')}
+      ${activeMembers().map(m=>`<option value="${esc(m.name)}">${esc(m.name)}</option>`).join('')}
     </select>
+    ${isSupervisor()?(state.showArchived?`<button class="btn btn-sm" onclick="archiveSelectedTasks(false)">↩ Unarchive selected</button>`:'')+`<button class="btn btn-sm" onclick="archiveSelectedTasks(true)">🗄 Archive selected</button>`:''}
     <button class="btn btn-sm btn-danger" onclick="bulkDeleteTasks()">🗑 Delete selected</button>
     <button class="btn btn-sm btn-ghost" onclick="clearTaskSelection()">Clear selection</button>
   </div>` : '';
@@ -3357,9 +3420,9 @@ function renderTasksView(){
     const overdue = isOverdue(t);
     const catColor = categoryColor(t.category);
     const catStyle = catColor ? `background:${catColor}22;color:${catColor};border-color:${catColor}66` : '';
-    return `<tr class="taskrow">
+    return `<tr class="taskrow" ${t.archived?'style="opacity:.55"':''}>
       <td onclick="event.stopPropagation()"><input type="checkbox" ${state.selectedTaskIds.includes(t.id)?'checked':''} onchange="toggleTaskSelect('${t.id}', this.checked)"></td>
-      <td><span class="task-id mono">${t.id}</span><br/><span class="taskname" onclick="openDrawer('${t.id}')">${esc(t.name)}</span>
+      <td><span class="task-id mono">${t.id}</span><br/><span class="taskname" onclick="openDrawer('${t.id}')">${esc(t.name)}</span>${t.archived?' <span class="faint" style="font-size:11px">🗄 archived</span>':''}
         ${dep.state==='warn'?`<div class="dep-warn">⚠ ${esc(dep.text)}</div>`:''}
         ${dep.state==='unknown'?`<div class="dep-warn">⚠ ${esc(dep.text)}</div>`:''}
       </td>
@@ -3499,6 +3562,10 @@ const HELP_ADMIN_SECTIONS = [
   <li>They open the Fluxus link and sign in with Google using <b>that same account</b>.</li>
   <li>To remove someone, delete them from the Team page (their Drive access is separate).</li>
   <li><b>“Not a member” / no project shown:</b> the email is missing or has a typo on the Team page.</li></ul>`],
+ ['Changing teams (same project)', `<ul><li><b>Deactivate</b> the previous students: Team page → member card → <b>Deactivate</b>. They vanish from assignee lists, filters and Reports, but stay on the Team page and can still sign in to follow progress. They are <b>read-only</b>: they cannot create or change anything, except write in the task chat (so the new team can ask them questions). They can still be @mentioned. <b>Activate</b> brings them back.</li>
+  <li><b>Archive</b> their tasks (Supervisors): tick tasks on the Tasks page → <b>Archive selected</b>; or <b>Archive</b> in a task’s drawer; or <b>Manage task lists → Archive (n)</b> for a whole list.</li>
+  <li>Archived tasks are hidden on Tasks, Timeline, Kanban, Dashboard and Reports (flagged, never deleted). Tasks page → <b>Show archived</b> displays them greyed; then <b>Unarchive</b> (selected tasks, task drawer, or Manage task lists).</li>
+  <li>Documents and the Gallery still show all Drive files.</li></ul>`],
  ['Google Drive: folder and permissions', `<ul><li>Create one Drive folder per project. Copy its link.</li>
   <li><b>Project settings → Team drive folder</b> → paste the link → Save.</li>
   <li>In Google Drive: right-click the folder → <i>Share</i> → add each person’s Google email. <b>Editor</b> for people who upload, <b>Viewer</b> for read-only.</li>
@@ -3630,6 +3697,8 @@ function renderManageTaskListsContent(){
   const rows = state.taskLists.map((name,i)=>`
     <div class="manage-row">
       <input type="text" value="${esc(name)}" onchange="renameTaskListEntry(${i}, this.value)">
+      ${isSupervisor()?(()=>{ const a = state.tasks.filter(t=>t.taskList===name && !t.archived).length, z = state.tasks.filter(t=>t.taskList===name && t.archived).length;
+        return (a?`<button class="btn btn-sm" title="Hide this list's tasks everywhere (can be undone)" onclick="archiveTaskList('${esc(name).replace(/'/g,"\\'")}', true)">🗄 Archive (${a})</button>`:'')+(z?`<button class="btn btn-sm" onclick="archiveTaskList('${esc(name).replace(/'/g,"\\'")}', false)">↩ Unarchive (${z})</button>`:''); })():''}
       <button class="btn btn-sm btn-danger" onclick="deleteTaskListEntry(${i})">Remove</button>
     </div>`).join('') || '<div class="faint">No task lists yet</div>';
   return `
@@ -4990,7 +5059,7 @@ const KANBAN_COLUMN_ORDER = ["Not Started","In Progress","In Review","Needs Revi
 function renderKanbanView(){
   return `<div class="kanban-slider-wrap" id="kanban-slider-wrap" style="display:none"><span class="muted" style="font-size:11px">◀</span><input type="range" id="kanban-slider" min="0" max="1000" value="0" oninput="kanbanSliderScroll(this.value)"><span class="muted" style="font-size:11px">▶</span></div>
   <div class="kanban" id="kanban-board">${KANBAN_COLUMN_ORDER.map(s=>{
-    const items = state.tasks.filter(t=>t.status===s);
+    const items = liveTasks().filter(t=>t.status===s);
     return `<div class="kcol">
       <div class="kcol-head" style="background:${STATUS_COLOR[s]};color:#0F1216">
         <span class="statuspill" style="background:rgba(0,0,0,.16);color:#0F1216">${s}</span><span style="font-weight:700;opacity:.75">${items.length}</span>
@@ -5565,7 +5634,7 @@ function ownerTaskBreakdown(){
     if(!owners[name]){ owners[name] = {}; STATUSES.forEach(s=>owners[name][s]=0); }
     return owners[name];
   }
-  state.tasks.forEach(t=>{
+  liveTasks().forEach(t=>{
     const names = (t.assignees && t.assignees.length) ? t.assignees : ['Unassigned'];
     names.forEach(name=>{
       const b = bucket(name);
@@ -5579,7 +5648,7 @@ function ownerTaskBreakdown(){
   }).sort((a,b)=>b.total-a.total);
 }
 function renderDashboardView(){
-  const tasks = state.tasks;
+  const tasks = liveTasks();
   const byStatus = STATUSES.map(s=>({s, n: tasks.filter(t=>t.status===s).length}));
   const warningTasks = tasks.filter(t=>{
     const d = dependencyStatus(t);
@@ -5705,7 +5774,7 @@ function renderDashboardView(){
 
 /* ============================= REPORTS VIEW (Supervisors only) ============================= */
 function memberReportStats(memberName){
-  const mine = state.tasks.filter(t=>(t.assignees||[]).includes(memberName));
+  const mine = liveTasks().filter(t=>(t.assignees||[]).includes(memberName));
   const member = state.team.find(m=>m.name===memberName);
   const total = mine.length;
   const completed = mine.filter(t=>t.status==='Completed');
@@ -5725,7 +5794,7 @@ function renderReportsView(){
     return `<div class="empty-state"><div class="display">No team members yet</div>Add people on the Team tab first.</div>`;
   }
   // supervisors review the work rather than being assessed by it, so they're left out of the member stats
-  const reportMembers = state.team.filter(m=>m.role!=='Supervisor');
+  const reportMembers = state.team.filter(m=>m.role!=='Supervisor' && !m.inactive);
   if(reportMembers.length===0){
     return `<div class="empty-state"><div class="display">No members to report on yet</div>Only Supervisors are on the team so far — add other members on the Team tab.</div>`;
   }
@@ -7476,7 +7545,7 @@ function renderDrawerContent(taskId){
   const t = state.tasks.find(x=>x.id===taskId);
   if(!t) return '';
   const dep = dependencyStatus(t);
-  const otherTasks = state.tasks.filter(x=>x.id!==t.id);
+  const otherTasks = state.tasks.filter(x=>x.id!==t.id && !x.archived);
   return `
     <div class="drawer-head">
       <div>
@@ -7484,6 +7553,7 @@ function renderDrawerContent(taskId){
         <h2 style="margin:4px 0 0;font-size:17px">${esc(t.name)}</h2>
       </div>
       <div class="row" style="gap:6px">
+        ${isSupervisor()?`<button class="btn btn-sm" onclick="setTasksArchived(['${t.id}'], ${t.archived?'false':'true'})">${t.archived?'↩ Unarchive':'🗄 Archive'}</button>`:''}
         <button class="btn btn-sm btn-danger" onclick="deleteTask('${t.id}')">Delete</button>
         <button class="btn btn-sm btn-ghost" onclick="closeDrawer()">✕</button>
       </div>
@@ -7513,7 +7583,7 @@ function renderDrawerContent(taskId){
 
       <div class="field"><label>Assignees</label>
         <div class="dep-checks">
-          ${state.team.length===0?'<span class="faint">No team members yet</span>':state.team.map(m=>`
+          ${state.team.length===0?'<span class="faint">No team members yet</span>':assignableMembers(t).map(m=>`
             <span class="dep-chip ${(t.assignees||[]).includes(m.name)?'on':''}" onclick="toggleAssignee('${t.id}','${esc(m.name)}')">${esc(m.name)}</span>
           `).join('')}
         </div>
@@ -7713,7 +7783,7 @@ async function toggleAssignee(id, name){
 function renderAssigneePickerItems(t){
   if(state.team.length===0) return `<div class="faint" style="padding:8px;font-size:12px">No team members yet</div>`;
   const assignees = t.assignees || [];
-  return state.team.map(m=>{
+  return assignableMembers(t).map(m=>{
     const checked = assignees.includes(m.name);
     return `<div class="mention-picker-item" data-member-name="${esc(m.name)}" onclick="event.stopPropagation();toggleInlineAssignee(this)" style="justify-content:space-between">
       <span class="row" style="gap:7px">${avatarForMember(m,18)}<span>${esc(m.name)}</span></span>
@@ -7815,6 +7885,7 @@ async function bulkDeleteTasks(){
   render();
 }
 async function deleteChatFor(taskId){
+  if(isReadOnlyUser()){ roBlocked(); return; }
   delete state.chatCache[taskId];
   if(!db || !state.projectId) return;
   try{ await db.collection('projects').doc(state.projectId).collection('chats').doc(taskId).delete(); }
