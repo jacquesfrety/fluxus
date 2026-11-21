@@ -459,6 +459,18 @@
   .tcard-role{color:var(--gold);font-size:12px;margin-top:1px;}
   .tcard-field{font-size:12px;color:var(--ink-dim);margin-top:3px;}
   .tcard-actions{margin-top:10px;display:flex;gap:6px;}
+  .inactive-section{margin-top:26px;border-top:2px dashed var(--line);padding-top:14px;}
+  .inactive-section > summary{cursor:pointer;font-weight:700;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim);padding:4px 0 12px;}
+  .inactive-section > summary .faint{text-transform:none;letter-spacing:0;font-weight:400;}
+  .team-grid-inactive{grid-template-columns:repeat(auto-fill,minmax(230px,1fr));}
+  .tcard-inactive{position:relative;background:transparent;border:1.5px dashed var(--line);padding:11px 13px;}
+  .tcard-inactive .tcard-top{margin-bottom:6px;}
+  .tcard-inactive .avatar-circle{filter:grayscale(1);opacity:.6;}
+  .tcard-inactive .tcard-name{color:var(--ink-dim);font-size:13.5px;} .tcard-inactive .tcard-role{color:var(--ink-faint);}
+  .inactive-pill{position:absolute;top:9px;right:10px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);border:1px solid var(--line);border-radius:999px;padding:2px 8px;}
+  .tc-more > summary{cursor:pointer;list-style:none;padding:3px 9px;border-radius:6px;color:var(--ink-dim);} .tc-more > summary::-webkit-details-marker{display:none;}
+  .tc-more[open] > summary{background:var(--surface2);} .tc-more > div{display:flex;gap:6px;margin-top:6px;}
+  .tcard-inactive .tcard-actions{align-items:flex-start;flex-wrap:wrap;}
   .tcard[data-role="Student Lead"]{background:color-mix(in srgb, var(--surface) 78%, var(--grey) 22%);border-color:color-mix(in srgb, var(--line) 40%, var(--grey) 60%);}
   .tcard[data-role="Supervisor"]{background:color-mix(in srgb, var(--surface) 90%, var(--red) 10%);border-color:color-mix(in srgb, var(--line) 35%, var(--red) 65%);}
   .tcard[data-role="Lecturer"]{background:color-mix(in srgb, var(--surface) 88%, #F2C94C 12%);border-color:color-mix(in srgb, var(--line) 30%, #F2C94C 70%);}
@@ -719,7 +731,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-21 07:47</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-21 14:04</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -2962,13 +2974,13 @@ function renderTeamView(){
     if(ra!==rb) return ra-rb;
     return (a.name||'').localeCompare(b.name||'');
   });
-  return `<div class="team-grid">${sortedTeam.map(m=>`
-    <div class="tcard" data-role="${esc(displayRole(m))}" ${m.inactive?'style="opacity:.6"':''}>
+  const cardHTML = m => `
+    <div class="tcard" data-role="${esc(displayRole(m))}">
       <div class="tcard-top">
         ${avatarForMember(m, 88)}
         <div>
           <div class="tcard-name">${esc(m.name)}</div>
-          <div class="tcard-role">${esc(displayRole(m))}${m.inactive?' · <b>Inactive</b>':''}</div>
+          <div class="tcard-role">${esc(displayRole(m))}</div>
         </div>
       </div>
       ${(m.email && isAdmin())?`<div class="tcard-field">✉ ${esc(m.email)}</div>`:''}
@@ -2978,10 +2990,37 @@ function renderTeamView(){
       ${renderMCSection(m)}
       ${canEdit ? `<div class="tcard-actions">
         <button class="btn btn-sm" onclick="openTeamDrawer('${m.id}')">Edit</button>
-        <button class="btn btn-sm" title="${m.inactive?'Back in the assignee lists and reports':'Hidden from assignee lists and reports; read-only, but can still sign in, use the task chat and be @mentioned'}" onclick="toggleMemberInactive('${m.id}')">${m.inactive?'Activate':'Deactivate'}</button>
+        <button class="btn btn-sm" title="Hidden from assignee lists and reports; read-only, but can still sign in, use the task chat and be @mentioned" onclick="toggleMemberInactive('${m.id}')">Deactivate</button>
         <button class="btn btn-sm btn-danger" onclick="deleteTeamMember('${m.id}')">Remove</button>
       </div>` : ''}
-    </div>`).join('')}</div>${isSupervisor() ? renderAddMCBar() : ''}`;
+    </div>`;
+  // inactive members: a compact, greyed-out card in their own section below the active team
+  const inactiveCardHTML = m => `
+    <div class="tcard tcard-inactive">
+      <span class="inactive-pill">Inactive</span>
+      <div class="tcard-top">
+        ${avatarForMember(m, 52)}
+        <div>
+          <div class="tcard-name">${esc(m.name)}</div>
+          <div class="tcard-role">${esc(displayRole(m))}</div>
+        </div>
+      </div>
+      ${canSeeLastSeen?`<div class="tcard-field faint">🕐 ${m.lastSeen?('Last seen '+fmtWhen(m.lastSeen)):'Never connected'}</div>`:''}
+      ${canEdit ? `<div class="tcard-actions">
+        <button class="btn btn-sm btn-gold" title="Back in the assignee lists and reports, able to edit again" onclick="toggleMemberInactive('${m.id}')">Activate</button>
+        <details class="tc-more"><summary title="More">⋯</summary><div>
+          <button class="btn btn-sm" onclick="openTeamDrawer('${m.id}')">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteTeamMember('${m.id}')">Remove</button>
+        </div></details>
+      </div>` : ''}
+    </div>`;
+  const active = sortedTeam.filter(m=>!m.inactive), inactive = sortedTeam.filter(m=>m.inactive);
+  const inactiveOpen = state.inactiveTeamOpen !== undefined ? state.inactiveTeamOpen : inactive.length<=3;
+  return `<div class="team-grid">${active.map(cardHTML).join('')}</div>${isSupervisor() ? renderAddMCBar() : ''}
+    ${inactive.length ? `<details class="inactive-section" ${inactiveOpen?'open':''} ontoggle="state.inactiveTeamOpen=this.open">
+      <summary>Inactive members <span class="faint">(${inactive.length}) — read-only, hidden from assignee lists and reports</span></summary>
+      <div class="team-grid team-grid-inactive">${inactive.map(inactiveCardHTML).join('')}</div>
+    </details>` : ''}`;
 }
 /* ---- MC (medical certificate) periods: dated ranges stored on each team member (m.mc = [{id,start,end}]).
    Only Admin/Supervisors can see or edit them, and no reason is recorded. The Reports page uses them so
