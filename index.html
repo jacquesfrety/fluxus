@@ -412,6 +412,13 @@
   .forum-vote-btn.voted{background:rgba(217,164,65,.16);border-color:var(--gold-dim);color:var(--gold);font-weight:600;}
 
   /* ---- documents ---- */
+  .drive-list .drive-row{cursor:pointer;} .drive-list .drive-row:hover td{background:var(--surface2);}
+  .drive-row-name{display:flex;align-items:center;gap:10px;min-width:0;}
+  .drive-row-thumb{flex:0 0 34px;width:34px;height:34px;border-radius:6px;background:var(--surface2);display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:17px;}
+  .drive-row-thumb img{width:100%;height:100%;object-fit:cover;}
+  .drive-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46vw;font-weight:500;}
+  .drive-row-actions{white-space:nowrap;text-align:right;} .drive-row-actions .chat-action-link{margin-left:10px;}
+  @media (max-width:820px){ .drive-list thead{display:none;} .drive-list td:nth-child(2),.drive-list td:nth-child(3){display:none;} .drive-row-actions .chat-action-link{display:none;} .drive-list td{display:table-cell;} .drive-list,.drive-list tbody{display:table;width:100%;} .drive-list tr{display:table-row;} .drive-row-title{max-width:60vw;} }
   .doc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;}
   .doc-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;cursor:pointer;}
   .doc-card:hover{border-color:var(--ink-faint);}
@@ -731,7 +738,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-21 14:04</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-23 07:24</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -1222,6 +1229,8 @@ let state = {
   driveFiles: null,
   driveLoading: false,
   driveMovePending: null,
+  driveView: lsGet('fluxusDriveView','grid'), // 'grid' (thumbnails) | 'list' (details)
+  driveSort: lsGet('fluxusDriveSort',{key:'name',dir:1}),
   driveFileFilter: 'all', // 'all' | 'images' | 'videos' | 'others'
   categories: [],      // work-type categories, e.g. Modelling, Audio, Web App
   taskLists: [],        // actual task-list containers, e.g. "Environment 1"
@@ -7300,6 +7309,40 @@ function driveSignOut(){
   clearDriveTokenSession();
   render();
 }
+function setDriveView(v){ state.driveView = v; lsSet('fluxusDriveView', v); render(); }
+function setDriveSort(key){
+  const cur = state.driveSort || {key:'name',dir:1};
+  state.driveSort = cur.key===key ? {key, dir:-cur.dir} : {key, dir:(key==='modified'||key==='size')?-1:1};
+  lsSet('fluxusDriveSort', state.driveSort);
+  render();
+}
+function driveKindLabel(f){
+  const m = f.mimeType||'';
+  if(m==='application/vnd.google-apps.folder') return 'Folder';
+  const k = driveMediaKind(f);
+  if(k==='image') return 'Image'; if(k==='video') return 'Video'; if(k==='model') return '3D model';
+  if(m==='application/pdf') return 'PDF';
+  if(m==='application/vnd.google-apps.document') return 'Google Doc';
+  if(m==='application/vnd.google-apps.spreadsheet') return 'Google Sheet';
+  if(m==='application/vnd.google-apps.presentation') return 'Google Slides';
+  const ext = (f.name||'').includes('.') ? f.name.split('.').pop().toUpperCase() : '';
+  return ext && ext.length<=5 ? ext+' file' : 'File';
+}
+function driveFmtSize(b){
+  b = Number(b); if(!b && b!==0) return '—'; if(!b) return '—';
+  if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(0)+' KB';
+  if(b<1073741824) return (b/1048576).toFixed(1)+' MB'; return (b/1073741824).toFixed(2)+' GB';
+}
+function driveSortedFiles(files){
+  const sort = state.driveSort || {key:'name',dir:1};
+  const isF = f => f.mimeType==='application/vnd.google-apps.folder';
+  const val = f => sort.key==='modified' ? (f.modifiedTime||'') : sort.key==='size' ? Number(f.size||0) : sort.key==='type' ? driveKindLabel(f).toLowerCase() : (f.name||'').toLowerCase();
+  return files.slice().sort((a,b)=>{
+    if(isF(a)!==isF(b)) return isF(a)?-1:1; // folders always first
+    const va = val(a), vb = val(b);
+    return (va<vb?-1:va>vb?1:0)*sort.dir || (a.name||'').localeCompare(b.name||'');
+  });
+}
 function setDriveFileFilter(key){
   state.driveFileFilter = key;
   render();
@@ -7328,8 +7371,10 @@ function renderDriveBrowser(){
     : driveMediaKind(f)==='model' ? 'models'
     : 'others';
   const filterBtn = (key, label) => `<button class="btn btn-sm ${state.driveFileFilter===key?'btn-gold':'btn-ghost'}" onclick="setDriveFileFilter('${key}')">${label}</button>`;
-  const filterBar = (state.driveFiles && state.driveFiles.length>0) ? `<div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap">
+  const viewBtn = (v, label, tip) => `<button class="btn btn-sm ${state.driveView===v?'btn-gold':'btn-ghost'}" title="${tip}" onclick="setDriveView('${v}')">${label}</button>`;
+  const filterBar = (state.driveFiles && state.driveFiles.length>0) ? `<div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
     ${filterBtn('all','All')}${filterBtn('images','🖼 Images')}${filterBtn('videos','🎬 Videos')}${filterBtn('models','🧊 3D Models')}${filterBtn('others','📄 Others')}
+    <span style="margin-left:auto" class="row"><span style="display:inline-flex;gap:4px">${viewBtn('grid','▦ Thumbnails','Show thumbnails')}${viewBtn('list','☰ List','Show details: name, type, date, size')}</span></span>
   </div>` : '';
 
   let listHtml;
@@ -7339,8 +7384,32 @@ function renderDriveBrowser(){
     listHtml = `<div class="faint" style="padding:20px 0;text-align:center">This folder is empty.</div>`;
   } else {
     const visibleFiles = state.driveFiles.filter(f => state.driveFileFilter==='all' || driveFileTypeOf(f)==='folder' || driveFileTypeOf(f)===state.driveFileFilter);
+    const listRows = () => {
+      const srt = state.driveSort || {key:'name',dir:1};
+      const th = (key,label) => `<th class="sortable" onclick="setDriveSort('${key}')">${label}${srt.key===key?(srt.dir>0?' ▲':' ▼'):''}</th>`;
+      return `<table class="ttable drive-list"><thead><tr>${th('name','Name')}${th('type','Type')}${th('modified','Modified')}${th('size','Size')}<th></th></tr></thead><tbody>
+      ${driveSortedFiles(visibleFiles).map(f=>{
+        const isFolder = f.mimeType==='application/vnd.google-apps.folder';
+        const kind = driveMediaKind(f);
+        const icon = isFolder ? '📁' : kind==='image' ? '🖼' : kind==='video' ? '🎬' : kind==='model' ? '🧊' : '📄';
+        const thumb = (!isFolder && f.thumbnailLink && kind!=='model') ? `<img src="${esc(f.thumbnailLink)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${icon}'}))">` : icon;
+        const pins = kind==='image' ? annotationsForFile(f.id).length : 0;
+        return `<tr class="drive-row" data-file-id="${esc(f.id)}" data-file-name="${esc(f.name)}" data-is-folder="${isFolder}" onclick="driveCardClick(this)">
+          <td><span class="drive-row-name"><span class="drive-row-thumb">${thumb}</span><span class="drive-row-title" title="${esc(f.name)}">${esc(f.name)}</span>${pins?` <span class="faint" style="font-size:11px">📍 ${pins}</span>`:''}</span></td>
+          <td class="faint">${driveKindLabel(f)}</td>
+          <td class="faint">${f.modifiedTime?new Date(f.modifiedTime).toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—'}</td>
+          <td class="faint">${isFolder?'—':driveFmtSize(f.size)}</td>
+          <td class="drive-row-actions">
+            ${isFolder?'':`<span class="chat-action-link" onclick="event.stopPropagation();driveDownloadFile(this.closest('.drive-row'))">⬇ Download</span>`}
+            <span class="chat-action-link" onclick="event.stopPropagation();driveRenamePrompt(this.closest('.drive-row'))">Rename</span>
+            <span class="chat-action-link" onclick="event.stopPropagation();driveStartMove(this.closest('.drive-row'))">Move</span>
+            <span class="chat-action-link" onclick="event.stopPropagation();driveDeletePrompt(this.closest('.drive-row'))">Delete</span>
+          </td></tr>`;}).join('')}
+      </tbody></table>`;
+    };
     listHtml = visibleFiles.length===0
       ? `<div class="faint" style="padding:20px 0;text-align:center">No files match this filter.</div>`
+      : state.driveView==='list' ? listRows()
       : `<div class="doc-grid">${visibleFiles.map(f=>{
       const isFolder = f.mimeType==='application/vnd.google-apps.folder';
       const fileKind = driveMediaKind(f);
