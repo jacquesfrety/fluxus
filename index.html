@@ -738,7 +738,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-26 06:48</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-26 06:52</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -8565,6 +8565,17 @@ async function listProjects(){
     const snap = await db.collection('projects').orderBy('createdAt','desc').get();
     const out = [];
     snap.forEach(d=> out.push(Object.assign({id:d.id}, d.data())));
+    // projects saved before logos were mirrored on the project doc: read the logo from the project's own settings once and copy it up
+    await Promise.all(out.filter(p=>!p.icon).map(async p=>{
+      try{
+        const ps = await db.collection('projects').doc(p.id).collection('store').doc('project').get();
+        const icon = ps.exists ? (JSON.parse(ps.data().value)||{}).icon : '';
+        if(icon && typeof icon==='string' && icon.length<400000){
+          p.icon = icon;
+          db.collection('projects').doc(p.id).set({icon}, {merge:true}).catch(()=>{});
+        }
+      }catch(e){ /* not a member / no access: keep the letter tile */ }
+    }));
     return out;
   }catch(e){ console.error(e); return []; }
 }
