@@ -738,7 +738,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-25 08:22</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-25 08:35</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -4006,9 +4006,9 @@ function renderAssetCreateTasks(assetId){
   if(!state.categories.length) return '';
   const have = assetId ? assetPipeline(assetId).map(p=>p.category) : [];
   return `<div class="field"><label>Create tasks <span class="faint" style="text-transform:none;font-weight:400">(optional) — one task “${assetId?'Asset':'Name'} – Step” per ticked step, linked to this asset, created when you save</span></label>
-    <div class="dep-checks">${state.categories.map(c=>{
+    <div style="display:flex;flex-direction:column;gap:2px">${state.categories.map(c=>{
       const has = have.includes(c.name);
-      return `<label class="dep-chip" style="cursor:${has?'default':'pointer'};${has?'opacity:.45':''}" title="${has?'A task for this step is already linked':''}"><input type="checkbox" data-newtask-cat="${esc(c.name)}" ${has?'disabled':''} style="margin-right:6px">${esc(c.name)}</label>`;
+      return `<label style="display:flex;flex-direction:row;align-items:center;gap:10px;padding:5px 2px;font-size:13px;font-weight:400;text-transform:none;letter-spacing:0;cursor:${has?'default':'pointer'};${has?'opacity:.45':''}" title="${has?'A task for this step is already linked':''}"><input type="checkbox" data-newtask-cat="${esc(c.name)}" ${has?'disabled':''} style="width:auto;margin:0;flex:none"><span>${esc(c.name)}</span>${has?'<span class="faint" style="font-size:11px">already linked</span>':''}</label>`;
     }).join('')}</div>
     <div class="row" style="gap:8px;margin-top:8px;align-items:center"><span class="faint" style="font-size:12px;white-space:nowrap">Task list</span>
       <input id="asset-newtask-list" list="asset-newtask-lists" placeholder="${esc(state.taskLists[0]||'e.g. Living room')}" style="flex:1">
