@@ -738,7 +738,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-23 07:24</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-25 08:08</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -2296,6 +2296,7 @@ function seedData(){
 }
 function tk(id,category,taskList,name,deps,assignees,start,due,duration,status,priority,pct,notes){
   return {id,category,taskList,name,dependsOn:deps,assignees:(assignees||[]),start,due,duration,status,priority,pct,notes,
+    assetIds: [],
     completedAt: status==='Completed' ? due : null, revisionCount: 0};
 }
 
@@ -3913,6 +3914,7 @@ function renderAssetsView(){
         <div class="row" style="justify-content:flex-start;margin-top:6px"><span class="tagpill" style="background:${color}29;color:${color};border:1px solid ${color}66">${esc(a.category||'—')}</span></div>
         <div class="faint" style="font-size:12px;text-align:left;margin-top:8px">${fmtNum(a.polyCount)} tris${texCount?' · '+texCount+' tex':''}</div>
         ${a.fileName?`<div class="faint" style="font-size:12px;text-align:left;margin-top:2px">${esc(a.fileName)}${formats.length?' ('+formats.join(', ')+')':''}</div>`:''}
+        ${assetProgress(a.id).total?`<div style="text-align:left;margin-top:8px"><b style="font-size:12px">Tasks ${assetProgress(a.id).done}/${assetProgress(a.id).total}</b><div>${assetPipelineChips(a.id)}</div></div>`:''}
         <div style="text-align:left;margin-top:6px">${usedIn.length ? usedIn.map(l=>`<span class="tasklisttag">${esc(l.name)}</span>`).join(' ') : '<span class="faint" style="font-size:12px">Not used in a level yet</span>'}</div>
       </div>`;
     }).join('');
@@ -3945,6 +3947,7 @@ function renderAssetsView(){
           </label>`;
         }).join('') : '<span class="faint" style="font-size:12px">No levels yet</span>'}</div>
       </td>
+      <td>${assetTasksCell(a.id)}</td>
       <td><input type="text" class="inline-edit" value="${esc(a.fileName||'')}" placeholder="—" onchange="updateAssetField('${a.id}','fileName',this.value)"></td>
       <td>
         <div class="row" style="gap:8px;flex-wrap:wrap">${FILE_FORMATS.map(f=>{
@@ -3957,10 +3960,62 @@ function renderAssetsView(){
     </tr>`;
   }).join('');
   return modeSwitch + `<table class="ttable"><thead><tr>
-    <th>Asset</th><th>Triangles</th><th>Mat. slots</th><th>Textures</th><th>Category</th><th>Used in</th><th>File name</th><th>Format</th>
+    <th>Asset</th><th>Triangles</th><th>Mat. slots</th><th>Textures</th><th>Category</th><th>Used in</th><th>Tasks</th><th>File name</th><th>Format</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
 function openNewAssetDrawer(){ openAssetDrawer(null); }
+/* ---- Task <-> Asset link (optional): a task may reference assets via task.assetIds ---- */
+function assetTasks(assetId){ return liveTasks().filter(t=>(t.assetIds||[]).includes(assetId)); }
+function assetProgress(assetId){
+  const ts = assetTasks(assetId);
+  return {done: ts.filter(t=>t.status==='Completed').length, total: ts.length};
+}
+function assetPipeline(assetId){ // one entry per task category (step), with an aggregated status
+  const groups = {}; const order = [];
+  assetTasks(assetId).forEach(t=>{ const c=t.category||'—'; if(!groups[c]){groups[c]=[]; order.push(c);} groups[c].push(t.status); });
+  return order.map(c=>{
+    const st = groups[c];
+    let status = 'Not Started';
+    if(st.every(x=>x==='Completed')) status='Completed';
+    else for(const k of ['Needs Revision','On Hold','In Review','In Progress']){ if(st.includes(k)){ status=k; break; } }
+    return {category:c, status, n:st.length, done:st.filter(x=>x==='Completed').length};
+  });
+}
+function assetPipelineChips(assetId){
+  return assetPipeline(assetId).map(p=>{
+    const col = STATUS_COLOR[p.status] || 'var(--grey)';
+    const mark = p.status==='Completed' ? '✓ ' : '';
+    return `<span class="tagpill" title="${esc(p.status)}${p.n>1?' ('+p.done+'/'+p.n+')':''}" style="background:color-mix(in srgb, ${col} 18%, transparent);color:${col};border:1px solid color-mix(in srgb, ${col} 45%, transparent);margin:2px 4px 2px 0">${mark}${esc(p.category)}</span>`;
+  }).join('');
+}
+function assetTasksCell(assetId){
+  const pr = assetProgress(assetId);
+  if(!pr.total) return '<span class="faint" style="font-size:12px">—</span>';
+  return `<div style="font-weight:600;font-size:13px">${pr.done}/${pr.total}</div><div style="margin-top:2px">${assetPipelineChips(assetId)}</div>`;
+}
+async function toggleTaskAsset(taskId, assetId){
+  const t = state.tasks.find(x=>x.id===taskId); if(!t) return;
+  const cur = t.assetIds || [];
+  t.assetIds = cur.includes(assetId) ? cur.filter(x=>x!==assetId) : cur.concat(assetId); // [] not delete: the merge diff only sees existing keys
+  await saveTasks();
+  document.getElementById('drawer').innerHTML = renderDrawerContent(taskId);
+  renderChat(taskId);
+  render();
+}
+function renderAssetTasksSection(assetId){
+  const ts = assetTasks(assetId);
+  const pr = assetProgress(assetId);
+  return `<div class="field"><label>Tasks linked to this asset ${pr.total?`<span class="faint" style="text-transform:none;font-weight:400">— ${pr.done}/${pr.total} done</span>`:''}</label>
+    ${ts.length ? `<div style="margin-bottom:8px">${assetPipelineChips(assetId)}</div>
+    <div class="manage-list">${ts.map(t=>{
+      const col = STATUS_COLOR[t.status]||'var(--grey)';
+      return `<div class="dash-task-row" style="cursor:pointer" onclick="openDrawer('${t.id}')">
+        <span style="min-width:0"><span class="taskname">${esc(t.name)}</span><br><span class="faint" style="font-size:11px">${esc(t.category||'—')}${(t.assignees||[]).length?' · '+esc(t.assignees.join(', ')):''}</span></span>
+        <span style="color:${col};font-size:12px;white-space:nowrap">${esc(t.status)}</span>
+      </div>`;
+    }).join('')}</div>` : '<div class="faint" style="font-size:12px">No task linked yet — open a task and pick this asset in its “Assets” field.</div>'}
+  </div>`;
+}
 function openAssetDrawer(id){
   pendingAssetImage = undefined;
   document.getElementById('overlay').classList.add('open');
@@ -4143,6 +4198,7 @@ function renderAssetDrawerContent(id){
           </div>`).join('') : '<div class="faint" style="font-size:12px">No levels yet — create one on the Levels page</div>'}
         </div>
       </div>
+      ${a?renderAssetTasksSection(a.id):''}
       <div class="row" style="justify-content:space-between;margin-top:14px">
         ${a?`<button class="btn btn-danger btn-sm" onclick="deleteAsset('${a.id}')">Delete</button>`:'<span></span>'}
         <button class="btn btn-gold" onclick="saveAssetForm(${a?`'${a.id}'`:'null'})">${a?'Save changes':'Add asset'}</button>
@@ -4227,6 +4283,7 @@ async function deleteAsset(id){
   await saveAssets();
   state.levels.forEach(l=>{ if(l.assetUsage) l.assetUsage = l.assetUsage.filter(u=>u.assetId!==id); });
   await saveLevels();
+  if(state.tasks.some(t=>(t.assetIds||[]).includes(id))){ state.tasks.forEach(t=>{ if((t.assetIds||[]).includes(id)) t.assetIds = t.assetIds.filter(x=>x!==id); }); await saveTasks(); }
   if(state.shots.some(sh=>(sh.assetIds||[]).includes(id))){ state.shots.forEach(sh=>{ sh.assetIds = (sh.assetIds||[]).filter(a=>a!==id); }); await saveShots(); }
   closeDrawer();
   render();
@@ -7723,6 +7780,10 @@ function renderDrawerContent(taskId){
 
       ${state.shots.length?`<div class="field"><label>Shot <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label>
         <select ${t.stageKey?'disabled title="Stage task — belongs to this shot"':''} onchange="updateField('${t.id}','shotId',this.value)"><option value="">—</option>${state.shots.map(sh=>`<option value="${sh.id}" ${t.shotId===sh.id?'selected':''}>${esc(shotLabel(sh))}</option>`).join('')}</select></div>`:''}
+
+      ${state.assets.length?`<div class="field"><label>Assets <span class="faint" style="text-transform:none;font-weight:400">(optional) — the asset(s) this task works on</span></label>
+        <div class="dep-checks">${state.assets.map(a=>`<span class="dep-chip ${(t.assetIds||[]).includes(a.id)?'on':''}" onclick="toggleTaskAsset('${t.id}','${a.id}')">${esc(a.name)}</span>`).join('')}</div>
+      </div>`:''}
 
       <div class="field"><label>Assignees</label>
         <div class="dep-checks">
