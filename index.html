@@ -738,7 +738,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-25 08:35</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-25 08:41</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -4002,11 +4002,14 @@ async function toggleTaskAsset(taskId, assetId){
   renderChat(taskId);
   render();
 }
+// steps that don't apply to a single asset (they belong to levels/shots/the whole project), so they're not offered in 'Create tasks'
+const ASSET_EXCLUDED_STEPS = ['animation','level design','lighting & baking','audio','testing & qa','build & deploy'];
 function renderAssetCreateTasks(assetId){
-  if(!state.categories.length) return '';
+  const cats = state.categories.filter(c=>!ASSET_EXCLUDED_STEPS.includes((c.name||'').trim().toLowerCase()));
+  if(!cats.length) return '';
   const have = assetId ? assetPipeline(assetId).map(p=>p.category) : [];
   return `<div class="field"><label>Create tasks <span class="faint" style="text-transform:none;font-weight:400">(optional) — one task “${assetId?'Asset':'Name'} – Step” per ticked step, linked to this asset, created when you save</span></label>
-    <div style="display:flex;flex-direction:column;gap:2px">${state.categories.map(c=>{
+    <div style="display:flex;flex-direction:column;gap:2px">${cats.map(c=>{
       const has = have.includes(c.name);
       return `<label style="display:flex;flex-direction:row;align-items:center;gap:10px;padding:5px 2px;font-size:13px;font-weight:400;text-transform:none;letter-spacing:0;cursor:${has?'default':'pointer'};${has?'opacity:.45':''}" title="${has?'A task for this step is already linked':''}"><input type="checkbox" data-newtask-cat="${esc(c.name)}" ${has?'disabled':''} style="width:auto;margin:0;flex:none"><span>${esc(c.name)}</span>${has?'<span class="faint" style="font-size:11px">already linked</span>':''}</label>`;
     }).join('')}</div>
