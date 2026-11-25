@@ -738,7 +738,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-25 08:08</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-25 08:22</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -4002,6 +4002,19 @@ async function toggleTaskAsset(taskId, assetId){
   renderChat(taskId);
   render();
 }
+function renderAssetCreateTasks(assetId){
+  if(!state.categories.length) return '';
+  const have = assetId ? assetPipeline(assetId).map(p=>p.category) : [];
+  return `<div class="field"><label>Create tasks <span class="faint" style="text-transform:none;font-weight:400">(optional) — one task “${assetId?'Asset':'Name'} – Step” per ticked step, linked to this asset, created when you save</span></label>
+    <div class="dep-checks">${state.categories.map(c=>{
+      const has = have.includes(c.name);
+      return `<label class="dep-chip" style="cursor:${has?'default':'pointer'};${has?'opacity:.45':''}" title="${has?'A task for this step is already linked':''}"><input type="checkbox" data-newtask-cat="${esc(c.name)}" ${has?'disabled':''} style="margin-right:6px">${esc(c.name)}</label>`;
+    }).join('')}</div>
+    <div class="row" style="gap:8px;margin-top:8px;align-items:center"><span class="faint" style="font-size:12px;white-space:nowrap">Task list</span>
+      <input id="asset-newtask-list" list="asset-newtask-lists" placeholder="${esc(state.taskLists[0]||'e.g. Living room')}" style="flex:1">
+      <datalist id="asset-newtask-lists">${state.taskLists.map(l=>`<option value="${esc(l)}">`).join('')}</datalist></div>
+  </div>`;
+}
 function renderAssetTasksSection(assetId){
   const ts = assetTasks(assetId);
   const pr = assetProgress(assetId);
@@ -4199,6 +4212,7 @@ function renderAssetDrawerContent(id){
         </div>
       </div>
       ${a?renderAssetTasksSection(a.id):''}
+      ${renderAssetCreateTasks(a?a.id:null)}
       <div class="row" style="justify-content:space-between;margin-top:14px">
         ${a?`<button class="btn btn-danger btn-sm" onclick="deleteAsset('${a.id}')">Delete</button>`:'<span></span>'}
         <button class="btn btn-gold" onclick="saveAssetForm(${a?`'${a.id}'`:'null'})">${a?'Save changes':'Add asset'}</button>
@@ -4264,6 +4278,19 @@ async function saveAssetForm(editingId){
     state.assets.push(Object.assign({id: assetId}, fields));
   }
   await saveAssets();
+  const newCats = [...document.querySelectorAll('#drawer input[data-newtask-cat]:checked')].map(el=>el.dataset.newtaskCat);
+  if(newCats.length){
+    const listName = (document.getElementById('asset-newtask-list')?.value||'').trim() || state.taskLists[0] || '';
+    if(listName && !state.taskLists.includes(listName)){ state.taskLists.push(listName); await saveTaskListGroups(); }
+    const today = todayISO();
+    newCats.forEach(cat=>{
+      const t = tk(nextTaskId(), cat, listName, name+' – '+cat, [], [], today, today, 1, 'Not Started', 'Medium', 0, '');
+      t.assetIds = [assetId];
+      state.tasks.push(t);
+    });
+    await saveTasks();
+    toast(newCats.length+' task'+(newCats.length===1?'':'s')+' created');
+  }
   // sync the level<->asset links from whatever's checked right now (new links default to qty 1)
   state.levels.forEach(l=>{
     if(!l.assetUsage) l.assetUsage = [];
