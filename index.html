@@ -496,13 +496,6 @@
   .tc-more > summary{cursor:pointer;list-style:none;padding:3px 9px;border-radius:6px;color:var(--ink-dim);} .tc-more > summary::-webkit-details-marker{display:none;}
   .tc-more[open] > summary{background:var(--surface2);} .tc-more > div{display:flex;gap:6px;margin-top:6px;}
   .tcard-inactive .tcard-actions{align-items:flex-start;flex-wrap:wrap;}
-  .tcard[data-role="Student Lead"]{background:color-mix(in srgb, var(--surface) 78%, var(--grey) 22%);border-color:color-mix(in srgb, var(--line) 40%, var(--grey) 60%);}
-  .tcard[data-role="Supervisor"]{background:color-mix(in srgb, var(--surface) 90%, var(--red) 10%);border-color:color-mix(in srgb, var(--line) 35%, var(--red) 65%);}
-  .tcard[data-role="Lecturer"]{background:color-mix(in srgb, var(--surface) 88%, #F2C94C 12%);border-color:color-mix(in srgb, var(--line) 30%, #F2C94C 70%);}
-  .tcard[data-role="Administrator"]{background:#0B0C0E;border-color:#000;}
-  .tcard[data-role="Administrator"] .tcard-name{color:#F5F5F5;}
-  .tcard[data-role="Administrator"] .tcard-role{color:var(--gold);}
-  .tcard[data-role="Administrator"] .tcard-field{color:#B7BCC4;}
 
   /* ---- drawer ---- */
   #overlay{position:fixed;inset:0;background:rgba(8,9,11,.55);display:none;z-index:40;}
@@ -756,7 +749,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-26 11:00</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-26 11:03</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -2999,8 +2992,17 @@ function renderTeamView(){
   const canSeeLastSeen = isAdmin() || isSupervisor();
   const roleOrder = {"Administrator":0,"Supervisor":1,"Lecturer":2,"Student Lead":3,"Student":4};
   const displayRole = m => isOwnerEmail(m.email) ? 'Administrator' : (m.role||DEFAULT_ROLE);
-  const roleLabel = m => displayRole(m) + ((m.discipline && displayRole(m)!=='Administrator' && displayRole(m)!=='Supervisor') ? ' · '+m.discipline : '');
-  const colorClass = m => isOwnerEmail(m.email) ? 'mc mc-admin' : (m.role==='Supervisor' ? 'mc mc-sup' : ((m.discipline && DISCIPLINES.includes(m.discipline)) ? 'mc mc-'+m.discipline.toLowerCase() : ''));
+  // discipline: the chosen one, or (until set) guessed from the notes text such as "Games student", "VFX student", "Animation student"
+  const disciplineOf = m => {
+    if(m.discipline && DISCIPLINES.includes(m.discipline)) return m.discipline;
+    const n = (m.notes||'').toLowerCase();
+    if(/vfx|visual effect/.test(n)) return 'VFX';
+    if(/\bgame/.test(n)) return 'Game';
+    if(/anim/.test(n)) return 'Animation';
+    return '';
+  };
+  const roleLabel = m => displayRole(m) + ((disciplineOf(m) && displayRole(m)!=='Administrator' && displayRole(m)!=='Supervisor') ? ' · '+disciplineOf(m) : '');
+  const colorClass = m => isOwnerEmail(m.email) ? 'mc mc-admin' : (m.role==='Supervisor' ? 'mc mc-sup' : (disciplineOf(m) ? 'mc mc-'+disciplineOf(m).toLowerCase() : ''));
   const sortedTeam = [...state.team].sort((a,b)=>{
     const ra = roleOrder[displayRole(a)] ?? 99, rb = roleOrder[displayRole(b)] ?? 99;
     if(ra!==rb) return ra-rb;
