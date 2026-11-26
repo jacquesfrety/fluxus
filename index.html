@@ -749,7 +749,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-26 11:03</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-26 16:53</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -3836,7 +3836,7 @@ async function deleteTaskListEntry(i){
    never a second copy of the relationship that could drift out of sync. Level totals (polygons,
    texture count) are always computed live — never stored redundantly. Polygons scale with
    instance count; texture maps are counted once per asset (materials are shared across instances). */
-const TEXTURE_MAP_TYPES = ["Albedo","Metallic","Smoothness","Normal","Height"];
+const TEXTURE_MAP_TYPES = ["Albedo","Metallic","Smoothness","Normal","Height","Opacity","Emissive"];
 const FILE_FORMATS = [".ma",".fbx",".glb"];
 function assetTextureCount(a){ return (a?.textureMaps||[]).length; }
 function levelAssetUsage(level){
