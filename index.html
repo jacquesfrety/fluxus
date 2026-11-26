@@ -466,6 +466,24 @@
   .tcard-role{color:var(--gold);font-size:12px;margin-top:1px;}
   .tcard-field{font-size:12px;color:var(--ink-dim);margin-top:3px;}
   .tcard-actions{margin-top:10px;display:flex;gap:6px;}
+  /* team card colours: Admin black, Supervisor grey, students by discipline */
+  .tcard.mc{border:1px solid var(--mc);border-left:6px solid var(--mc);background:var(--mbg);}
+  .tcard.mc .tcard-name{color:var(--mink);}
+  .tcard.mc .tcard-field{color:var(--mink);opacity:.75;}
+  .tcard.mc .avatar-circle{background:var(--mc);color:var(--mon);}
+  .tcard.mc .tcard-role{display:inline-block;color:var(--mon);background:var(--mc);font-weight:600;font-size:11px;padding:2px 9px;border-radius:99px;white-space:nowrap;margin-top:3px;}
+  .tcard.mc-admin{--mc:#000;--mbg:#000;--mink:#fff;--mon:#fff;border-color:#3C4452;border-left-color:#3C4452;}
+  .tcard.mc-admin .avatar-circle{border:1px solid rgba(255,255,255,.25);}
+  .tcard.mc-admin .tcard-role{background:transparent;border:1px solid rgba(255,255,255,.35);}
+  .tcard.mc-sup{--mc:#7D8696;--mbg:#1E222B;--mink:#F4F5F7;--mon:#10131A;}
+  .tcard.mc-animation{--mc:#B08BE0;--mbg:#241C30;--mink:#F4F5F7;--mon:#17101F;}
+  .tcard.mc-game{--mc:#4FA3E0;--mbg:#16242F;--mink:#F4F5F7;--mon:#08131D;}
+  .tcard.mc-vfx{--mc:#E3915B;--mbg:#2E2118;--mink:#F4F5F7;--mon:#1E1108;}
+  html[data-theme="light"] .tcard.mc-admin{--mc:#000;--mbg:#000;border-color:#000;border-left-color:#000;}
+  html[data-theme="light"] .tcard.mc-sup{--mc:#6B7280;--mbg:#EEF0F3;--mink:#171A1F;--mon:#fff;}
+  html[data-theme="light"] .tcard.mc-animation{--mc:#8E5CCB;--mbg:#F1EBFA;--mink:#171A1F;--mon:#fff;}
+  html[data-theme="light"] .tcard.mc-game{--mc:#2F7FBF;--mbg:#E6F2FB;--mink:#171A1F;--mon:#fff;}
+  html[data-theme="light"] .tcard.mc-vfx{--mc:#C8672B;--mbg:#FCEEE2;--mink:#171A1F;--mon:#fff;}
   .inactive-section{margin-top:26px;border-top:2px dashed var(--line);padding-top:14px;}
   .inactive-section > summary{cursor:pointer;font-weight:700;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim);padding:4px 0 12px;}
   .inactive-section > summary .faint{text-transform:none;letter-spacing:0;font-weight:400;}
@@ -738,7 +756,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-26 06:52</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-26 11:00</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -816,6 +834,7 @@ const STATUS_HEX = {"Not Started":"#6B7280","In Progress":"#3B82F6","In Review":
 const PRIORITIES = ["Low","Medium","High"];
 const PRIORITY_COLOR = {"Low":"var(--green)","Medium":"var(--gold)","High":"var(--red)"};
 const PRIORITY_HEX = {"Low":"#6FCF97","Medium":"#D9A441","High":"#E5646A"};
+const DISCIPLINES = ["Animation","Game","VFX"];
 const ROLES = ["Supervisor","Student Lead","Student","Lecturer"];
 // Owner/Administrator account. Listed as possibly-multiple addresses because a "nice" address
 // (e.g. a custom domain) can be an alias that Google still authenticates as its underlying
@@ -2980,18 +2999,20 @@ function renderTeamView(){
   const canSeeLastSeen = isAdmin() || isSupervisor();
   const roleOrder = {"Administrator":0,"Supervisor":1,"Lecturer":2,"Student Lead":3,"Student":4};
   const displayRole = m => isOwnerEmail(m.email) ? 'Administrator' : (m.role||DEFAULT_ROLE);
+  const roleLabel = m => displayRole(m) + ((m.discipline && displayRole(m)!=='Administrator' && displayRole(m)!=='Supervisor') ? ' · '+m.discipline : '');
+  const colorClass = m => isOwnerEmail(m.email) ? 'mc mc-admin' : (m.role==='Supervisor' ? 'mc mc-sup' : ((m.discipline && DISCIPLINES.includes(m.discipline)) ? 'mc mc-'+m.discipline.toLowerCase() : ''));
   const sortedTeam = [...state.team].sort((a,b)=>{
     const ra = roleOrder[displayRole(a)] ?? 99, rb = roleOrder[displayRole(b)] ?? 99;
     if(ra!==rb) return ra-rb;
     return (a.name||'').localeCompare(b.name||'');
   });
   const cardHTML = m => `
-    <div class="tcard" data-role="${esc(displayRole(m))}">
+    <div class="tcard ${colorClass(m)}" data-role="${esc(displayRole(m))}">
       <div class="tcard-top">
         ${avatarForMember(m, 88)}
         <div>
           <div class="tcard-name">${esc(m.name)}</div>
-          <div class="tcard-role">${esc(displayRole(m))}</div>
+          <div class="tcard-role">${esc(roleLabel(m))}</div>
         </div>
       </div>
       ${(m.email && isAdmin())?`<div class="tcard-field">✉ ${esc(m.email)}</div>`:''}
@@ -3174,6 +3195,9 @@ function renderTeamDrawerContent(id){
           ${ROLES.map(r=>`<option value="${r}" ${(m.role||DEFAULT_ROLE)===r?'selected':''}>${r}</option>`).join('')}
         </select>
       </div>
+      <div class="field"><label>Discipline <span class="faint" style="text-transform:none;font-weight:400">(optional) — sets the card color</span></label>
+        <select id="tm-discipline"><option value="">—</option>${DISCIPLINES.map(d=>`<option value="${d}" ${m.discipline===d?'selected':''}>${d}</option>`).join('')}</select>
+      </div>
       <div class="field-row">
         <div class="field"><label>Email</label><input id="tm-email" type="${isAdmin()?'text':'password'}" value="${esc(m.email)}" autocomplete="off"></div>
         <div class="field"><label>Phone</label><input id="tm-phone" value="${esc(m.phone)}"></div>
@@ -3194,6 +3218,7 @@ async function saveTeamMember(id){
   const name = document.getElementById('tm-name').value.trim();
   if(!name){ toast('Name is required'); return; }
   const role = document.getElementById('tm-role').value || DEFAULT_ROLE;
+  const discipline = document.getElementById('tm-discipline')?.value || '';
   const email = document.getElementById('tm-email').value;
   const phone = document.getElementById('tm-phone').value;
   const notes = document.getElementById('tm-notes').value;
@@ -3203,7 +3228,7 @@ async function saveTeamMember(id){
       toast('Cannot change the last Supervisor\'s role — promote someone else first'); return;
     }
     const oldName = m.name;
-    Object.assign(m, {name, role, email, phone, notes});
+    Object.assign(m, {name, role, discipline, email, phone, notes});
     if(pendingAvatar) m.avatar = pendingAvatar;
     if(oldName && oldName!==name){
       let tasksTouched = false;
@@ -3216,7 +3241,7 @@ async function saveTeamMember(id){
       if(tasksTouched) await saveTasks();
     }
   } else {
-    state.team.push({id:uid('u'), name, role, email, phone, notes, avatar: pendingAvatar || ''});
+    state.team.push({id:uid('u'), name, role, discipline, email, phone, notes, avatar: pendingAvatar || ''});
   }
   pendingAvatar = null;
   await saveTeam();
@@ -3250,6 +3275,9 @@ function renderClaimProfileContent(){
         <select id="tm-role">
           ${ROLES.map(r=>`<option value="${r}" ${DEFAULT_ROLE===r?'selected':''}>${r}</option>`).join('')}
         </select>
+      </div>` : ''}
+      ${state.team.length>0 ? `<div class="field"><label>Discipline <span class="faint" style="text-transform:none;font-weight:400">(optional)</span></label>
+        <select id="tm-discipline"><option value="">—</option>${DISCIPLINES.map(d=>`<option value="${d}">${d}</option>`).join('')}</select>
       </div>` : `<div class="faint" style="margin-bottom:14px">No one's here yet — you'll be added as the first Supervisor.</div>`}
       <div class="field"><label>Email <span class="faint" style="text-transform:none;font-weight:400">— your verified sign-in, can't be changed</span></label>
         <input value="${esc(authUser.email)}" disabled></div>
@@ -3264,9 +3292,10 @@ async function saveMyProfile(){
   const name = document.getElementById('tm-name').value.trim();
   if(!name){ toast('Name is required'); return; }
   const role = state.team.length===0 ? 'Supervisor' : (document.getElementById('tm-role').value || DEFAULT_ROLE);
+  const discipline = document.getElementById('tm-discipline')?.value || '';
   const phone = document.getElementById('tm-phone').value;
   const notes = document.getElementById('tm-notes').value;
-  state.team.push({id:uid('u'), name, role, email: authUser.email, phone, notes, avatar: pendingAvatar || authUser.photoURL || ''});
+  state.team.push({id:uid('u'), name, role, discipline, email: authUser.email, phone, notes, avatar: pendingAvatar || authUser.photoURL || ''});
   pendingAvatar = null;
   await saveTeam();
   syncCurrentUserFromAuth();
