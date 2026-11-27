@@ -753,7 +753,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-27 11:57</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-27 17:45</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -8615,6 +8615,7 @@ async function listProjects(){
         }
       }catch(e){ /* not a member / no access: keep the letter tile */ }
     }));
+    out.sort((a,b)=>(a.name||'').localeCompare(b.name||'', undefined, {sensitivity:'base', numeric:true}));
     return out;
   }catch(e){ console.error(e); return []; }
 }
