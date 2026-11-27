@@ -753,7 +753,7 @@
     <button class="switch-proj-mobile" onclick="switchProject()">⇄ Switch project</button>
     <nav id="nav"></nav>
     <div class="sidebar-foot">
-      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-26 17:14</span></div>
+      <div class="fluxus-tag">Fluxus <span class="app-version" title="Version of this file">2026-11-27 11:57</span></div>
       <div class="sidebar-foot-inner">
       <div class="whoami-label">You are</div>
       <div id="whoami"></div>
@@ -801,7 +801,7 @@
 </div>
 <div id="drive-lightbox" onclick="closeDriveMedia()">
   <button id="drive-lightbox-prev" class="drive-lightbox-nav drive-lightbox-nav-prev" onclick="event.stopPropagation();driveMediaStep(-1)" aria-label="Previous">‹</button>
-  <div class="drive-lightbox-inner" onclick="event.stopPropagation()"><div id="drive-lightbox-content"></div><div class="faint" id="drive-lightbox-hint" style="font-size:11px"></div><a id="drive-lightbox-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ghost" style="text-decoration:none">Open in Google Drive ↗</a></div>
+  <div class="drive-lightbox-inner" onclick="event.stopPropagation()"><div id="drive-lightbox-content"></div><div id="drive-lightbox-name" title="" style="font-size:13px;font-weight:600;max-width:90vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center"></div><div class="faint" id="drive-lightbox-hint" style="font-size:11px"></div><a id="drive-lightbox-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ghost" style="text-decoration:none">Open in Google Drive ↗</a></div>
   <button id="drive-lightbox-next" class="drive-lightbox-nav drive-lightbox-nav-next" onclick="event.stopPropagation();driveMediaStep(1)" aria-label="Next">›</button>
 </div>
 <div id="assignee-picker"></div>
@@ -1172,7 +1172,7 @@ function openChatImageLightbox(taskId, msgId, fileId){
   const idx = group.findIndex(df=>df.id===fileId);
   const df = idx>=0 ? group[idx] : group[0];
   if(!df) return;
-  openMediaLightbox(df.id, driveThumbLarge(df.thumbnailLink,1600), df.webViewLink||'', group, idx>=0?idx:0);
+  openMediaLightbox(df.id, driveThumbLarge(df.thumbnailLink,1600), df.webViewLink||'', group, idx>=0?idx:0, df.name);
 }
 /* Download a Drive file straight to the computer without opening it. Google-native files (Docs, Sheets,
    Slides, Drawings) can't be downloaded as-is, so they are exported (PDF / XLSX / PPTX / PNG). */
@@ -5200,7 +5200,7 @@ function renderGalleryView(){
 function galleryOpen(idx){
   const G = galleryState();
   const it = G.visible[idx]; if(!it) return;
-  openMediaLightbox(it.id, driveThumbLarge(it.thumbnailLink,1600), it.webViewLink, G.visible, idx);
+  openMediaLightbox(it.id, driveThumbLarge(it.thumbnailLink,1600), it.webViewLink, G.visible, idx, it.name);
 }
 function galleryOpenVideo(i){
   const it = galleryState().items[i]; if(!it) return;
@@ -6236,7 +6236,7 @@ function renderPostDrawerContent(postId){
     </div>
     <div class="drawer-body">
       ${p.description?`<div class="chat-text" style="margin-bottom:14px">${renderMentionText(p.description)}</div>`:''}
-      ${p.driveFile?.thumbnailLink?`<img class="chat-img" src="${esc(p.driveFile.thumbnailLink)}" data-post-id="${esc(p.id)}" onclick="openMediaLightbox('${esc(p.driveFile.id)}','${esc(driveThumbLarge(p.driveFile.thumbnailLink,1600))}','${esc(p.driveFile.webViewLink||'')}')" onerror="forumImgError(this)" style="margin-bottom:14px">`:''}
+      ${p.driveFile?.thumbnailLink?`<img class="chat-img" src="${esc(p.driveFile.thumbnailLink)}" data-post-id="${esc(p.id)}" onclick="openMediaLightbox('${esc(p.driveFile.id)}','${esc(driveThumbLarge(p.driveFile.thumbnailLink,1600))}','${esc(p.driveFile.webViewLink||'')}',null,0,${esc(JSON.stringify(p.driveFile.name||''))})" onerror="forumImgError(this)" style="margin-bottom:14px">`:''}
       <div class="row" style="gap:10px;margin-bottom:16px">
         <button class="forum-vote-btn ${voted?'voted':''}" onclick="toggleVote('${p.id}')">▲ ${votes.length} vote${votes.length===1?'':'s'}</button>
       </div>
@@ -6257,7 +6257,7 @@ function renderPostDrawerContent(postId){
                     ${(c.author===state.currentUser)?`<span class="chat-actions"><span class="chat-action-link" onclick="deleteForumComment('${p.id}','${c.id}')">Delete</span></span>`:''}
                   </div>
                   ${c.text?`<div class="chat-text">${renderMentionText(c.text)}</div>`:''}
-                  ${c.driveFile?.thumbnailLink?`<img class="chat-img" src="${esc(c.driveFile.thumbnailLink)}" data-post-id="${esc(p.id)}" data-comment-id="${esc(c.id)}" onclick="openMediaLightbox('${esc(c.driveFile.id)}','${esc(driveThumbLarge(c.driveFile.thumbnailLink,1600))}','${esc(c.driveFile.webViewLink||'')}')" onerror="forumImgError(this)">`:''}
+                  ${c.driveFile?.thumbnailLink?`<img class="chat-img" src="${esc(c.driveFile.thumbnailLink)}" data-post-id="${esc(p.id)}" data-comment-id="${esc(c.id)}" onclick="openMediaLightbox('${esc(c.driveFile.id)}','${esc(driveThumbLarge(c.driveFile.thumbnailLink,1600))}','${esc(c.driveFile.webViewLink||'')}',null,0,${esc(JSON.stringify(c.driveFile.name||''))})" onerror="forumImgError(this)">`:''}
                 </div>
               </div>
             </div>`).join('') : '<div class="chat-empty">No comments yet.</div>'}
@@ -6387,7 +6387,7 @@ async function forumImgError(img){
     target.driveFile.thumbnailLink = data.thumbnailLink || target.driveFile.thumbnailLink;
     target.driveFile.webViewLink = data.webViewLink || target.driveFile.webViewLink;
     img.src = target.driveFile.thumbnailLink;
-    img.onclick = () => openMediaLightbox(target.driveFile.id, driveThumbLarge(target.driveFile.thumbnailLink, 1600), target.driveFile.webViewLink||'');
+    img.onclick = () => openMediaLightbox(target.driveFile.id, driveThumbLarge(target.driveFile.thumbnailLink, 1600), target.driveFile.webViewLink||'', null, 0, target.driveFile.name);
     await saveForumPosts();
   }catch(e){
     console.error(e);
@@ -6852,12 +6852,14 @@ document.addEventListener('keydown', e=>{
   else if(e.key==='ArrowRight'){ e.preventDefault(); vrStep(e.shiftKey?10:1); }
 }, true);
 
+function setLightboxName(name){ const el=document.getElementById('drive-lightbox-name'); if(el){ el.textContent=name||''; el.title=name||''; } }
 async function openDriveMedia(f, kind){
   // accept either the new string kind ('image'/'video'/'pdf') or, from older call sites, a boolean isVideo
   if(kind === true) kind = 'video';
   else if(kind === false) kind = 'image';
   if(kind === 'video'){ openVideoReview(f); return; }   // videos open in the review player (frame comments + drawing)
   currentDriveMediaFileId = f.id;
+  setLightboxName(f.name);
   const content = document.getElementById('drive-lightbox-content');
   const link = document.getElementById('drive-lightbox-link');
   link.href = f.webViewLink || '#';
@@ -6926,8 +6928,9 @@ async function openDriveMedia(f, kind){
    everything else), so pins and drawings on them are stored and shared exactly like on any other
    Drive image — just reached from a different starting point, and with no "next file" to step to
    since there's no folder listing here to draw siblings from ---- */
-function openMediaLightbox(fileId, imgUrl, webViewLink, group, groupIndex){
+function openMediaLightbox(fileId, imgUrl, webViewLink, group, groupIndex, name){
   currentDriveMediaFileId = fileId;
+  setLightboxName(name || (group && group[groupIndex] && group[groupIndex].name) || '');
   syncMarks().then(ch=>{ if(ch) refreshMarksIfOpen(); });   // always show teammates' latest pins/drawings
   currentDriveMediaUrl = null; // nothing was fetched as a blob here, so nothing to revoke on close
   // group/groupIndex let a caller (e.g. a multi-photo chat post) wire up prev/next arrows across
@@ -6967,7 +6970,7 @@ function driveMediaStep(dir){
     const next = chatLightboxGroup[chatLightboxIndex+dir];
     if(!next) return;
     openPinId = null; pinDraft = null;
-    openMediaLightbox(next.id, driveThumbLarge(next.thumbnailLink,1600), next.webViewLink||'', chatLightboxGroup, chatLightboxIndex+dir);
+    openMediaLightbox(next.id, driveThumbLarge(next.thumbnailLink,1600), next.webViewLink||'', chatLightboxGroup, chatLightboxIndex+dir, next.name);
     return;
   }
   const siblings = driveMediaSiblings();
@@ -6985,6 +6988,7 @@ function closeDriveMedia(){
   document.getElementById('drive-lightbox').classList.remove('open');
   document.getElementById('drive-lightbox-content').innerHTML = ''; // also stops any playing video
   document.getElementById('drive-lightbox-hint').textContent = '';
+  setLightboxName('');
   currentDriveMediaFileId = null;
   chatLightboxGroup = null; chatLightboxIndex = -1;
   if(currentDriveMediaUrl){ URL.revokeObjectURL(currentDriveMediaUrl); currentDriveMediaUrl = null; }
